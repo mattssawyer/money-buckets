@@ -511,28 +511,44 @@ h1 {
 }
 
 .switch:focus-visible,
-.share-field input:focus-visible {
+.share-field:focus-within {
   outline: 2px solid var(--app-text);
   outline-offset: 2px;
 }
 
+/* The field and its % sign read as one box, sized to fit 100. */
 .share-field {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.125rem;
+  width: 4rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--app-text-secondary);
   font-size: 0.875rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-control-border);
+  border-radius: var(--app-radius-chip);
 }
 
 .share-field input {
-  width: 3.25rem;
-  padding: 0.25rem 0.375rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
   color: var(--app-text);
   font: inherit;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  background: var(--app-surface);
-  border: 1px solid var(--app-control-border);
-  border-radius: var(--app-radius-chip);
+  background: transparent;
+  border: 0;
+  outline: none;
+  appearance: textfield;
+}
+
+/* The browser's up/down arrows take the space the number needs. */
+.share-field input::-webkit-inner-spin-button,
+.share-field input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
