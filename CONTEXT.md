@@ -19,7 +19,7 @@ An account Plaid has stopped returning for its Plaid item, such as a closed acco
 _Avoid_: Closed account, deleted account
 
 **Selected account**:
-The bank account the user is currently viewing, remembered across pages and visits. Home and a new spending plan setup both start from it, and only bank accounts can be selected, because both are about spending.
+What Home is showing, remembered across pages and visits: all tracked accounts together (the default) or one tracked account. Balance, spending, recent transactions and recurring streams all follow it. The spending plan doesn't; it always draws on every tracked account.
 _Avoid_: Current account, active account
 
 **Bank account**:

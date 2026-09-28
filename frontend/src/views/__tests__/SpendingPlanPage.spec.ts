@@ -38,7 +38,10 @@ function mountPage() {
   return mount(SpendingPlanPage, {
     global: {
       plugins: [[PrimeVue, { unstyled: true }]],
-      stubs: { AppSidebar: true },
+      stubs: {
+        AppSidebar: true,
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+      },
     },
   })
 }
@@ -62,6 +65,15 @@ describe('spending plan page', () => {
     await flushPromises()
 
     expect(wrapper.find('[aria-label="Loading your spending plan"]').exists()).toBe(false)
+  })
+
+  it('links to the accounts the plan is built from', async () => {
+    vi.mocked(getSpendingPlan).mockResolvedValue(null)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.get('.accounts-link').text()).toBe('Tracked accounts')
+    expect(wrapper.get('.accounts-link').attributes('href')).toBe('/accounts')
   })
 
   it('offers setup when no plan has been saved', async () => {

@@ -1,5 +1,5 @@
 import type { RecurringStream } from '../api/PlaidService'
-import { recurringLabel } from '../api/plaidLabels'
+import { recurringLabel, yourAmount } from '../api/plaidLabels'
 import { roundCents } from './money'
 import { PLAN_LINES, defaultPlan, type BucketId, type PlanDraft } from './plan'
 
@@ -49,10 +49,15 @@ export function toMonthlyAmount(amount: number, frequency: string): number {
   return roundCents(Math.abs(amount) * multiplier)
 }
 
+/**
+ * Monthly pay from recurring deposits, at the user's share of each account. Transfers are left
+ * out: money moved in from another of the user's accounts, or a housemate's part of a shared
+ * account, isn't pay.
+ */
 export function estimateMonthlyTakeHome(streams: RecurringStream[]): number | null {
   const total = streams
-    .filter((stream) => stream.is_inflow)
-    .reduce((sum, stream) => sum + toMonthlyAmount(stream.amount, stream.frequency), 0)
+    .filter((stream) => stream.is_inflow && stream.category !== 'TRANSFER_IN')
+    .reduce((sum, stream) => sum + toMonthlyAmount(yourAmount(stream), stream.frequency), 0)
 
   return total > 0 ? roundCents(total) : null
 }
@@ -68,7 +73,7 @@ export function planFromRecurring(streams: RecurringStream[]): PlanDraft {
       .find((line) => line.name === match.line)
       ?.items.push({
         name: recurringLabel(stream),
-        amount: toMonthlyAmount(stream.amount, stream.frequency),
+        amount: toMonthlyAmount(yourAmount(stream), stream.frequency),
         streamId: stream.stream_id,
       })
   }

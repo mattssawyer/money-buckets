@@ -15,6 +15,7 @@ function transaction(id: string, amount: number, date: string): PlaidTransaction
     pending: false,
     category: null,
     bucket: null,
+    share_percent: 100,
   }
 }
 

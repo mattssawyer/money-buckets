@@ -44,6 +44,9 @@ const ira: PlaidAccount = {
   official_name: null,
   subtype: 'roth',
   type: 'investment',
+  trackable: false,
+  tracks_spending: false,
+  share_percent: 100,
 }
 
 const history: BalanceHistory = {

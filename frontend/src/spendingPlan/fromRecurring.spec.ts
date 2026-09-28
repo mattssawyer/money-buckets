@@ -17,6 +17,7 @@ function stream(overrides: Partial<RecurringStream>): RecurringStream {
     is_inflow: true,
     category: 'INCOME',
     category_detailed: 'INCOME_WAGES',
+    share_percent: 100,
     ...overrides,
   }
 }
@@ -45,6 +46,24 @@ describe('estimateMonthlyTakeHome', () => {
         }),
       ]),
     ).toBe(5600)
+  })
+
+  it('leaves out transfers in, such as a housemate paying into a shared account', () => {
+    expect(
+      estimateMonthlyTakeHome([
+        stream({ amount: -2400, frequency: 'BIWEEKLY' }),
+        stream({
+          stream_id: 'housemate',
+          account_id: 'joint',
+          merchant_name: 'Transfer from Sam',
+          amount: -1200,
+          frequency: 'MONTHLY',
+          category: 'TRANSFER_IN',
+          category_detailed: 'TRANSFER_IN_ACCOUNT_TRANSFER',
+          share_percent: 50,
+        }),
+      ]),
+    ).toBe(5200)
   })
 
   it('ignores bills and returns null when there are no deposits', () => {
@@ -106,6 +125,20 @@ describe('planFromRecurring', () => {
       Utilities: null,
       Groceries: null,
     })
+  })
+
+  it('counts a bill from a shared account at the user\'s share', () => {
+    expect(
+      amounts([
+        bill({
+          stream_id: 'rent',
+          account_id: 'joint',
+          amount: 2400,
+          category_detailed: 'RENT_AND_UTILITIES_RENT',
+          share_percent: 50,
+        }),
+      ]),
+    ).toMatchObject({ 'Rent/mortgage': 1200 })
   })
 
   it('adds up several bills that belong to the same line', () => {

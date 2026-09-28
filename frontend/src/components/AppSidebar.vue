@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { House, TrendingUp, Wallet } from '@lucide/vue'
+import { House, Landmark, TrendingUp, Wallet } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 
 const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
@@ -8,6 +8,7 @@ const items = [
   { name: 'Home', to: '/', icon: House },
   { name: 'Spending Plan', to: '/spending-plan', icon: Wallet },
   { name: 'Investments', to: '/investments', icon: TrendingUp },
+  { name: 'Accounts', to: '/accounts', icon: Landmark },
 ]
 </script>
 

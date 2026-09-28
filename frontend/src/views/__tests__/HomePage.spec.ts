@@ -56,6 +56,9 @@ const checking: PlaidAccount = {
   official_name: null,
   subtype: 'checking',
   type: 'depository',
+  trackable: true,
+  tracks_spending: true,
+  share_percent: 100,
 }
 
 const savings: PlaidAccount = {
@@ -66,6 +69,9 @@ const savings: PlaidAccount = {
   official_name: null,
   subtype: 'savings',
   type: 'depository',
+  trackable: true,
+  tracks_spending: true,
+  share_percent: 100,
 }
 
 const coffee: PlaidTransaction = {
@@ -80,6 +86,7 @@ const coffee: PlaidTransaction = {
   pending: false,
   category: 'FOOD_AND_DRINK',
   bucket: 'GUILT_FREE',
+  share_percent: 100,
 }
 
 const spending: SpendingByBucket = {
@@ -162,6 +169,7 @@ const rent: RecurringStream = {
   is_inflow: false,
   category: 'RENT_AND_UTILITIES',
   category_detailed: 'RENT_AND_UTILITIES_RENT',
+  share_percent: 100,
 }
 
 let linkOptions: Parameters<Window['Plaid']['create']>[0]
@@ -282,31 +290,52 @@ describe('homepage balances', () => {
     expect(getLinkedItemIds).toHaveBeenCalledTimes(2)
   })
 
-  it('offers only bank accounts to pick from', async () => {
+  it('offers all tracked accounts together and each one to pick from', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([
       checking,
       savings,
-      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth' },
+      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth', trackable: false, tracks_spending: false },
     ])
     const wrapper = mountHome()
     await flushPromises()
 
     const options = wrapper.findAll('.account-select option').map((option) => option.text())
-    expect(options).toHaveLength(2)
-    expect(options.some((option) => option.includes('Roth IRA'))).toBe(false)
+    expect(options).toEqual(['All tracked accounts', 'Checking ••1234', 'Savings ••5678'])
   })
 
-  it('says so when no bank account is connected', async () => {
+  it('says so when no account is tracked, and links to choosing them', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([
-      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth' },
+      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth', trackable: false, tracks_spending: false },
     ])
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('No checking or savings account connected yet.')
+    expect(wrapper.text()).toContain('You’re not tracking spending from any account yet.')
+    expect(wrapper.get('.account-notice a').attributes('href')).toBe('/accounts')
     expect(wrapper.findAll('button').some((element) => element.text() === 'Try again')).toBe(false)
+  })
+
+  it('counts a shared account at the user\'s share and takes card balances away', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([
+      checking,
+      { ...savings, account_id: 'joint', name: 'Joint', share_percent: 50 },
+      {
+        ...checking,
+        account_id: 'card',
+        name: 'Card',
+        type: 'credit',
+        subtype: 'credit card',
+        balances: { ...checking.balances, current: 250.5 },
+      },
+    ])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    // 1,250.50 + half of 8,400 - 250.50
+    expect(wrapper.get('.balance-amount').text()).toBe('$5,200.00')
   })
 
   it('replaces onboarding with the balance after Link succeeds', async () => {
@@ -442,7 +471,7 @@ describe('homepage recent transactions', () => {
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(getTransactions).toHaveBeenCalledWith(25, 'checking')
+    expect(getTransactions).toHaveBeenCalledWith(25, undefined)
     expect(wrapper.get('.transaction-name').text()).toBe('Coffee Shop')
     expect(wrapper.get('.transaction-amount').text()).toBe('-$4.75')
     expect(wrapper.get('.transaction-meta').text()).toContain('Sep 17')
@@ -477,7 +506,7 @@ describe('homepage recent transactions', () => {
     await button(wrapper, 'View all').trigger('click')
     await flushPromises()
 
-    expect(getTransactionPage).toHaveBeenCalledWith(0, 50, 'checking')
+    expect(getTransactionPage).toHaveBeenCalledWith(0, 50, undefined)
   })
 
   it('offers no full view until there are transactions', async () => {
@@ -547,6 +576,46 @@ describe('homepage spending breakdown', () => {
     // Opening a category leaves its siblings closed.
     const rent = fixedCosts.findAll('.spending-categories > li')[0]!
     expect(rent.get('button').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('shows the user\'s part of a transaction from a shared account', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getSpendingByBucket).mockResolvedValue({
+      ...spending,
+      total: 1000,
+      buckets: [
+        {
+          bucket: 'FIXED_COSTS',
+          amount: 1000,
+          categories: [
+            {
+              category: 'RENT_AND_UTILITIES',
+              amount: 1000,
+              transactions: [
+                {
+                  ...coffee,
+                  transaction_id: 'rent',
+                  account_id: 'joint',
+                  amount: 2000,
+                  merchant_name: 'Landlord',
+                  date: '2026-09-01',
+                  share_percent: 50,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const wrapper = mountHome()
+    await flushPromises()
+
+    const rent = wrapper.get('.spending-categories > li')
+    await rent.get('button').trigger('click')
+
+    expect(rent.findAll('.spending-transaction-row').map((row) => row.text())).toEqual([
+      'LandlordSep 1 · Your 50%$1,000.00',
+    ])
   })
 
   it('labels categories Plaid adds later without a hardcoded name', async () => {
@@ -715,17 +784,17 @@ describe('homepage account selector', () => {
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
   })
 
-  it('switches the balance and reloads activity for the selected account', async () => {
+  it('starts on all tracked accounts and switches to one and back', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([checking, savings])
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
-    expect(wrapper.get('[aria-label="Account"]').text()).toContain('Checking ••1234')
-    expect(getTransactions).toHaveBeenLastCalledWith(25, 'checking')
-    expect(getSpendingByBucket).toHaveBeenLastCalledWith('checking')
-    expect(getRecurringTransactions).toHaveBeenLastCalledWith('checking', 20)
+    expect(wrapper.get('.balance-amount').text()).toBe('$9,650.50')
+    expect(wrapper.get('[aria-label="Account"]').element).toHaveProperty('value', '')
+    expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined)
+    expect(getRecurringTransactions).toHaveBeenLastCalledWith(undefined, 20)
 
     await wrapper.get('[aria-label="Account"]').setValue('savings')
     await flushPromises()
@@ -734,6 +803,12 @@ describe('homepage account selector', () => {
     expect(getTransactions).toHaveBeenLastCalledWith(25, 'savings')
     expect(getSpendingByBucket).toHaveBeenLastCalledWith('savings')
     expect(getRecurringTransactions).toHaveBeenLastCalledWith('savings', 20)
+
+    await wrapper.get('[aria-label="Account"]').setValue('')
+    await flushPromises()
+
+    expect(wrapper.get('.balance-amount').text()).toBe('$9,650.50')
+    expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
   })
 
   it('restores the last selected account on reload', async () => {
@@ -786,7 +861,7 @@ describe('homepage recurring transactions', () => {
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(getRecurringTransactions).toHaveBeenCalledWith('checking', 20)
+    expect(getRecurringTransactions).toHaveBeenCalledWith(undefined, 20)
     expect(wrapper.get('#recurring-heading').text()).toBe('Recurring')
     expect(wrapper.get('.recurring-card .transaction-name').text()).toBe('Landlord')
     expect(wrapper.get('.recurring-card .transaction-meta').text()).toBe('Monthly · Next Oct 1')

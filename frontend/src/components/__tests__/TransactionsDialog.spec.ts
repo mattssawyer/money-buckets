@@ -19,6 +19,7 @@ const coffee: PlaidTransaction = {
   pending: true,
   category: 'FOOD_AND_DRINK',
   bucket: 'GUILT_FREE',
+  share_percent: 100,
 }
 
 function mountDialog(props: { visible: boolean; accountId?: string; accountLabel?: string }) {

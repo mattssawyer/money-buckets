@@ -2,19 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SpendingPlanSetup from '../SpendingPlanSetup.vue'
-import {
-  getAccounts,
-  getRecurringTransactions,
-  type PlaidAccount,
-  type RecurringStream,
-} from '../../api/PlaidService'
+import { getRecurringTransactions, type RecurringStream } from '../../api/PlaidService'
 
 import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
 import { defaultPlan } from '../../spendingPlan/plan'
 import type { SavedPlan } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../api/PlaidService', () => ({
-  getAccounts: vi.fn(),
   getRecurringTransactions: vi.fn(),
 }))
 
@@ -23,26 +17,6 @@ vi.mock('../../api/SpendingPlanService', () => ({
 }))
 
 enableAutoUnmount(afterEach)
-
-const checking: PlaidAccount = {
-  account_id: 'checking',
-  balances: { current: 1250.5, available: 1200, iso_currency_code: null, limit: null },
-  mask: '1234',
-  name: 'Checking',
-  official_name: null,
-  subtype: 'checking',
-  type: 'depository',
-}
-
-const savings: PlaidAccount = {
-  account_id: 'savings',
-  balances: { current: 8400, available: 8400, iso_currency_code: null, limit: null },
-  mask: '5678',
-  name: 'Savings',
-  official_name: null,
-  subtype: 'savings',
-  type: 'depository',
-}
 
 const paycheck: RecurringStream = {
   stream_id: 'pay',
@@ -57,6 +31,7 @@ const paycheck: RecurringStream = {
   is_inflow: true,
   category: 'INCOME',
   category_detailed: 'INCOME_WAGES',
+  share_percent: 100,
 }
 
 const rent: RecurringStream = {
@@ -72,6 +47,7 @@ const rent: RecurringStream = {
   is_inflow: false,
   category: 'RENT_AND_UTILITIES',
   category_detailed: 'RENT_AND_UTILITIES_RENT',
+  share_percent: 100,
 }
 
 function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}) {
@@ -79,6 +55,7 @@ function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}
     props,
     global: {
       plugins: [[PrimeVue, { unstyled: true }]],
+      stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
     },
     attachTo: document.body,
   })
@@ -88,7 +65,6 @@ beforeEach(() => {
   vi.resetAllMocks()
   localStorage.clear()
   document.body.innerHTML = ''
-  vi.mocked(getAccounts).mockResolvedValue([checking, savings])
   vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
@@ -122,16 +98,17 @@ const savedPlan: SavedPlan = {
 }
 
 describe('spending plan setup', () => {
-  it('estimates from the selected account instead of every linked item', async () => {
+  it('estimates from every tracked account and links to choosing them', async () => {
     const wrapper = mountSetup()
     await flushPromises()
 
-    expect(getRecurringTransactions).toHaveBeenCalledWith('checking', 50)
-    expect(wrapper.get('[aria-label="Account"]').element).toHaveProperty('value', 'checking')
+    expect(getRecurringTransactions).toHaveBeenCalledWith(undefined, 50)
+    expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
-    expect(wrapper.text()).toContain(
-      'Amounts found in this account’s recurring transactions are filled in for you.',
+    expect(wrapper.get('.autofill-note').text()).toBe(
+      'Amounts found in your tracked accounts’ recurring transactions are filled in for you. Choose accounts',
     )
+    expect(wrapper.get('.autofill-note a').attributes('href')).toBe('/accounts')
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
     expect(wrapper.get('[aria-label="Utilities amount"]').element).toHaveProperty('value', '')
     expect(wrapper.find('[aria-label="Landlord name"]').exists()).toBe(false)
@@ -139,30 +116,15 @@ describe('spending plan setup', () => {
     expect(wrapper.text()).toContain('32%')
   })
 
-  it('reloads estimates when you pick another account', async () => {
-    vi.mocked(getRecurringTransactions).mockImplementation(async (accountId) => {
-      if (accountId === 'savings') {
-        return [
-          {
-            ...paycheck,
-            stream_id: 'savings-pay',
-            account_id: 'savings',
-            amount: -1800,
-            frequency: 'MONTHLY',
-          },
-        ]
-      }
-      return [paycheck, rent]
-    })
+  it('counts a shared account\'s rent at the user\'s share', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      paycheck,
+      { ...rent, account_id: 'joint', amount: 2400, share_percent: 50 },
+    ])
     const wrapper = mountSetup()
     await flushPromises()
 
-    await wrapper.get('[aria-label="Account"]').setValue('savings')
-    await flushPromises()
-
-    expect(getRecurringTransactions).toHaveBeenLastCalledWith('savings', 50)
-    expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '1800')
-    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1200')
   })
 
   it('lets you edit, add, and remove fixed cost rows', async () => {
@@ -405,7 +367,7 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$4,000100%')
   })
 
-  it('saves the whole plan with the account it was set up from', async () => {
+  it('saves the whole plan without tying it to one account', async () => {
     const wrapper = mountSetup()
     await flushPromises()
 
@@ -414,7 +376,7 @@ describe('spending plan setup', () => {
     await flushPromises()
 
     const request = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
-    expect(request?.account_id).toBe('checking')
+    expect(request?.account_id).toBeNull()
     expect(request?.take_home).toBe(5200)
     expect(request?.fixed_cost_buffer_percent).toBe(15)
     expect(request?.lines.find((line) => line.name === 'Rent/mortgage')?.items).toEqual([
@@ -427,7 +389,7 @@ describe('spending plan setup', () => {
     })
 
     const saved = wrapper.emitted('saved')?.[0]?.[0] as SavedPlan
-    expect(saved.accountId).toBe('checking')
+    expect(saved.accountId).toBeNull()
     expect(saved.updatedAt).toBe('2026-09-22T19:30:00Z')
   })
 
@@ -482,11 +444,10 @@ describe('spending plan setup', () => {
     expect(wrapper.text()).toContain('Saving replaces your current plan.')
   })
 
-  it('edits a saved plan without the account picker or recurring estimates', async () => {
+  it('edits a saved plan without recurring estimates', async () => {
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()
 
-    expect(getAccounts).not.toHaveBeenCalled()
     expect(getRecurringTransactions).not.toHaveBeenCalled()
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('filled in for you')
@@ -503,19 +464,11 @@ describe('spending plan setup', () => {
     await flushPromises()
 
     const request = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
-    expect(request?.account_id).toBe('checking')
+    expect(request?.account_id).toBeNull()
     expect(request?.lines.find((line) => line.name === 'Rent/mortgage')?.amount).toBe(1550)
     expect(request?.lines.find((line) => line.name === 'Subscriptions')?.items).toEqual([
       { name: 'Netflix', amount: 15.49, stream_id: 'netflix' },
     ])
   })
 
-  it('uses the account already selected on the dashboard', async () => {
-    localStorage.setItem('abacus.selectedAccountId', 'savings')
-    const wrapper = mountSetup()
-    await flushPromises()
-
-    expect(wrapper.get('[aria-label="Account"]').element).toHaveProperty('value', 'savings')
-    expect(getRecurringTransactions).toHaveBeenCalledWith('savings', 50)
-  })
 })

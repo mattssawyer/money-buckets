@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ChevronRight, CircleMinus, Info, Plus } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
 import { getRecurringTransactions } from '../api/PlaidService'
-import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
 import { saveSpendingPlan } from '../api/SpendingPlanService'
 import { estimateMonthlyTakeHome, planFromRecurring } from '../spendingPlan/fromRecurring'
 import { formatPlanAmount, parseAmount } from '../spendingPlan/money'
@@ -23,7 +23,7 @@ import {
 import { fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
 
 const props = defineProps<{
-  /** Edit this saved plan. Without it, the dialog runs a new setup from an account's bills. */
+  /** Edit this saved plan. Without it, the dialog runs a new setup from the tracked accounts' bills. */
   saved?: SavedPlan
   /** A new setup will replace an existing saved plan. */
   replacing?: boolean
@@ -79,13 +79,6 @@ const BUCKETS: Bucket[] = [
   },
 ]
 
-const {
-  accounts,
-  selectedAccountId,
-  loading: loadingAccounts,
-  load: loadAccounts,
-  select: selectAccount,
-} = useSelectedAccount()
 const editing = props.saved != null
 const loadingEstimates = ref(!editing)
 const takeHome = ref<number | null>(null)
@@ -105,9 +98,7 @@ if (props.saved) {
 }
 
 onMounted(async () => {
-  // Editing keeps the account the plan was set up from; changing it means a new setup.
   if (editing) return
-  await loadAccounts()
   await loadEstimates()
 })
 
@@ -115,9 +106,9 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    const accountId = props.saved ? props.saved.accountId : (selectedAccountId.value ?? null)
+    // The plan follows whichever accounts are tracked, so it isn't tied to one.
     const saved = await saveSpendingPlan(
-      toSaveRequest(accountId, takeHome.value, bufferPercent.value ?? 0, plan.value),
+      toSaveRequest(null, takeHome.value, bufferPercent.value ?? 0, plan.value),
     )
     emit('saved', fromSaved(saved))
   } catch {
@@ -127,24 +118,11 @@ async function save() {
   }
 }
 
-function onAccountChange(event: Event) {
-  const target = event.target
-  if (!(target instanceof HTMLSelectElement)) return
-  if (!selectAccount(target.value)) return
-  void loadEstimates()
-}
-
+/** Fills in amounts from the recurring transactions in every tracked account. */
 async function loadEstimates() {
   loadingEstimates.value = true
-  if (!selectedAccountId.value) {
-    takeHome.value = null
-    setPlan(defaultPlan())
-    loadingEstimates.value = false
-    return
-  }
-
   try {
-    const streams = await getRecurringTransactions(selectedAccountId.value, 50)
+    const streams = await getRecurringTransactions(undefined, 50)
     const estimated = estimateMonthlyTakeHome(streams)
     takeHome.value = estimated
     setPlan(planFromRecurring(streams))
@@ -272,22 +250,10 @@ function amountValue(amount: number | null) {
   <div class="plan-setup">
     <form class="plan-form" aria-label="Spending plan" @submit.prevent>
       <div v-if="!editing" class="plan-toolbar">
-        <Skeleton v-if="loadingAccounts" width="11rem" height="2rem" />
-        <select
-          v-else-if="accounts.length"
-          class="account-select"
-          aria-label="Account"
-          :value="selectedAccountId"
-          :disabled="loadingEstimates"
-          @change="onAccountChange($event)"
-        >
-          <option v-for="account in accounts" :key="account.account_id" :value="account.account_id">
-            {{ accountLabel(account) }}
-          </option>
-        </select>
-        <p v-if="!loadingAccounts && accounts.length" class="autofill-note">
+        <p class="autofill-note">
           <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-          Amounts found in this account’s recurring transactions are filled in for you.
+          Amounts found in your tracked accounts’ recurring transactions are filled in for you.
+          <RouterLink to="/accounts">Choose accounts</RouterLink>
         </p>
       </div>
 
@@ -605,6 +571,7 @@ function amountValue(amount: number | null) {
 
 .autofill-note {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
   margin: 0;
@@ -616,21 +583,8 @@ function amountValue(amount: number | null) {
   flex: none;
 }
 
-.account-select {
-  min-width: 11rem;
-  max-width: 16rem;
-  appearance: none;
-  padding: 0.375rem 1.75rem 0.375rem 0.625rem;
+.autofill-note a {
   color: var(--app-text);
-  background-color: var(--app-surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-position: right 0.4rem center;
-  background-repeat: no-repeat;
-  border: 1px solid var(--app-control-border);
-  border-radius: var(--app-radius-chip);
-  box-shadow: var(--app-shadow-xs);
-  font: inherit;
-  font-size: 0.8125rem;
   font-weight: 500;
 }
 
@@ -1053,11 +1007,6 @@ h2 {
   .plan-toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .account-select {
-    width: 100%;
-    max-width: none;
   }
 
   .block-heading {
