@@ -13,7 +13,7 @@ const items = [
 
 <template>
   <nav class="rail" aria-label="Main navigation">
-    <RouterLink to="/" class="rail-brand" aria-label="Abacus home">
+    <RouterLink to="/" class="rail-brand" aria-label="Money Buckets home">
       <img :src="logoUrl" alt="" width="36" height="36" />
     </RouterLink>
 

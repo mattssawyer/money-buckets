@@ -9,9 +9,9 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
 <template>
   <main class="sign-in-page" aria-labelledby="sign-in-title">
     <div class="sign-in-layout">
-      <div class="sign-in-brand" aria-label="Abacus">
+      <div class="sign-in-brand" aria-label="Money Buckets">
         <img :src="logoUrl" alt="" class="sign-in-logo" width="36" height="36" />
-        <span>Abacus</span>
+        <span>Money Buckets</span>
       </div>
 
       <section class="panel sign-in-card">
@@ -21,7 +21,7 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
           <SignInButton>
             <Button label="Sign in" size="large" fluid :disabled="!isLoaded" :loading="!isLoaded" />
           </SignInButton>
-          <p class="sign-in-secondary">New to Abacus?</p>
+          <p class="sign-in-secondary">New to Money Buckets?</p>
           <SignUpButton>
             <Button
               label="Create an account"

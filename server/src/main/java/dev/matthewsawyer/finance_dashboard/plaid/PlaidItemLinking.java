@@ -72,7 +72,7 @@ public class PlaidItemLinking {
     private static LinkTokenCreateRequest linkTokenRequest(UUID userId) {
         return new LinkTokenCreateRequest()
                 .user(new LinkTokenCreateRequestUser().clientUserId(userId.toString()))
-                .clientName("Abacus")
+                .clientName("Money Buckets")
                 .countryCodes(List.of(CountryCode.US))
                 .language("en");
     }

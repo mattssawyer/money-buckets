@@ -1,6 +1,6 @@
-# Abacus (frontend)
+# Money Buckets (frontend)
 
-The Abacus frontend uses Vue 3, TypeScript, Vite, Tailwind CSS, and PrimeVue 5.
+The Money Buckets frontend uses Vue 3, TypeScript, Vite, Tailwind CSS, and PrimeVue 5.
 Clerk handles authentication.
 
 ## UI components
