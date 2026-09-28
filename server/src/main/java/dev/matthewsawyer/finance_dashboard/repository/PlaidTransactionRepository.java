@@ -21,12 +21,12 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
     @Query("""
             SELECT t FROM PlaidTransaction t
             WHERE t.userId = :userId
-              AND (:accountId IS NULL OR t.accountId = :accountId)
+              AND t.accountId IN :accountIds
             ORDER BY t.transactionDate DESC, t.transactionId ASC
             """)
     Page<PlaidTransaction> findRecent(
             @Param("userId") UUID userId,
-            @Param("accountId") String accountId,
+            @Param("accountIds") Collection<String> accountIds,
             Pageable pageable);
 
     void deleteAllByItemId(String itemId);
@@ -42,7 +42,7 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             SELECT t FROM PlaidTransaction t
             WHERE t.userId = :userId
               AND t.transactionDate BETWEEN :start AND :end
-              AND (:accountId IS NULL OR t.accountId = :accountId)
+              AND t.accountId IN :accountIds
               AND (t.bucket IS NULL
                    OR t.bucket <> dev.matthewsawyer.finance_dashboard.model.Bucket.NOT_COUNTED)
               AND (t.personalFinanceCategoryPrimary IS NULL
@@ -55,8 +55,23 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             @Param("userId") UUID userId,
             @Param("start") LocalDate start,
             @Param("end") LocalDate end,
-            @Param("accountId") String accountId,
+            @Param("accountIds") Collection<String> accountIds,
             @Param("excludedCategories") Collection<String> excludedCategories);
+
+    /** Money that arrived in the given accounts from a transfer, oldest first. */
+    @Query("""
+            SELECT t FROM PlaidTransaction t
+            WHERE t.userId = :userId
+              AND t.accountId IN :accountIds
+              AND t.transactionDate BETWEEN :start AND :end
+              AND t.personalFinanceCategoryPrimary = 'TRANSFER_IN'
+            ORDER BY t.transactionDate ASC, t.transactionId ASC
+            """)
+    List<PlaidTransaction> findTransfersIn(
+            @Param("userId") UUID userId,
+            @Param("accountIds") Collection<String> accountIds,
+            @Param("start") LocalDate start,
+            @Param("end") LocalDate end);
 
     /**
      * The user's transactions that need a bucket, newest first so this month's are sorted

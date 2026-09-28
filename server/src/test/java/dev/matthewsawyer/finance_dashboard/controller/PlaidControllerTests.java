@@ -12,6 +12,8 @@ import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
+import dev.matthewsawyer.finance_dashboard.spending.Spending;
+import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
@@ -44,8 +47,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -78,12 +81,15 @@ class PlaidControllerTests {
 
     @BeforeEach
     void setUp() {
+        TrackedAccounts trackedAccounts = new TrackedAccounts(accountRepository);
         controller = new PlaidController(
                 itemLinking,
                 plaidItemRepository,
                 accountRepository,
                 transactionRepository,
                 recurringStreamRepository,
+                trackedAccounts,
+                new Spending(transactionRepository, trackedAccounts),
                 userService
         );
         jwt = Jwt.withTokenValue("token")
@@ -246,7 +252,8 @@ class PlaidControllerTests {
         ReflectionTestUtils.setField(stored, "bucket", Bucket.GUILT_FREE);
 
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findRecent(USER_ID, null, Pageable.ofSize(5)))
+        track(account("account-1", 100));
+        when(transactionRepository.findRecent(USER_ID, Set.of("account-1"), Pageable.ofSize(5)))
                 .thenReturn(new PageImpl<>(List.of(stored), Pageable.ofSize(5), 1));
 
         PlaidController.TransactionsResponse response = controller.getTransactions(jwt, 5, 0, null);
@@ -269,7 +276,8 @@ class PlaidControllerTests {
         PageRequest secondPage = PageRequest.of(1, 50);
 
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findRecent(USER_ID, null, secondPage))
+        track(account("account-1", 100));
+        when(transactionRepository.findRecent(USER_ID, Set.of("account-1"), secondPage))
                 .thenReturn(new PageImpl<>(List.of(stored), secondPage, 51));
 
         PlaidController.TransactionsResponse response = controller.getTransactions(jwt, 50, 1, null);
@@ -282,7 +290,8 @@ class PlaidControllerTests {
     @Test
     void totalsSpendingByBucketForTheCurrentMonth() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), isNull(), anyCollection()))
+        track(account("checking", 100));
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of(
                         spent("coffee", "12.50", "FOOD_AND_DRINK", Bucket.GUILT_FREE),
                         spent("groceries", "82.50", "FOOD_AND_DRINK", Bucket.FIXED_COSTS),
@@ -309,7 +318,8 @@ class PlaidControllerTests {
     @Test
     void listsEachCategorysTransactionsNewestFirst() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), isNull(), anyCollection()))
+        track(account("checking", 100));
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of(
                         spent("coffee-2", "5.00", "FOOD_AND_DRINK", Bucket.GUILT_FREE),
                         spent("coffee-1", "7.50", "FOOD_AND_DRINK", Bucket.GUILT_FREE)));
@@ -326,7 +336,8 @@ class PlaidControllerTests {
     @Test
     void listsTransactionsNotSortedYetLast() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), isNull(), anyCollection()))
+        track(account("checking", 100));
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of(
                         spent("flight", "400.00", "TRAVEL", null),
                         spent("brokerage", "500.00", "TRANSFER_OUT", Bucket.INVESTMENTS)));
@@ -341,7 +352,8 @@ class PlaidControllerTests {
     @Test
     void leavesPayAndCardPaymentsOutOfTheSpendingQuery() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), isNull(), anyCollection()))
+        track(account("checking", 100));
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of());
 
         controller.getSpendingByBucket(jwt, null);
@@ -349,7 +361,7 @@ class PlaidControllerTests {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<String>> excludedCaptor = ArgumentCaptor.forClass(Collection.class);
         verify(transactionRepository).findSpending(
-                eq(USER_ID), any(), any(), isNull(), excludedCaptor.capture());
+                eq(USER_ID), any(), any(), eq(Set.of("checking")), excludedCaptor.capture());
 
         assertEquals(
                 Set.of("INCOME", "TRANSFER_IN", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
@@ -359,7 +371,8 @@ class PlaidControllerTests {
     @Test
     void dropsCategoriesRefundedBackToZero() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), isNull(), anyCollection()))
+        track(account("checking", 100));
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of(
                         spent("jacket", "25.00", "GENERAL_MERCHANDISE", Bucket.GUILT_FREE),
                         spent("jacket-refund", "-25.00", "GENERAL_MERCHANDISE", Bucket.GUILT_FREE),
@@ -406,18 +419,21 @@ class PlaidControllerTests {
     @Test
     void filtersRecentTransactionsToTheRequestedAccount() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(transactionRepository.findRecent(USER_ID, "account-1", Pageable.ofSize(5)))
+        when(accountRepository.findByAccountIdAndUserId("account-1", USER_ID))
+                .thenReturn(Optional.of(account("account-1", 100)));
+        when(transactionRepository.findRecent(USER_ID, Set.of("account-1"), Pageable.ofSize(5)))
                 .thenReturn(Page.empty());
 
         controller.getTransactions(jwt, 5, 0, "account-1");
 
-        verify(transactionRepository).findRecent(USER_ID, "account-1", Pageable.ofSize(5));
+        verify(transactionRepository).findRecent(USER_ID, Set.of("account-1"), Pageable.ofSize(5));
     }
 
     @Test
     void returnsStoredRecurringStreamsSoonestFirst() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(recurringStreamRepository.findAllByUserId(USER_ID)).thenReturn(List.of(
+        track(account("checking", 100));
+        when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(List.of(
                 storedStream("rent", "checking", "Landlord", new BigDecimal("1450.0"), "MONTHLY",
                         LocalDate.of(2026, 10, 1), false),
                 storedStream("later", "checking", "Netflix", new BigDecimal("15.49"), "MONTHLY",
@@ -441,20 +457,22 @@ class PlaidControllerTests {
     @Test
     void filtersStoredRecurringStreamsToTheRequestedAccount() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(recurringStreamRepository.findAllByUserIdAndAccountId(USER_ID, "account-1"))
+        when(accountRepository.findByAccountIdAndUserId("account-1", USER_ID))
+                .thenReturn(Optional.of(account("account-1", 100)));
+        when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("account-1")))
                 .thenReturn(List.of());
 
         controller.getRecurringTransactions(jwt, "account-1", null);
 
-        verify(recurringStreamRepository).findAllByUserIdAndAccountId(USER_ID, "account-1");
+        verify(recurringStreamRepository).findAllByUserIdAndAccountIdIn(USER_ID, Set.of("account-1"));
     }
 
     @Test
-    void returnsNoRecurringStreamsWhenNothingIsLinked() {
+    void returnsNoRecurringStreamsWhenNoAccountIsTracked() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(recurringStreamRepository.findAllByUserId(USER_ID)).thenReturn(List.of());
 
         assertEquals(Map.of("streams", List.of()), controller.getRecurringTransactions(jwt, null, null));
+        verifyNoInteractions(recurringStreamRepository);
     }
 
     @Test
@@ -471,7 +489,8 @@ class PlaidControllerTests {
                     false));
         }
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(recurringStreamRepository.findAllByUserId(USER_ID)).thenReturn(stored);
+        track(account("checking", 100));
+        when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(stored);
 
         assertEquals(8, controller.getRecurringTransactions(jwt, null, null).get("streams").size());
         assertEquals(12, controller.getRecurringTransactions(jwt, null, 50).get("streams").size());
@@ -501,14 +520,159 @@ class PlaidControllerTests {
     @Test
     void filtersSpendingToTheRequestedAccount() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(accountRepository.findByAccountIdAndUserId("account-1", USER_ID))
+                .thenReturn(Optional.of(account("account-1", 100)));
         when(transactionRepository.findSpending(
-                eq(USER_ID), any(), any(), eq("account-1"), anyCollection()))
+                eq(USER_ID), any(), any(), eq(Set.of("account-1")), anyCollection()))
                 .thenReturn(List.of());
 
         controller.getSpendingByBucket(jwt, "account-1");
 
         verify(transactionRepository).findSpending(
-                eq(USER_ID), any(), any(), eq("account-1"), anyCollection());
+                eq(USER_ID), any(), any(), eq(Set.of("account-1")), anyCollection());
+    }
+
+    @Test
+    void countsASharedAccountsSpendingAtTheUsersShare() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100), account("joint", 50));
+        when(transactionRepository.findSpending(
+                eq(USER_ID), any(), any(), eq(Set.of("checking", "joint")), anyCollection()))
+                .thenReturn(List.of(
+                        spent("rent", "joint", "2000.00", "RENT_AND_UTILITIES", Bucket.FIXED_COSTS),
+                        spent("coffee", "checking", "5.00", "FOOD_AND_DRINK", Bucket.GUILT_FREE)));
+
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+
+        assertEquals(new BigDecimal("1005.00"), result.total());
+        PlaidController.CategorySpend rent = result.buckets().get(0).categories().get(0);
+        assertEquals(new BigDecimal("1000.00"), rent.amount());
+        // The transaction itself keeps its whole amount, with the share alongside.
+        assertEquals(new BigDecimal("2000.00"), rent.transactions().get(0).amount());
+        assertEquals(50, rent.transactions().get(0).sharePercent());
+    }
+
+    @Test
+    void leavesOutMoneyMovedIntoASharedAccount() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100), account("joint", 50));
+        LocalDate today = LocalDate.now();
+        when(transactionRepository.findSpending(
+                eq(USER_ID), any(), any(), eq(Set.of("checking", "joint")), anyCollection()))
+                .thenReturn(List.of(
+                        spent("to-joint", "checking", "600.00", "TRANSFER_OUT", Bucket.GUILT_FREE),
+                        spent("groceries", "joint", "80.00", "FOOD_AND_DRINK", Bucket.FIXED_COSTS)));
+        when(transactionRepository.findTransfersIn(
+                eq(USER_ID), eq(Set.of("checking", "joint")), any(), any()))
+                .thenReturn(List.of(arrival("from-checking", "joint", "-600.00", today.plusDays(1))));
+
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+
+        assertEquals(new BigDecimal("40.00"), result.total());
+        assertEquals(List.of("FIXED_COSTS"),
+                result.buckets().stream().map(PlaidController.BucketSpend::bucket).toList());
+    }
+
+    @Test
+    void countsATransferThatDidNotArriveInASharedAccount() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100), account("joint", 50));
+        LocalDate today = LocalDate.now();
+        when(transactionRepository.findSpending(
+                eq(USER_ID), any(), any(), eq(Set.of("checking", "joint")), anyCollection()))
+                .thenReturn(List.of(
+                        spent("to-friend", "checking", "600.00", "TRANSFER_OUT", Bucket.GUILT_FREE)));
+        // A different amount, and the right amount but too many days later.
+        when(transactionRepository.findTransfersIn(
+                eq(USER_ID), eq(Set.of("checking", "joint")), any(), any()))
+                .thenReturn(List.of(
+                        arrival("roommate", "joint", "-650.00", today),
+                        arrival("later", "joint", "-600.00", today.plusDays(4))));
+
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+
+        assertEquals(new BigDecimal("600.00"), result.total());
+    }
+
+    @Test
+    void keepsMoneyMovedIntoSavingsWhenNoAccountIsShared() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100), account("savings", 100));
+        when(transactionRepository.findSpending(
+                eq(USER_ID), any(), any(), eq(Set.of("checking", "savings")), anyCollection()))
+                .thenReturn(List.of(
+                        spent("to-savings", "checking", "300.00", "TRANSFER_OUT", Bucket.SAVINGS)));
+
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+
+        assertEquals(new BigDecimal("300.00"), result.total());
+        verify(transactionRepository, never()).findTransfersIn(any(), any(), any(), any());
+    }
+
+    @Test
+    void marksAnAccountAsShared() {
+        PlaidAccount joint = account("joint", 100);
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(accountRepository.findByAccountIdAndUserId("joint", USER_ID)).thenReturn(Optional.of(joint));
+        when(accountRepository.save(joint)).thenReturn(joint);
+
+        PlaidController.AccountResponse result = controller.updateAccountTracking(
+                jwt, "joint", new PlaidController.AccountTrackingRequest(true, 50));
+
+        assertTrue(result.tracksSpending());
+        assertEquals(50, result.sharePercent());
+    }
+
+    @Test
+    void rejectsAShareOutsideOneToAHundredPercent() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(accountRepository.findByAccountIdAndUserId("joint", USER_ID))
+                .thenReturn(Optional.of(account("joint", 100)));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.updateAccountTracking(
+                        jwt, "joint", new PlaidController.AccountTrackingRequest(true, 0)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verify(accountRepository, never()).save(any());
+    }
+
+    @Test
+    void updatingAnotherUsersAccountIsNotFound() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(accountRepository.findByAccountIdAndUserId("other", USER_ID)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.updateAccountTracking(
+                        jwt, "other", new PlaidController.AccountTrackingRequest(true, 50)));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    private void track(PlaidAccount... accounts) {
+        when(accountRepository.findAllByUserIdAndTracksSpendingIsTrue(USER_ID)).thenReturn(List.of(accounts));
+    }
+
+    /** A tracked checking account with the given id and the user's share of it. */
+    private static PlaidAccount account(String accountId, int sharePercent) {
+        PlaidAccount account = new PlaidAccount(accountId, "item-id", USER_ID);
+        account.updateSnapshot(accountId, null, null, "depository", "checking", null, null, null, "USD", null);
+        account.updateTracking(true, sharePercent);
+        return account;
+    }
+
+    private static PlaidTransaction spent(
+            String id, String accountId, String amount, String category, Bucket bucket) {
+        PlaidTransaction transaction = new PlaidTransaction(
+                id, "item-id", USER_ID, accountId, new BigDecimal(amount), LocalDate.now())
+                .personalFinanceCategory(category, null);
+        ReflectionTestUtils.setField(transaction, "bucket", bucket);
+        return transaction;
+    }
+
+    private static PlaidTransaction arrival(String id, String accountId, String amount, LocalDate day) {
+        return new PlaidTransaction(id, "item-id", USER_ID, accountId, new BigDecimal(amount), day)
+                .personalFinanceCategory("TRANSFER_IN", null);
     }
 
     private static PlaidAccount checkingAccount() {

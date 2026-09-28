@@ -8,12 +8,13 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
-import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
+import dev.matthewsawyer.finance_dashboard.spending.Spending;
+import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -64,6 +66,8 @@ public class PlaidController {
     private final PlaidAccountRepository accountRepository;
     private final PlaidTransactionRepository transactionRepository;
     private final PlaidRecurringStreamRepository recurringStreamRepository;
+    private final TrackedAccounts trackedAccounts;
+    private final Spending spending;
     private final UserService userService;
 
     public PlaidController(
@@ -72,6 +76,8 @@ public class PlaidController {
             PlaidAccountRepository accountRepository,
             PlaidTransactionRepository transactionRepository,
             PlaidRecurringStreamRepository recurringStreamRepository,
+            TrackedAccounts trackedAccounts,
+            Spending spending,
             UserService userService
     ) {
         this.itemLinking = itemLinking;
@@ -79,6 +85,8 @@ public class PlaidController {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.recurringStreamRepository = recurringStreamRepository;
+        this.trackedAccounts = trackedAccounts;
+        this.spending = spending;
         this.userService = userService;
     }
 
@@ -202,11 +210,18 @@ public class PlaidController {
         }
 
         User user = userService.getOrCreateUser(jwt);
+        Map<String, Integer> shares = trackedAccounts.shares(user.getId(), blankToNull(accountId));
+        if (shares.isEmpty()) {
+            return new TransactionsResponse(List.of(), 0);
+        }
         Page<PlaidTransaction> found = transactionRepository
-                .findRecent(user.getId(), blankToNull(accountId), PageRequest.of(page, limit));
+                .findRecent(user.getId(), shares.keySet(), PageRequest.of(page, limit));
 
         return new TransactionsResponse(
-                found.stream().map(TransactionResponse::from).toList(),
+                found.stream()
+                        .map(transaction -> TransactionResponse.from(
+                                transaction, shares.get(transaction.getAccountId())))
+                        .toList(),
                 found.getTotalElements());
     }
 
@@ -226,13 +241,13 @@ public class PlaidController {
     ) {
         User user = userService.getOrCreateUser(jwt);
 
-        String accountFilter = blankToNull(accountId);
-        List<PlaidRecurringStream> stored = accountFilter == null
-                ? recurringStreamRepository.findAllByUserId(user.getId())
-                : recurringStreamRepository.findAllByUserIdAndAccountId(user.getId(), accountFilter);
+        Map<String, Integer> shares = trackedAccounts.shares(user.getId(), blankToNull(accountId));
+        List<PlaidRecurringStream> stored = shares.isEmpty()
+                ? List.of()
+                : recurringStreamRepository.findAllByUserIdAndAccountIdIn(user.getId(), shares.keySet());
 
         List<RecurringStreamResponse> streams = stored.stream()
-                .map(RecurringStreamResponse::from)
+                .map(stream -> RecurringStreamResponse.from(stream, shares.get(stream.getAccountId())))
                 .sorted(Comparator
                         .comparing(RecurringStreamResponse::nextDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(RecurringStreamResponse::lastDate, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -258,9 +273,11 @@ public class PlaidController {
             @JsonProperty("last_date") LocalDate lastDate,
             @JsonProperty("is_inflow") boolean isInflow,
             @JsonProperty("category") String category,
-            @JsonProperty("category_detailed") String categoryDetailed
+            @JsonProperty("category_detailed") String categoryDetailed,
+            /** The user's share of the account's money, in percent; the amount is the whole stream's. */
+            @JsonProperty("share_percent") int sharePercent
     ) {
-        static RecurringStreamResponse from(PlaidRecurringStream stream) {
+        static RecurringStreamResponse from(PlaidRecurringStream stream, int sharePercent) {
             return new RecurringStreamResponse(
                     stream.getStreamId(),
                     stream.getAccountId(),
@@ -273,7 +290,8 @@ public class PlaidController {
                     stream.getLastDate(),
                     stream.isInflow(),
                     stream.getCategory(),
-                    stream.getCategoryDetailed()
+                    stream.getCategoryDetailed(),
+                    sharePercent
             );
         }
     }
@@ -297,9 +315,11 @@ public class PlaidController {
             @JsonProperty("pending") boolean pending,
             @JsonProperty("category") String category,
             /** Null until sorting reaches the transaction. */
-            @JsonProperty("bucket") Bucket bucket
+            @JsonProperty("bucket") Bucket bucket,
+            /** The user's share of the account's money, in percent; the amount is the whole transaction's. */
+            @JsonProperty("share_percent") int sharePercent
     ) {
-        static TransactionResponse from(PlaidTransaction transaction) {
+        static TransactionResponse from(PlaidTransaction transaction, int sharePercent) {
             return new TransactionResponse(
                     transaction.getTransactionId(),
                     transaction.getAccountId(),
@@ -311,7 +331,8 @@ public class PlaidController {
                     transaction.getLogoUrl(),
                     transaction.isPending(),
                     transaction.getPersonalFinanceCategoryPrimary(),
-                    transaction.getBucket()
+                    transaction.getBucket(),
+                    sharePercent
             );
         }
     }
@@ -326,9 +347,9 @@ public class PlaidController {
         LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
 
         // Newest first from the query, and kept in that order within each category.
-        Map<String, Map<String, List<PlaidTransaction>>> byBucketAndCategory = new HashMap<>();
-        for (PlaidTransaction transaction : transactionRepository.findSpending(
-                user.getId(), start, end, blankToNull(accountId), BucketSorting.NOT_PLAN_MONEY)) {
+        Map<String, Map<String, List<Spending.Spent>>> byBucketAndCategory = new HashMap<>();
+        for (Spending.Spent spent : spending.between(user.getId(), start, end, blankToNull(accountId))) {
+            PlaidTransaction transaction = spent.transaction();
             String bucket = transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
             // Plaid always assigns a category, but the column is nullable.
             String category = Objects.requireNonNullElse(
@@ -336,7 +357,7 @@ public class PlaidController {
             byBucketAndCategory
                     .computeIfAbsent(bucket, key -> new HashMap<>())
                     .computeIfAbsent(category, key -> new ArrayList<>())
-                    .add(transaction);
+                    .add(spent);
         }
 
         List<BucketSpend> buckets = BUCKET_ORDER.stream()
@@ -365,7 +386,7 @@ public class PlaidController {
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("categories") List<CategorySpend> categories
     ) {
-        static BucketSpend of(String bucket, Map<String, List<PlaidTransaction>> transactionsByCategory) {
+        static BucketSpend of(String bucket, Map<String, List<Spending.Spent>> transactionsByCategory) {
             List<CategorySpend> largestFirst = transactionsByCategory.entrySet().stream()
                     .map(entry -> CategorySpend.of(entry.getKey(), entry.getValue()))
                     // Refunds can net a category to zero or below, which a pie chart cannot show.
@@ -380,17 +401,19 @@ public class PlaidController {
     }
 
     /** A category's total and the transactions that make it up, newest first. */
+    /** {@code amount} is the user's share of the category's transactions. */
     public record CategorySpend(
             @JsonProperty("category") String category,
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("transactions") List<TransactionResponse> transactions
     ) {
-        static CategorySpend of(String category, List<PlaidTransaction> transactions) {
-            BigDecimal amount = transactions.stream()
-                    .map(PlaidTransaction::getAmount)
+        static CategorySpend of(String category, List<Spending.Spent> spent) {
+            BigDecimal amount = spent.stream()
+                    .map(Spending.Spent::amount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            return new CategorySpend(
-                    category, amount, transactions.stream().map(TransactionResponse::from).toList());
+            return new CategorySpend(category, amount, spent.stream()
+                    .map(each -> TransactionResponse.from(each.transaction(), each.sharePercent()))
+                    .toList());
         }
     }
 
@@ -414,7 +437,11 @@ public class PlaidController {
             @JsonProperty("name") String name,
             @JsonProperty("official_name") String officialName,
             @JsonProperty("subtype") String subtype,
-            @JsonProperty("type") String type
+            @JsonProperty("type") String type,
+            /** Whether spending can be tracked from the account: a bank account or credit card. */
+            @JsonProperty("trackable") boolean trackable,
+            @JsonProperty("tracks_spending") boolean tracksSpending,
+            @JsonProperty("share_percent") int sharePercent
     ) {
         static AccountResponse from(PlaidAccount account) {
             return new AccountResponse(
@@ -430,9 +457,36 @@ public class PlaidController {
                     account.getName(),
                     account.getOfficialName(),
                     account.getSubtype(),
-                    account.getType()
+                    account.getType(),
+                    account.isTrackable(),
+                    account.tracksSpending(),
+                    account.getSharePercent()
             );
         }
+    }
+
+    /** Sets whether spending is counted from an account, and the user's share of it. */
+    @PutMapping("/accounts/{accountId}/tracking")
+    public AccountResponse updateAccountTracking(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String accountId,
+            @RequestBody AccountTrackingRequest request
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+        try {
+            return AccountResponse.from(trackedAccounts.update(
+                    user.getId(), accountId, request.tracksSpending(), request.sharePercent()));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    public record AccountTrackingRequest(
+            @JsonProperty("tracks_spending") boolean tracksSpending,
+            @JsonProperty("share_percent") int sharePercent
+    ) {
     }
 
     public record BalanceResponse(

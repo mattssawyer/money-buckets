@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,7 +42,7 @@ class PlaidTransactionRepositoryTests {
         store("card-payment", "900", "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", null);
 
         Set<String> found = transactions
-                .findSpending(userId, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), null,
+                .findSpending(userId, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), Set.of("checking"),
                         BucketSorting.NOT_PLAN_MONEY)
                 .stream()
                 .map(PlaidTransaction::getTransactionId)
@@ -50,8 +51,43 @@ class PlaidTransactionRepositoryTests {
         assertEquals(Set.of("rent", "coffee", "no-category"), found);
     }
 
+    @Test
+    void findsSpendingOnlyFromTheAccountsAsked() {
+        store("coffee", "6", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE", null);
+        store("groceries", "joint", "80", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", null);
+        store("broker-fee", "brokerage", "5", "BANK_FEES", "BANK_FEES_OTHER_BANK_FEES", null);
+
+        Set<String> found = transactions
+                .findSpending(userId, DAY.withDayOfMonth(1), DAY.withDayOfMonth(30), Set.of("checking", "joint"),
+                        BucketSorting.NOT_PLAN_MONEY)
+                .stream()
+                .map(PlaidTransaction::getTransactionId)
+                .collect(Collectors.toSet());
+
+        assertEquals(Set.of("coffee", "groceries"), found);
+    }
+
+    @Test
+    void findsMoneyTransferredIntoTheAccountsAsked() {
+        store("from-checking", "joint", "-600", "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", null);
+        store("into-brokerage", "brokerage", "-600", "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", null);
+        store("pay", "-4000", "INCOME", "INCOME_SALARY", null);
+
+        List<String> found = transactions
+                .findTransfersIn(userId, Set.of("checking", "joint"), DAY.minusDays(3), DAY.plusDays(3))
+                .stream()
+                .map(PlaidTransaction::getTransactionId)
+                .toList();
+
+        assertEquals(List.of("from-checking"), found);
+    }
+
     private void store(String id, String amount, String primary, String detailed, Bucket bucket) {
-        transactions.saveAndFlush(new PlaidTransaction(id, "item", userId, "checking", new BigDecimal(amount), DAY)
+        store(id, "checking", amount, primary, detailed, bucket);
+    }
+
+    private void store(String id, String accountId, String amount, String primary, String detailed, Bucket bucket) {
+        transactions.saveAndFlush(new PlaidTransaction(id, "item", userId, accountId, new BigDecimal(amount), DAY)
                 .personalFinanceCategory(primary, detailed));
         entityManager.clear();
         if (bucket != null) {

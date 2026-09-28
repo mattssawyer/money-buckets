@@ -10,11 +10,18 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
 @Table(name = "accounts")
 public class PlaidAccount {
+
+    /** Plaid depository subtypes that hold everyday money, unlike CDs, HSAs or prepaid cards. */
+    private static final Set<String> BANK_ACCOUNT_SUBTYPES =
+            Set.of("checking", "savings", "money market", "cash management");
+    /** Tracked from the start; money moved into savings is saved rather than spent. */
+    private static final Set<String> TRACKED_BY_DEFAULT = Set.of("checking", "cash management", "credit card");
 
     @Id
     @Column(name = "account_id", nullable = false, updatable = false)
@@ -59,6 +66,13 @@ public class PlaidAccount {
     @Column(name = "dropped_on")
     private LocalDate droppedOn;
 
+    @Column(name = "tracks_spending", nullable = false)
+    private boolean tracksSpending;
+
+    /** How much of this account's spending is the user's; below 100 for a shared account. */
+    @Column(name = "share_percent", nullable = false)
+    private int sharePercent = 100;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -99,6 +113,44 @@ public class PlaidAccount {
         this.limitAmount = limitAmount;
         this.isoCurrencyCode = isoCurrencyCode;
         this.unofficialCurrencyCode = unofficialCurrencyCode;
+    }
+
+    /** Whether spending can be tracked from this account: a bank account or a credit card. */
+    public boolean isTrackable() {
+        if (subtype == null) {
+            return false;
+        }
+        return ("depository".equals(type) && BANK_ACCOUNT_SUBTYPES.contains(subtype))
+                || ("credit".equals(type) && "credit card".equals(subtype));
+    }
+
+    /** Sets up tracking for a newly linked account from its type; call after its first snapshot. */
+    public void trackByDefault() {
+        tracksSpending = isTrackable() && TRACKED_BY_DEFAULT.contains(subtype);
+    }
+
+    /**
+     * The user's choice of whether to count this account's spending, and their share of it.
+     *
+     * @throws IllegalArgumentException when the account can't be tracked or the share isn't 1–100
+     */
+    public void updateTracking(boolean tracksSpending, int sharePercent) {
+        if (tracksSpending && !isTrackable()) {
+            throw new IllegalArgumentException("Spending can't be tracked from a " + type + " account");
+        }
+        if (sharePercent < 1 || sharePercent > 100) {
+            throw new IllegalArgumentException("Share must be between 1 and 100 percent");
+        }
+        this.tracksSpending = tracksSpending;
+        this.sharePercent = sharePercent;
+    }
+
+    public boolean tracksSpending() {
+        return tracksSpending;
+    }
+
+    public int getSharePercent() {
+        return sharePercent;
     }
 
     /** Plaid stopped returning this account on {@code day}; an earlier drop date is kept. */

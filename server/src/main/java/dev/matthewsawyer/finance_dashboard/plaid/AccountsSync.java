@@ -93,10 +93,14 @@ class AccountsSync {
 
             for (AccountBase plaidAccount : plaidAccounts) {
                 PlaidAccount account = stored.remove(plaidAccount.getAccountId());
-                if (account == null) {
+                boolean isNew = account == null;
+                if (isNew) {
                     account = new PlaidAccount(plaidAccount.getAccountId(), item.getItemId(), item.getUserId());
                 }
                 update(account, plaidAccount);
+                if (isNew) {
+                    account.trackByDefault();
+                }
                 if (account.isDropped()) {
                     // Keep the finished drop, so history still leaves the account out for it.
                     dropRepository.save(new AccountDrop(
