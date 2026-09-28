@@ -1,6 +1,6 @@
 # Money Buckets
 
-A personal finance dashboard for connecting bank accounts and viewing account balances in one place.
+A personal finance dashboard for automating your spending planning. 
 
 Money Buckets is in early development. The current integration uses Plaid Sandbox.
 
