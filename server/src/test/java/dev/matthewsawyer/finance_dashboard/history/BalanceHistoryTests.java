@@ -83,6 +83,35 @@ class BalanceHistoryTests {
     }
 
     @Test
+    void netWorthLeavesOutAccountsTheUserExcludedButKeepsTheirSeries() {
+        account("checking", "depository", "5000");
+        account("employer-401k", "investment", "20000");
+        history.record(ITEM, MON);
+        choose("employer-401k", false, 100);
+
+        History result = history.forUser(userId, null, MON);
+
+        assertEquals(List.of(point(MON, "5000")), rendered(result.netWorth()));
+        assertTrue(result.leftOutOfNetWorth().isEmpty());
+        assertEquals(List.of("employer-401k"),
+                result.investmentAccounts().stream().map(AccountSeries::accountId).toList());
+    }
+
+    @Test
+    void netWorthCountsASharedAccountAtTheUsersShare() {
+        account("checking", "depository", "5000");
+        account("joint", "depository", "3000");
+        account("joint-card", "credit", "400");
+        history.record(ITEM, MON);
+        choose("joint", true, 50);
+        choose("joint-card", true, 50);
+
+        History result = history.forUser(userId, null, MON);
+
+        assertEquals(List.of(point(MON, "6300")), rendered(result.netWorth()));
+    }
+
+    @Test
     void onlyInvestmentAccountsGetTheirOwnSeries() {
         account("checking", "depository", "5000");
         account("ira", "investment", "20000");
@@ -205,6 +234,12 @@ class BalanceHistoryTests {
         account.updateSnapshot(id, null, null, type, null, null,
                 currentBalance == null ? null : new BigDecimal(currentBalance),
                 null, currency, null);
+        accounts.saveAndFlush(account);
+    }
+
+    private void choose(String id, boolean countsInNetWorth, int sharePercent) {
+        PlaidAccount account = accounts.findById(id).orElseThrow();
+        account.updateTracking(false, countsInNetWorth, sharePercent);
         accounts.saveAndFlush(account);
     }
 

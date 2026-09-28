@@ -2,6 +2,7 @@
 import { UserButton } from '@clerk/vue'
 import { ArrowRight, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Skeleton from 'primevue/skeleton'
@@ -56,7 +57,10 @@ function onSaved(plan: SavedPlan) {
     <main class="spending-plan-page" aria-labelledby="spending-plan-heading">
       <header class="page-heading">
         <h1 id="spending-plan-heading">Spending Plan</h1>
-        <UserButton />
+        <div class="page-actions">
+          <RouterLink to="/accounts" class="accounts-link">Tracked accounts</RouterLink>
+          <UserButton />
+        </div>
       </header>
 
       <div v-if="loading" class="plan-loading" aria-label="Loading your spending plan">
@@ -144,6 +148,22 @@ function onSaved(plan: SavedPlan) {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.accounts-link {
+  color: var(--app-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.accounts-link:hover {
+  color: var(--app-text);
 }
 
 h1 {

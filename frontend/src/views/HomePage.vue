@@ -31,6 +31,7 @@ import {
   formatTransactionAmount,
   recurringLabel,
   transactionLabel,
+  yourAmount,
 } from '../api/plaidLabels'
 import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
 import { spendingByCategory } from '../spending/byCategory'
@@ -81,6 +82,7 @@ const {
   accounts,
   selectedAccountId,
   selectedAccount,
+  balance,
   loading: loadingAccounts,
   failed: accountsFailed,
   load: loadAccountList,
@@ -101,8 +103,9 @@ const greeting = computed(() => {
   return firstName ? `Good ${timeOfDay}, ${firstName}` : `Good ${timeOfDay}`
 })
 const selectedAccountLabel = computed(() => {
-  const account = selectedAccount.value
-  return account ? accountLabel(account) : ''
+  const account = selectedAccount.value ?? (hasMultipleAccounts.value ? undefined : accounts.value[0])
+  if (account) return accountLabel(account)
+  return accounts.value.length ? 'All tracked accounts' : ''
 })
 const spendingTotal = computed(() => spending.value?.total ?? 0)
 const spendingMonth = computed(() =>
@@ -187,6 +190,12 @@ function toggle(row: { key: string }) {
   if (!toggledRows.value.delete(row.key)) toggledRows.value.add(row.key)
 }
 
+/** A spending row's date, noting the user's share when the transaction is from a shared account. */
+function spendingDate(transaction: PlaidTransaction) {
+  const date = formatTransactionDate(transaction.date)
+  return transaction.share_percent < 100 ? `${date} · Your ${transaction.share_percent}%` : date
+}
+
 function formatBalance(amount: number | null) {
   if (amount === null) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
@@ -259,7 +268,7 @@ async function loadAccounts() {
 function onAccountChange(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
-  if (!selectAccount(target.value)) return
+  if (!selectAccount(target.value || undefined)) return
   void Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
 }
 
@@ -491,10 +500,11 @@ async function openPlaidLink() {
                   v-if="hasMultipleAccounts"
                   class="account-select"
                   aria-label="Account"
-                  :value="selectedAccountId"
+                  :value="selectedAccountId ?? ''"
                   :disabled="loadingAccounts"
                   @change="onAccountChange($event)"
                 >
+                  <option value="">All tracked accounts</option>
                   <option
                     v-for="account in accounts"
                     :key="account.account_id"
@@ -512,11 +522,9 @@ async function openPlaidLink() {
                   class="balance-amount"
                   aria-live="polite"
                   aria-atomic="true"
-                  :aria-label="
-                    selectedAccount?.balances.current == null ? 'Balance unavailable' : undefined
-                  "
+                  :aria-label="balance == null ? 'Balance unavailable' : undefined"
                 >
-                  {{ formatBalance(selectedAccount?.balances.current ?? null) }}
+                  {{ formatBalance(balance) }}
                 </p>
                 <p v-if="!hasMultipleAccounts && selectedAccountLabel" class="balance-account">
                   {{ selectedAccountLabel }}
@@ -529,7 +537,11 @@ async function openPlaidLink() {
               class="account-notice"
             >
               <Message :severity="balanceError ? 'error' : 'secondary'">
-                {{ balanceError || 'No checking or savings account connected yet.' }}
+                <template v-if="balanceError">{{ balanceError }}</template>
+                <template v-else>
+                  You’re not tracking spending from any account yet.
+                  <RouterLink to="/accounts">Choose accounts</RouterLink>
+                </template>
               </Message>
               <Button
                 v-if="balanceError"
@@ -606,6 +618,9 @@ async function openPlaidLink() {
                     <span class="transaction-meta">
                       {{ formatTransactionDate(transaction.date) }}
                       <template v-if="transaction.pending"> · Pending</template>
+                      <template v-if="transaction.share_percent < 100">
+                        · Shared, yours {{ transaction.share_percent }}%
+                      </template>
                     </span>
                   </span>
                   <span
@@ -808,10 +823,10 @@ async function openPlaidLink() {
                                 {{ transactionLabel(transaction) }}
                               </span>
                               <span class="spending-transaction-date">
-                                {{ formatTransactionDate(transaction.date) }}
+                                {{ spendingDate(transaction) }}
                               </span>
                               <span class="spending-legend-amount">
-                                {{ formatBalance(transaction.amount) }}
+                                {{ formatBalance(yourAmount(transaction)) }}
                               </span>
                             </li>
                           </ul>
@@ -832,10 +847,10 @@ async function openPlaidLink() {
                           {{ transactionLabel(transaction) }}
                         </span>
                         <span class="spending-transaction-date">
-                          {{ formatTransactionDate(transaction.date) }}
+                          {{ spendingDate(transaction) }}
                         </span>
                         <span class="spending-legend-amount">
-                          {{ formatBalance(transaction.amount) }}
+                          {{ formatBalance(yourAmount(transaction)) }}
                         </span>
                       </li>
                     </ul>

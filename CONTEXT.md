@@ -19,7 +19,7 @@ An account Plaid has stopped returning for its Plaid item, such as a closed acco
 _Avoid_: Closed account, deleted account
 
 **Selected account**:
-The bank account the user is currently viewing, remembered across pages and visits. Home and a new spending plan setup both start from it, and only bank accounts can be selected, because both are about spending.
+What Home is showing, remembered across pages and visits: all tracked accounts together (the default) or one tracked account. Balance, spending, recent transactions and recurring streams all follow it. The spending plan doesn't; it always draws on every tracked account.
 _Avoid_: Current account, active account
 
 **Bank account**:
@@ -31,7 +31,7 @@ A bank account or credit card the user counts spending from. Checking, cash mana
 _Avoid_: Spending account, included account
 
 **Shared account**:
-A tracked account the user splits with someone else, such as a joint account for rent and household bills. Only the user's share of its spending counts. A transfer between it and another tracked account isn't spending; that money counts when it's spent from the shared account.
+An account the user splits with someone else, such as a joint account for rent and household bills. Only the user's share of it counts, in spending and in net worth. A transfer between it and another tracked account isn't spending; that money counts when it's spent from the shared account.
 _Avoid_: Joint account (in code), split account
 
 **Investment account**:
@@ -43,7 +43,7 @@ A position within an investment account: how much of one security it holds and w
 _Avoid_: Position, investment
 
 **Net worth**:
-Everything the user owns across all linked accounts minus everything they owe (credit cards and loans), not just their investments.
+Everything the user owns across their linked accounts minus everything they owe (credit cards and loans), not just their investments. Every account counts unless the user leaves it out on the Accounts page, and a shared account counts at the user's share.
 _Avoid_: Portfolio value, total balance
 
 **Recurring stream**:

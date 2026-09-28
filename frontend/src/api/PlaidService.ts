@@ -14,6 +14,20 @@ export interface PlaidAccount {
   official_name: string | null
   subtype: string | null
   type: string
+  /** Whether spending can be tracked from the account: a bank account or credit card. */
+  trackable: boolean
+  tracks_spending: boolean
+  counts_in_net_worth: boolean
+  /** The user's share of the account's money, 1–100; below 100 for a shared account. */
+  share_percent: number
+}
+
+/** What the user chooses about an account on the Accounts page. */
+export interface AccountTracking {
+  tracks_spending: boolean
+  counts_in_net_worth: boolean
+  /** 1–100; applies to both spending and net worth. */
+  share_percent: number
 }
 
 export interface PlaidTransaction {
@@ -30,6 +44,8 @@ export interface PlaidTransaction {
   category: string | null
   /** Null until sorting reaches it. NOT_COUNTED is money moved between own accounts. */
   bucket: Exclude<Bucket, 'UNSORTED'> | 'NOT_COUNTED' | null
+  /** The user's share of the account's money, 1–100; amount is the whole transaction's. */
+  share_percent: number
 }
 
 export interface TransactionPage {
@@ -52,6 +68,8 @@ export interface RecurringStream {
   category: string | null
   /** Plaid detailed personal finance category, e.g. RENT_AND_UTILITIES_TELEPHONE. */
   category_detailed: string | null
+  /** The user's share of the account's money, 1–100; amount is the whole stream's. */
+  share_percent: number
 }
 
 export interface CategorySpend {
@@ -178,6 +196,18 @@ export async function getTransactionPage(
   const { data } = await apiClient.get<TransactionPage>('/plaid/transactions', {
     params: { page, limit: pageSize, ...(accountId ? { account_id: accountId } : {}) },
   })
+  return data
+}
+
+/** Sets whether an account counts toward spending and net worth, and the user's share of it. */
+export async function updateAccountTracking(
+  accountId: string,
+  tracking: AccountTracking,
+): Promise<PlaidAccount> {
+  const { data } = await apiClient.put<PlaidAccount>(
+    `/plaid/accounts/${encodeURIComponent(accountId)}/tracking`,
+    tracking,
+  )
   return data
 }
 

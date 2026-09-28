@@ -34,8 +34,8 @@ class PlaidAccountTests {
     void refusesToTrackAnAccountSpendingCantComeFrom() {
         PlaidAccount ira = account("investment", "ira");
 
-        assertThrows(IllegalArgumentException.class, () -> ira.updateTracking(true, 100));
-        ira.updateTracking(false, 100);
+        assertThrows(IllegalArgumentException.class, () -> ira.updateTracking(true, true, 100));
+        ira.updateTracking(false, true, 100);
         assertFalse(ira.tracksSpending());
     }
 
@@ -43,9 +43,9 @@ class PlaidAccountTests {
     void keepsTheShareBetweenOneAndAHundredPercent() {
         PlaidAccount joint = account("depository", "checking");
 
-        assertThrows(IllegalArgumentException.class, () -> joint.updateTracking(true, 0));
-        assertThrows(IllegalArgumentException.class, () -> joint.updateTracking(true, 101));
-        joint.updateTracking(true, 50);
+        assertThrows(IllegalArgumentException.class, () -> joint.updateTracking(true, true, 0));
+        assertThrows(IllegalArgumentException.class, () -> joint.updateTracking(true, true, 101));
+        joint.updateTracking(true, true, 50);
         assertEquals(50, joint.getSharePercent());
     }
 

@@ -45,16 +45,19 @@ public class TrackedAccounts {
     }
 
     /**
-     * Stores whether the user tracks an account's spending and their share of it.
+     * Stores whether the user tracks an account's spending and counts it in net worth, and their
+     * share of it. A null {@code countsInNetWorth} keeps the current choice.
      *
      * @throws NoSuchElementException when the user has no such account
      * @throws IllegalArgumentException when the account can't be tracked or the share isn't 1–100
      */
     @Transactional
-    public PlaidAccount update(UUID userId, String accountId, boolean tracksSpending, int sharePercent) {
+    public PlaidAccount update(
+            UUID userId, String accountId, boolean tracksSpending, Boolean countsInNetWorth, int sharePercent) {
         PlaidAccount account = accountRepository.findByAccountIdAndUserId(accountId, userId)
                 .orElseThrow(() -> new NoSuchElementException("No account " + accountId));
-        account.updateTracking(tracksSpending, sharePercent);
+        account.updateTracking(tracksSpending,
+                countsInNetWorth == null ? account.countsInNetWorth() : countsInNetWorth, sharePercent);
         return accountRepository.save(account);
     }
 

@@ -39,6 +39,15 @@ export function transactionLabel(transaction: PlaidTransaction) {
   return firstPresent(transaction.merchant_name, transaction.name) ?? 'Transaction'
 }
 
+/**
+ * The user's part of an amount from a shared account; the whole amount otherwise. Rounds the
+ * size and keeps the sign, so a charge and its refund still cancel out.
+ */
+export function yourAmount(entry: { amount: number; share_percent: number }): number {
+  if (entry.share_percent === 100) return entry.amount
+  return (Math.sign(entry.amount) * Math.round(Math.abs(entry.amount) * entry.share_percent)) / 100
+}
+
 // Plaid reports money leaving the account as positive, which reads backwards in a ledger.
 export function formatTransactionAmount(transaction: PlaidTransaction) {
   return new Intl.NumberFormat('en-US', {
