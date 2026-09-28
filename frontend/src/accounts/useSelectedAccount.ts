@@ -80,13 +80,14 @@ export function accountLabel(account: PlaidAccount): string {
 
 /**
  * What's the user's own across accounts: money in bank accounts, less what's owed on credit
- * cards, each at the user's share of the account. Null when none of them has a balance.
+ * cards, each at the user's share of the account. Like net worth, only US dollar balances count,
+ * since amounts in different currencies can't be added. Null when none of them has a balance.
  */
 export function yourBalance(accounts: readonly PlaidAccount[]): number | null {
   let total: number | null = null
   for (const account of accounts) {
     const current = account.balances.current
-    if (current == null) continue
+    if (current == null || account.balances.iso_currency_code !== 'USD') continue
     // Plaid reports what's owed on a card as a positive balance.
     const signed = account.type === 'credit' ? -current : current
     total = (total ?? 0) + (signed * account.share_percent) / 100

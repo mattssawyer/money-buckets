@@ -14,7 +14,8 @@ vi.mock('@clerk/vue', () => ({
 }))
 vi.mock('../../api/PlaidService', () => ({
   getAccounts: vi.fn<() => Promise<PlaidAccount[]>>(),
-  updateAccountTracking: vi.fn<(accountId: string, tracking: AccountTracking) => Promise<PlaidAccount>>(),
+  updateAccountTracking:
+    vi.fn<(accountId: string, tracking: AccountTracking) => Promise<PlaidAccount>>(),
 }))
 enableAutoUnmount(afterEach)
 
@@ -216,6 +217,72 @@ describe('accounts page', () => {
       true,
     )
     expect(wrapper.text()).toContain('We couldn’t save the change to Joint ••9876. Try again.')
+  })
+
+  it('saves one change at a time for an account and ends on the latest choice', async () => {
+    const responses: Array<(saved: PlaidAccount) => void> = []
+    vi.mocked(updateAccountTracking).mockImplementation(
+      (_accountId, tracking) =>
+        new Promise((resolve) => responses.push(() => resolve({ ...joint, ...tracking }))),
+    )
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await cell(row(wrapper, 'Joint'), 'Net worth').get('input').setValue(false)
+    await cell(row(wrapper, 'Joint'), 'Spending').get('input').setValue(false)
+    await flushPromises()
+
+    // The second change waits for the first save instead of racing it.
+    expect(updateAccountTracking).toHaveBeenCalledTimes(1)
+    expect(cell(row(wrapper, 'Joint'), 'Spending').get('input').element).toHaveProperty(
+      'checked',
+      false,
+    )
+
+    responses[0]!(joint)
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenCalledTimes(2)
+    expect(updateAccountTracking).toHaveBeenLastCalledWith('Joint', {
+      tracks_spending: false,
+      counts_in_net_worth: false,
+      share_percent: 100,
+    })
+    // The first response came back before the second change was sent, and didn't undo it.
+    expect(cell(row(wrapper, 'Joint'), 'Spending').get('input').element).toHaveProperty(
+      'checked',
+      false,
+    )
+
+    responses[1]!(joint)
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenCalledTimes(2)
+    expect(cell(row(wrapper, 'Joint'), 'Spending').get('input').element).toHaveProperty(
+      'checked',
+      false,
+    )
+    expect(cell(row(wrapper, 'Joint'), 'Net worth').get('input').element).toHaveProperty(
+      'checked',
+      false,
+    )
+  })
+
+  it("keeps an account's error while another account saves", async () => {
+    vi.mocked(updateAccountTracking).mockImplementation(async (accountId, tracking) => {
+      if (accountId === 'Joint') throw new Error('Server unavailable')
+      return { ...checking, ...tracking }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await cell(row(wrapper, 'Joint'), 'Net worth').get('input').setValue(false)
+    await flushPromises()
+    await cell(row(wrapper, 'Checking'), 'Net worth').get('input').setValue(false)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('We couldn’t save the change to Joint ••9876. Try again.')
+    expect(wrapper.text()).not.toContain('save the change to Checking')
   })
 
   it('points to Home when nothing is connected', async () => {

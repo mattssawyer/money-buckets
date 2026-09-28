@@ -55,7 +55,12 @@ describe('useSelectedAccount', () => {
 
   it('offers only the accounts spending is tracked from', async () => {
     vi.mocked(getAccounts).mockResolvedValue([
-      account('ira', { type: 'investment', subtype: 'ira', trackable: false, tracks_spending: false }),
+      account('ira', {
+        type: 'investment',
+        subtype: 'ira',
+        trackable: false,
+        tracks_spending: false,
+      }),
       account('card', { type: 'credit', subtype: 'credit card' }),
       checking,
       savings,
@@ -190,6 +195,17 @@ describe('yourBalance', () => {
         account('card', { type: 'credit', subtype: 'credit card' }, 300.25),
       ]),
     ).toBe(1950.25)
+  })
+
+  it("leaves out balances in other currencies, which can't be added to dollars", () => {
+    expect(
+      yourBalance([
+        account('checking', {}, 1000),
+        account('euro-savings', {
+          balances: { available: null, current: 5000, iso_currency_code: 'EUR', limit: null },
+        }),
+      ]),
+    ).toBe(1000)
   })
 
   it('skips accounts without a balance, and is null when none has one', () => {

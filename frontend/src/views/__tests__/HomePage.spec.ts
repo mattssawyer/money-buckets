@@ -50,7 +50,7 @@ enableAutoUnmount(afterEach)
 
 const checking: PlaidAccount = {
   account_id: 'checking',
-  balances: { current: 1250.5, available: 1200, iso_currency_code: null, limit: null },
+  balances: { current: 1250.5, available: 1200, iso_currency_code: 'USD', limit: null },
   mask: '1234',
   name: 'Checking',
   official_name: null,
@@ -64,7 +64,7 @@ const checking: PlaidAccount = {
 
 const savings: PlaidAccount = {
   account_id: 'savings',
-  balances: { current: 8400, available: 8400, iso_currency_code: null, limit: null },
+  balances: { current: 8400, available: 8400, iso_currency_code: 'USD', limit: null },
   mask: '5678',
   name: 'Savings',
   official_name: null,
@@ -297,7 +297,15 @@ describe('homepage balances', () => {
     vi.mocked(getAccounts).mockResolvedValue([
       checking,
       savings,
-      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth', trackable: false, tracks_spending: false },
+      {
+        ...checking,
+        account_id: 'ira',
+        name: 'Roth IRA',
+        type: 'investment',
+        subtype: 'roth',
+        trackable: false,
+        tracks_spending: false,
+      },
     ])
     const wrapper = mountHome()
     await flushPromises()
@@ -309,7 +317,15 @@ describe('homepage balances', () => {
   it('says so when no account is tracked, and links to choosing them', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([
-      { ...checking, account_id: 'ira', name: 'Roth IRA', type: 'investment', subtype: 'roth', trackable: false, tracks_spending: false },
+      {
+        ...checking,
+        account_id: 'ira',
+        name: 'Roth IRA',
+        type: 'investment',
+        subtype: 'roth',
+        trackable: false,
+        tracks_spending: false,
+      },
     ])
     const wrapper = mountHome()
     await flushPromises()
@@ -319,7 +335,7 @@ describe('homepage balances', () => {
     expect(wrapper.findAll('button').some((element) => element.text() === 'Try again')).toBe(false)
   })
 
-  it('counts a shared account at the user\'s share and takes card balances away', async () => {
+  it("counts a shared account at the user's share and takes card balances away", async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([
       checking,
@@ -580,7 +596,7 @@ describe('homepage spending breakdown', () => {
     expect(rent.get('button').attributes('aria-expanded')).toBe('false')
   })
 
-  it('shows the user\'s part of a transaction from a shared account', async () => {
+  it("shows the user's part of a transaction from a shared account", async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getSpendingByBucket).mockResolvedValue({
       ...spending,

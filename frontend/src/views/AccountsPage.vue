@@ -49,8 +49,10 @@ const accounts = ref<PlaidAccount[]>([])
 const loading = ref(true)
 const loadError = ref(false)
 const saving = ref(new Set<string>())
-/** The account whose last change couldn't be saved. */
-const failedAccountId = ref<string>()
+/** Accounts whose last change couldn't be saved; each clears once that account saves. */
+const failedAccountIds = ref(new Set<string>())
+/** What the server last confirmed for each account, to go back to when a save fails. */
+const confirmed = new Map<string, AccountTracking>()
 
 const groups = computed<AccountGroup[]>(() => {
   const listed = GROUPS.map((group) => ({
@@ -66,8 +68,8 @@ const groups = computed<AccountGroup[]>(() => {
   })
   return listed.filter((group) => group.accounts.length)
 })
-const failedAccount = computed(() =>
-  accounts.value.find((account) => account.account_id === failedAccountId.value),
+const failedAccounts = computed(() =>
+  accounts.value.filter((account) => failedAccountIds.value.has(account.account_id)),
 )
 
 onMounted(load)
@@ -102,19 +104,51 @@ function tracking(account: PlaidAccount): AccountTracking {
   }
 }
 
-/** Saves right away, showing the change first and putting it back if the save fails. */
+function current(accountId: string): PlaidAccount | undefined {
+  return accounts.value.find((account) => account.account_id === accountId)
+}
+
+function sameTracking(a: AccountTracking, b: AccountTracking) {
+  return (
+    a.tracks_spending === b.tracks_spending &&
+    a.counts_in_net_worth === b.counts_in_net_worth &&
+    a.share_percent === b.share_percent
+  )
+}
+
+/**
+ * Shows the change right away and saves it. An account's saves go one at a time, so a slow
+ * earlier response can't overwrite a newer choice: a change made while one is saving is sent
+ * when it returns. If a save fails, the account goes back to what was last saved.
+ */
 async function save(account: PlaidAccount, changes: Partial<AccountTracking>) {
   const accountId = account.account_id
-  const before = tracking(account)
-  const after = { ...before, ...changes }
-  replace(accountId, after)
+  const shown = current(accountId)
+  if (!shown) return
+  if (!confirmed.has(accountId)) confirmed.set(accountId, tracking(shown))
+  replace(accountId, changes)
+  if (saving.value.has(accountId)) return
+
   saving.value.add(accountId)
-  failedAccountId.value = undefined
   try {
-    replace(accountId, await updateAccountTracking(accountId, after))
-  } catch {
-    replace(accountId, before)
-    failedAccountId.value = accountId
+    for (;;) {
+      const wanted = tracking(current(accountId)!)
+      let saved: PlaidAccount
+      try {
+        saved = await updateAccountTracking(accountId, wanted)
+      } catch {
+        replace(accountId, confirmed.get(accountId)!)
+        failedAccountIds.value.add(accountId)
+        return
+      }
+      confirmed.set(accountId, tracking(saved))
+      failedAccountIds.value.delete(accountId)
+      if (sameTracking(tracking(current(accountId)!), wanted)) {
+        replace(accountId, saved)
+        return
+      }
+      // The user changed it again while this was saving; send that too.
+    }
   } finally {
     saving.value.delete(accountId)
   }
@@ -126,7 +160,11 @@ function replace(accountId: string, changes: Partial<PlaidAccount>) {
   )
 }
 
-function onSwitch(account: PlaidAccount, key: 'tracks_spending' | 'counts_in_net_worth', event: Event) {
+function onSwitch(
+  account: PlaidAccount,
+  key: 'tracks_spending' | 'counts_in_net_worth',
+  event: Event,
+) {
   if (!(event.target instanceof HTMLInputElement)) return
   void save(account, { [key]: event.target.checked })
 }
@@ -188,12 +226,17 @@ function onShareChange(account: PlaidAccount, event: Event) {
 
         <template v-else>
           <p class="page-intro">
-            Choose which accounts count toward your spending and your net worth. For an account
-            you split with someone, set your share, and only your part counts.
+            Choose which accounts count toward your spending and your net worth. For an account you
+            split with someone, set your share, and only your part counts.
           </p>
 
-          <Message v-if="failedAccount" severity="error" class="save-error">
-            We couldn’t save the change to {{ accountLabel(failedAccount) }}. Try again.
+          <Message
+            v-for="failed in failedAccounts"
+            :key="failed.account_id"
+            severity="error"
+            class="save-error"
+          >
+            We couldn’t save the change to {{ accountLabel(failed) }}. Try again.
           </Message>
 
           <section
@@ -204,7 +247,9 @@ function onShareChange(account: PlaidAccount, event: Event) {
           >
             <table class="account-table">
               <caption :id="`account-group-${group.id}`" class="card-label">
-                {{ group.title }}
+                {{
+                  group.title
+                }}
               </caption>
               <thead>
                 <tr>
@@ -242,7 +287,11 @@ function onShareChange(account: PlaidAccount, event: Event) {
                       :aria-label="`Track spending from ${accountLabel(account)}`"
                       @change="onSwitch(account, 'tracks_spending', $event)"
                     />
-                    <span v-else class="not-applicable" title="Spending isn’t tracked from this kind of account">
+                    <span
+                      v-else
+                      class="not-applicable"
+                      title="Spending isn’t tracked from this kind of account"
+                    >
                       —
                     </span>
                   </td>
