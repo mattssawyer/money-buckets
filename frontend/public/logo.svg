@@ -1,12 +1,11 @@
-<svg data-dc-tpl="16" data-mark="" viewBox="0 0 64 64" width="512" height="512" xmlns="http://www.w3.org/2000/svg" data-om-id="03741f0b:20">
-        <rect data-dc-tpl="17" data-role="ground" x="0" y="0" width="64" height="64" rx="14" fill="#efe9e4" data-om-id="03741f0b:21"/>
-        <rect data-dc-tpl="18" data-role="ink" x="11" y="15.25" width="42" height="1.5" rx="0.75" fill="#2f2926" data-om-id="03741f0b:22"/>
-        <rect data-dc-tpl="19" data-role="ink" x="11" y="31.25" width="42" height="1.5" rx="0.75" fill="#2f2926" data-om-id="03741f0b:23"/>
-        <rect data-dc-tpl="20" data-role="ink" x="11" y="47.25" width="42" height="1.5" rx="0.75" fill="#2f2926" data-om-id="03741f0b:24"/>
-        <circle data-dc-tpl="21" data-role="ink" cx="18" cy="16" r="5.5" fill="#2f2926" data-om-id="03741f0b:25"/>
-        <circle data-dc-tpl="22" data-role="accent" cx="42" cy="16" r="5.5" fill="#2f2926" data-om-id="03741f0b:26"/>
-        <circle data-dc-tpl="23" data-role="ink" cx="24" cy="32" r="5.5" fill="#2f2926" data-om-id="03741f0b:27"/>
-        <circle data-dc-tpl="24" data-role="ink" cx="48" cy="32" r="5.5" fill="#2f2926" data-om-id="03741f0b:28"/>
-        <circle data-dc-tpl="25" data-role="ink" cx="18" cy="48" r="5.5" fill="#2f2926" data-om-id="03741f0b:29"/>
-        <circle data-dc-tpl="26" data-role="ink" cx="36" cy="48" r="5.5" fill="#2f2926" data-om-id="03741f0b:30"/>
-      </svg>
+<svg viewBox="0 0 64 64" width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="14" fill="#f0f0f0"/>
+  <g transform="translate(0 -1.5)">
+    <path d="M12 19 H52 L47.6 45.6 Q47.2 48 44.8 48 H19.2 Q16.8 48 16.4 45.6 Z" fill="#171717"/>
+    <g stroke="#f0f0f0" stroke-width="2.5">
+      <line x1="22" y1="18" x2="24.4" y2="49"/>
+      <line x1="32" y1="18" x2="32" y2="49"/>
+      <line x1="42" y1="18" x2="39.6" y2="49"/>
+    </g>
+  </g>
+</svg>

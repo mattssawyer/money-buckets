@@ -1,4 +1,4 @@
-# Abacus
+# Money Buckets
 
 A personal finance dashboard that pulls a user's bank data from Plaid and helps them build a Conscious Spending Plan from it.
 

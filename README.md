@@ -1,8 +1,8 @@
-# Abacus
+# Money Buckets
 
 A personal finance dashboard for connecting bank accounts and viewing account balances in one place.
 
-Abacus is in early development. The current integration uses Plaid Sandbox.
+Money Buckets is in early development. The current integration uses Plaid Sandbox.
 
 ## Features
 

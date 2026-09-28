@@ -321,7 +321,7 @@ function changeIcon(change: Change) {
             :dropped="history?.accounts_dropped"
           />
           <p v-else-if="netWorth.length === 1" class="history-note">
-            History starts today. Abacus records your balances each day from here on.
+            History starts today. Money Buckets records your balances each day from here on.
           </p>
           <p v-else class="history-note">
             Your first balances are recorded the next time your accounts sync.

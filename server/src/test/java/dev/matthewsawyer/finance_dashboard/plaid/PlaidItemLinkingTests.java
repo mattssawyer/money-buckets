@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
 class PlaidItemLinkingTests {
 
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final String WEBHOOK_URL = "https://abacus.test/api/plaid/webhook";
+    private static final String WEBHOOK_URL = "https://moneybuckets.test/api/plaid/webhook";
 
     @Mock
     private PlaidApi plaidApi;
