@@ -69,7 +69,10 @@ public class PlaidAccount {
     @Column(name = "tracks_spending", nullable = false)
     private boolean tracksSpending;
 
-    /** How much of this account's spending is the user's; below 100 for a shared account. */
+    @Column(name = "counts_in_net_worth", nullable = false)
+    private boolean countsInNetWorth = true;
+
+    /** How much of this account is the user's; below 100 for a shared account. */
     @Column(name = "share_percent", nullable = false)
     private int sharePercent = 100;
 
@@ -130,11 +133,12 @@ public class PlaidAccount {
     }
 
     /**
-     * The user's choice of whether to count this account's spending, and their share of it.
+     * The user's choices of whether to count this account's spending and its balance in net worth,
+     * and their share of it, which applies to both.
      *
      * @throws IllegalArgumentException when the account can't be tracked or the share isn't 1–100
      */
-    public void updateTracking(boolean tracksSpending, int sharePercent) {
+    public void updateTracking(boolean tracksSpending, boolean countsInNetWorth, int sharePercent) {
         if (tracksSpending && !isTrackable()) {
             throw new IllegalArgumentException("Spending can't be tracked from a " + type + " account");
         }
@@ -142,7 +146,12 @@ public class PlaidAccount {
             throw new IllegalArgumentException("Share must be between 1 and 100 percent");
         }
         this.tracksSpending = tracksSpending;
+        this.countsInNetWorth = countsInNetWorth;
         this.sharePercent = sharePercent;
+    }
+
+    public boolean countsInNetWorth() {
+        return countsInNetWorth;
     }
 
     public boolean tracksSpending() {

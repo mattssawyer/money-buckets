@@ -17,7 +17,16 @@ export interface PlaidAccount {
   /** Whether spending can be tracked from the account: a bank account or credit card. */
   trackable: boolean
   tracks_spending: boolean
+  counts_in_net_worth: boolean
   /** The user's share of the account's money, 1–100; below 100 for a shared account. */
+  share_percent: number
+}
+
+/** What the user chooses about an account on the Accounts page. */
+export interface AccountTracking {
+  tracks_spending: boolean
+  counts_in_net_worth: boolean
+  /** 1–100; applies to both spending and net worth. */
   share_percent: number
 }
 
@@ -190,15 +199,14 @@ export async function getTransactionPage(
   return data
 }
 
-/** Sets whether spending is counted from an account, and the user's share of it (1–100). */
+/** Sets whether an account counts toward spending and net worth, and the user's share of it. */
 export async function updateAccountTracking(
   accountId: string,
-  tracksSpending: boolean,
-  sharePercent: number,
+  tracking: AccountTracking,
 ): Promise<PlaidAccount> {
   const { data } = await apiClient.put<PlaidAccount>(
     `/plaid/accounts/${encodeURIComponent(accountId)}/tracking`,
-    { tracks_spending: tracksSpending, share_percent: sharePercent },
+    tracking,
   )
   return data
 }

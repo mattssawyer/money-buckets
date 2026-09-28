@@ -117,10 +117,10 @@ class AccountsSyncTests {
                 account("savings", AccountType.DEPOSITORY, 9000.0).subtype(AccountSubtype.SAVINGS));
         accountsSync.sync(item, MON);
         PlaidAccount joint = stored("joint");
-        joint.updateTracking(true, 50);
+        joint.updateTracking(true, true, 50);
         accounts.save(joint);
         PlaidAccount savings = stored("savings");
-        savings.updateTracking(true, 100);
+        savings.updateTracking(true, true, 100);
         accounts.save(savings);
 
         accountsSync.sync(item, TUE);

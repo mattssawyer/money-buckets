@@ -7,12 +7,14 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getAccounts, updateAccountTracking, type PlaidAccount } from '../api/PlaidService'
+import {
+  getAccounts,
+  updateAccountTracking,
+  type AccountTracking,
+  type PlaidAccount,
+} from '../api/PlaidService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { formatMoney } from '../investments/history'
-
-/** Marking an account as shared starts at an even split. */
-const DEFAULT_SHARED_PERCENT = 50
 
 interface AccountGroup {
   id: string
@@ -26,6 +28,19 @@ const GROUPS: Array<{ id: string; title: string; type: string }> = [
   { id: 'investment', title: 'Investments', type: 'investment' },
   { id: 'loan', title: 'Loans', type: 'loan' },
 ]
+
+/** Plaid subtypes that don't read well with just a capital letter. */
+const KIND_LABELS: Record<string, string> = {
+  cd: 'CD',
+  hsa: 'HSA',
+  ira: 'IRA',
+  roth: 'Roth IRA',
+  '401k': '401(k)',
+  '403b': '403(b)',
+  '457b': '457(b)',
+  '529': '529 plan',
+  'roth 401k': 'Roth 401(k)',
+}
 
 const accounts = ref<PlaidAccount[]>([])
 const loading = ref(true)
@@ -48,6 +63,9 @@ const groups = computed<AccountGroup[]>(() => {
   })
   return listed.filter((group) => group.accounts.length)
 })
+const failedAccount = computed(() =>
+  accounts.value.find((account) => account.account_id === failedAccountId.value),
+)
 
 onMounted(load)
 
@@ -63,33 +81,34 @@ async function load() {
   }
 }
 
-function isShared(account: PlaidAccount) {
-  return account.share_percent < 100
-}
-
 function kindLabel(account: PlaidAccount) {
   const kind = account.subtype ?? account.type
-  return kind.charAt(0).toUpperCase() + kind.slice(1)
+  return KIND_LABELS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
-// Plaid reports what's owed on a card or loan as a positive balance.
-function balanceText(account: PlaidAccount) {
-  const current = account.balances.current
-  if (current == null) return 'Balance unavailable'
-  const owed = account.type === 'credit' || account.type === 'loan'
-  return owed ? `${formatMoney(current)} owed` : formatMoney(current)
+/** Cards and loans show what's owed, which Plaid reports as a positive balance. */
+function isOwed(account: PlaidAccount) {
+  return account.type === 'credit' || account.type === 'loan'
+}
+
+function tracking(account: PlaidAccount): AccountTracking {
+  return {
+    tracks_spending: account.tracks_spending,
+    counts_in_net_worth: account.counts_in_net_worth,
+    share_percent: account.share_percent,
+  }
 }
 
 /** Saves right away, showing the change first and putting it back if the save fails. */
-async function save(account: PlaidAccount, tracksSpending: boolean, sharePercent: number) {
+async function save(account: PlaidAccount, changes: Partial<AccountTracking>) {
   const accountId = account.account_id
-  const before = { tracks_spending: account.tracks_spending, share_percent: account.share_percent }
-  replace(accountId, { tracks_spending: tracksSpending, share_percent: sharePercent })
+  const before = tracking(account)
+  const after = { ...before, ...changes }
+  replace(accountId, after)
   saving.value.add(accountId)
   failedAccountId.value = undefined
   try {
-    const updated = await updateAccountTracking(accountId, tracksSpending, sharePercent)
-    replace(accountId, updated)
+    replace(accountId, await updateAccountTracking(accountId, after))
   } catch {
     replace(accountId, before)
     failedAccountId.value = accountId
@@ -104,26 +123,20 @@ function replace(accountId: string, changes: Partial<PlaidAccount>) {
   )
 }
 
-function onTrackChange(account: PlaidAccount, event: Event) {
+function onSwitch(account: PlaidAccount, key: 'tracks_spending' | 'counts_in_net_worth', event: Event) {
   if (!(event.target instanceof HTMLInputElement)) return
-  // The share is kept, so tracking the account again brings it back.
-  void save(account, event.target.checked, account.share_percent)
-}
-
-function onSharedChange(account: PlaidAccount, event: Event) {
-  if (!(event.target instanceof HTMLInputElement)) return
-  void save(account, true, event.target.checked ? DEFAULT_SHARED_PERCENT : 100)
+  void save(account, { [key]: event.target.checked })
 }
 
 function onShareChange(account: PlaidAccount, event: Event) {
   const input = event.target
   if (!(input instanceof HTMLInputElement)) return
   const share = Number(input.value)
-  if (!Number.isInteger(share) || share < 1 || share > 99) {
+  if (!Number.isInteger(share) || share < 1 || share > 100) {
     input.value = String(account.share_percent)
     return
   }
-  if (share !== account.share_percent) void save(account, true, share)
+  if (share !== account.share_percent) void save(account, { share_percent: share })
 }
 </script>
 
@@ -136,103 +149,123 @@ function onShareChange(account: PlaidAccount, event: Event) {
         <UserButton />
       </header>
 
-      <div v-if="loading" class="page-loading" aria-label="Loading your accounts">
-        <Skeleton height="12rem" />
-        <Skeleton height="8rem" />
-      </div>
-
-      <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
-        <div class="prompt-content">
-          <h2 id="load-error-heading">We couldn’t load your accounts.</h2>
-          <p>Check your connection and try again.</p>
-          <Button label="Try again" severity="secondary" @click="load" />
+      <div class="accounts-content">
+        <div v-if="loading" class="page-loading" aria-label="Loading your accounts">
+          <Skeleton height="14rem" />
+          <Skeleton height="8rem" />
         </div>
-      </section>
 
-      <section v-else-if="!accounts.length" class="panel prompt" aria-labelledby="empty-heading">
-        <div class="prompt-content">
-          <div class="prompt-icon" aria-hidden="true">
-            <Landmark :size="24" :stroke-width="1.5" />
+        <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
+          <div class="prompt-content">
+            <h2 id="load-error-heading">We couldn’t load your accounts.</h2>
+            <p>Check your connection and try again.</p>
+            <Button label="Try again" severity="secondary" @click="load" />
           </div>
-          <h2 id="empty-heading">No accounts yet</h2>
-          <p>Connect your bank on Home, and its accounts will show up here.</p>
-          <RouterLink to="/" class="prompt-link">Go to Home</RouterLink>
-        </div>
-      </section>
-
-      <template v-else>
-        <p class="page-intro">
-          Spending on Home and in your spending plan comes from the accounts you track. Mark an
-          account you split with someone as shared, and only your part of it counts.
-        </p>
-
-        <section
-          v-for="group in groups"
-          :key="group.id"
-          class="panel account-group"
-          :aria-labelledby="`account-group-${group.id}`"
-        >
-          <h2 :id="`account-group-${group.id}`" class="card-label">{{ group.title }}</h2>
-          <ul class="account-list">
-            <li v-for="account in group.accounts" :key="account.account_id" class="account-row">
-              <div class="account-summary">
-                <span class="account-details">
-                  <span class="account-name">{{ accountLabel(account) }}</span>
-                  <span class="account-kind">{{ kindLabel(account) }}</span>
-                </span>
-                <span class="account-balance">{{ balanceText(account) }}</span>
-              </div>
-
-              <div
-                v-if="account.trackable"
-                class="account-controls"
-                :aria-busy="saving.has(account.account_id)"
-              >
-                <label class="switch">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    :checked="account.tracks_spending"
-                    @change="onTrackChange(account, $event)"
-                  />
-                  <span>Track spending</span>
-                </label>
-                <label v-if="account.tracks_spending" class="switch">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    :checked="isShared(account)"
-                    @change="onSharedChange(account, $event)"
-                  />
-                  <span>Shared</span>
-                </label>
-                <label v-if="account.tracks_spending && isShared(account)" class="share-field">
-                  <span>Your share</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="99"
-                    step="1"
-                    inputmode="numeric"
-                    :value="account.share_percent"
-                    @change="onShareChange(account, $event)"
-                  />
-                  <span aria-hidden="true">%</span>
-                </label>
-              </div>
-
-              <Message
-                v-if="failedAccountId === account.account_id"
-                severity="error"
-                size="small"
-                class="save-error"
-              >
-                We couldn’t save that change. Try again.
-              </Message>
-            </li>
-          </ul>
         </section>
-      </template>
+
+        <section v-else-if="!accounts.length" class="panel prompt" aria-labelledby="empty-heading">
+          <div class="prompt-content">
+            <div class="prompt-icon" aria-hidden="true">
+              <Landmark :size="24" :stroke-width="1.5" />
+            </div>
+            <h2 id="empty-heading">No accounts yet</h2>
+            <p>Connect your bank on Home, and its accounts will show up here.</p>
+            <RouterLink to="/" class="prompt-link">Go to Home</RouterLink>
+          </div>
+        </section>
+
+        <template v-else>
+          <p class="page-intro">
+            Choose which accounts count toward your spending and your net worth. For an account
+            you split with someone, set your share, and only your part counts.
+          </p>
+
+          <Message v-if="failedAccount" severity="error" class="save-error">
+            We couldn’t save the change to {{ accountLabel(failedAccount) }}. Try again.
+          </Message>
+
+          <section
+            v-for="group in groups"
+            :key="group.id"
+            class="panel account-group"
+            :aria-labelledby="`account-group-${group.id}`"
+          >
+            <table class="account-table">
+              <caption :id="`account-group-${group.id}`" class="card-label">
+                {{ group.title }}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="column-account">Account</th>
+                  <th scope="col" class="column-balance">Balance</th>
+                  <th scope="col" class="column-setting">Spending</th>
+                  <th scope="col" class="column-setting">Net worth</th>
+                  <th scope="col" class="column-setting">Your share</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="account in group.accounts"
+                  :key="account.account_id"
+                  :aria-busy="saving.has(account.account_id)"
+                  :class="{ saving: saving.has(account.account_id) }"
+                >
+                  <th scope="row" class="column-account">
+                    <span class="account-name">{{ accountLabel(account) }}</span>
+                    <span class="account-kind">{{ kindLabel(account) }}</span>
+                  </th>
+                  <td class="column-balance" data-label="Balance">
+                    <template v-if="account.balances.current == null">—</template>
+                    <template v-else>
+                      {{ formatMoney(account.balances.current) }}
+                      <span v-if="isOwed(account)" class="owed">owed</span>
+                    </template>
+                  </td>
+                  <td class="column-setting" data-label="Spending">
+                    <input
+                      v-if="account.trackable"
+                      type="checkbox"
+                      role="switch"
+                      class="switch"
+                      :checked="account.tracks_spending"
+                      :aria-label="`Track spending from ${accountLabel(account)}`"
+                      @change="onSwitch(account, 'tracks_spending', $event)"
+                    />
+                    <span v-else class="not-applicable" title="Spending isn’t tracked from this kind of account">
+                      —
+                    </span>
+                  </td>
+                  <td class="column-setting" data-label="Net worth">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      class="switch"
+                      :checked="account.counts_in_net_worth"
+                      :aria-label="`Count ${accountLabel(account)} in net worth`"
+                      @change="onSwitch(account, 'counts_in_net_worth', $event)"
+                    />
+                  </td>
+                  <td class="column-setting" data-label="Your share">
+                    <span class="share-field">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        inputmode="numeric"
+                        :value="account.share_percent"
+                        :aria-label="`Your share of ${accountLabel(account)}, in percent`"
+                        @change="onShareChange(account, $event)"
+                      />
+                      <span aria-hidden="true">%</span>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </template>
+      </div>
     </main>
   </div>
 </template>
@@ -275,8 +308,16 @@ h1 {
   height: 2rem;
 }
 
+/* Wide screens would spread the settings far from the account they belong to. */
+.accounts-content {
+  display: grid;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 60rem;
+}
+
 .page-intro {
-  max-width: 44rem;
+  max-width: 40rem;
   margin: 0;
   color: var(--app-text-secondary);
   line-height: 1.6;
@@ -285,6 +326,10 @@ h1 {
 .page-loading {
   display: grid;
   gap: 1.25rem;
+}
+
+.save-error {
+  margin: 0;
 }
 
 .prompt {
@@ -329,90 +374,114 @@ h1 {
 }
 
 .account-group {
-  padding: 1.25rem 1.5rem 0.5rem;
+  padding: 1rem 1.25rem 0.25rem;
+}
+
+.account-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .card-label {
-  margin: 0;
+  padding-bottom: 0.5rem;
   color: var(--app-text-secondary);
   font-size: 0.8125rem;
   font-weight: 500;
   letter-spacing: -0.005em;
+  text-align: left;
 }
 
-.account-list {
-  margin: 0.5rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.account-row {
-  display: grid;
-  gap: 0.75rem;
-  padding: 1rem 0;
-}
-
-.account-row + .account-row {
-  border-top: 1px solid var(--app-divider);
-}
-
-.account-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.account-details {
-  display: grid;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.account-name {
-  overflow: hidden;
+.account-table thead th {
+  padding: 0 0 0.5rem;
+  color: var(--app-text-subdued);
+  font-size: 0.75rem;
   font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--app-divider);
+}
+
+.column-balance {
+  width: 9.5rem;
+}
+
+.column-setting {
+  width: 6.5rem;
+}
+
+.account-table thead .column-balance,
+.account-table td.column-balance {
+  padding-right: 1.5rem;
+  text-align: right;
+}
+
+.account-table thead .column-setting,
+.account-table td.column-setting {
+  text-align: center;
+}
+
+.account-table tbody th,
+.account-table td {
+  padding: 0.75rem 0;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--app-divider);
+}
+
+.account-table tbody tr:last-child th,
+.account-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.account-table tbody th {
+  font-weight: inherit;
+  text-align: left;
+}
+
+.account-table tbody tr.saving {
+  opacity: 0.6;
+}
+
+.account-name,
+.account-kind {
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.account-name {
+  font-weight: 500;
+}
+
 .account-kind {
+  margin-top: 0.125rem;
   color: var(--app-text-secondary);
   font-size: 0.8125rem;
 }
 
-.account-balance {
-  flex: none;
+.column-balance {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
 
-.account-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1.5rem;
+.owed {
+  display: block;
+  color: var(--app-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
 }
 
-.account-controls[aria-busy='true'] {
-  opacity: 0.6;
-}
-
-.switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  cursor: pointer;
+.not-applicable {
+  color: var(--app-text-subdued);
 }
 
 /* A native checkbox drawn as a switch, so it stays keyboard and screen reader friendly. */
-.switch input {
+.switch {
   position: relative;
-  flex: none;
   width: 2.25rem;
   height: 1.25rem;
   margin: 0;
+  vertical-align: middle;
   appearance: none;
   background: var(--app-inset-hover);
   border-radius: 999px;
@@ -420,7 +489,7 @@ h1 {
   transition: background-color 150ms ease;
 }
 
-.switch input::after {
+.switch::after {
   position: absolute;
   top: 0.125rem;
   left: 0.125rem;
@@ -433,15 +502,16 @@ h1 {
   transition: transform 150ms ease;
 }
 
-.switch input:checked {
+.switch:checked {
   background: var(--app-text);
 }
 
-.switch input:checked::after {
+.switch:checked::after {
   transform: translateX(1rem);
 }
 
-.switch input:focus-visible {
+.switch:focus-visible,
+.share-field input:focus-visible {
   outline: 2px solid var(--app-text);
   outline-offset: 2px;
 }
@@ -449,28 +519,25 @@ h1 {
 .share-field {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0.25rem;
   font-size: 0.875rem;
 }
 
 .share-field input {
-  width: 3.5rem;
-  padding: 0.25rem 0.5rem;
+  width: 3.25rem;
+  padding: 0.25rem 0.375rem;
   color: var(--app-text);
   font: inherit;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   background: var(--app-surface);
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
 }
 
-.save-error {
-  justify-self: start;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .switch input,
-  .switch input::after {
+  .switch,
+  .switch::after {
     transition: none;
   }
 }
@@ -483,9 +550,64 @@ h1 {
   h1 {
     font-size: 1.375rem;
   }
+}
 
-  .account-group {
-    padding: 1rem 1.25rem 0.25rem;
+/* On narrow screens each account becomes a small card with its settings labelled. */
+@media (max-width: 40rem) {
+  .account-table,
+  .account-table tbody,
+  .account-table tr,
+  .account-table th,
+  .account-table td {
+    display: block;
+    width: auto;
+  }
+
+  .account-table thead {
+    display: none;
+  }
+
+  .account-table tbody tr {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--app-divider);
+  }
+
+  .account-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .account-table tbody th,
+  .account-table td {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .account-table tbody th {
+    margin-bottom: 0.5rem;
+  }
+
+  .account-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 2.25rem;
+  }
+
+  .account-table td.column-balance,
+  .account-table td.column-setting {
+    padding-right: 0;
+    text-align: right;
+  }
+
+  .account-table td::before {
+    color: var(--app-text-secondary);
+    font-size: 0.875rem;
+    content: attr(data-label);
+  }
+
+  .owed {
+    display: inline;
+    margin-left: 0.25rem;
   }
 }
 </style>

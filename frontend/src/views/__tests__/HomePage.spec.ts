@@ -58,6 +58,7 @@ const checking: PlaidAccount = {
   type: 'depository',
   trackable: true,
   tracks_spending: true,
+  counts_in_net_worth: true,
   share_percent: 100,
 }
 
@@ -71,6 +72,7 @@ const savings: PlaidAccount = {
   type: 'depository',
   trackable: true,
   tracks_spending: true,
+  counts_in_net_worth: true,
   share_percent: 100,
 }
 

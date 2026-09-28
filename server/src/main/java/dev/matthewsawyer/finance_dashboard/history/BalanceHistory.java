@@ -3,6 +3,7 @@ package dev.matthewsawyer.finance_dashboard.history;
 import dev.matthewsawyer.finance_dashboard.model.AccountDrop;
 import dev.matthewsawyer.finance_dashboard.model.BalanceSnapshot;
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
+import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
 import dev.matthewsawyer.finance_dashboard.repository.AccountDropRepository;
 import dev.matthewsawyer.finance_dashboard.repository.BalanceSnapshotRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -77,7 +78,8 @@ public class BalanceHistory {
     /**
      * The user's net worth from {@code from} (or the first counted snapshot, when null or earlier)
      * through {@code to}, inclusive. It counts USD depository, investment, and brokerage balances
-     * and subtracts USD credit and loan balances, excluding days an account was dropped. Current
+     * and subtracts USD credit and loan balances, excluding days an account was dropped and
+     * accounts the user left out, and counting a shared account at the user's share. Current
      * investment accounts get their own series from their first snapshot or {@code from}, whichever
      * is later, with dropped days omitted. Account changes mark later first snapshots, drops, and
      * restorations. Net worth is empty when no counted account has a snapshot by {@code to}.
@@ -101,6 +103,10 @@ public class BalanceHistory {
             if (INVESTMENTS.contains(account.getType()) && !account.isDropped()) {
                 investmentAccounts.add(new AccountSeries(account.getAccountId(),
                         daily(accountBalances, from, to, day -> countsOn(account, pastDrops, day))));
+            }
+            if (!account.countsInNetWorth()) {
+                // The user left it out; its own series above is unaffected.
+                continue;
             }
             if (sign(account) == 0) {
                 if (!account.isDropped()) {
@@ -131,7 +137,8 @@ public class BalanceHistory {
                 }
                 BigDecimal balance = balanceOn(balances.get(account.getAccountId()), day);
                 if (balance != null) {
-                    total = total.add(balance.multiply(BigDecimal.valueOf(sign(account))));
+                    total = total.add(TrackedAccounts.share(
+                            balance.multiply(BigDecimal.valueOf(sign(account))), account.getSharePercent()));
                 }
             }
             netWorth.add(new Point(day, total));

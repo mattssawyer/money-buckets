@@ -41,6 +41,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -617,10 +618,26 @@ class PlaidControllerTests {
         when(accountRepository.save(joint)).thenReturn(joint);
 
         PlaidController.AccountResponse result = controller.updateAccountTracking(
-                jwt, "joint", new PlaidController.AccountTrackingRequest(true, 50));
+                jwt, "joint", new PlaidController.AccountTrackingRequest(true, null, 50));
 
         assertTrue(result.tracksSpending());
         assertEquals(50, result.sharePercent());
+    }
+
+    @Test
+    void leavesAnAccountOutOfNetWorthAndKeepsThatWhenNotSaid() {
+        PlaidAccount brokerage = account("brokerage", 100);
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(accountRepository.findByAccountIdAndUserId("brokerage", USER_ID)).thenReturn(Optional.of(brokerage));
+        when(accountRepository.save(brokerage)).thenReturn(brokerage);
+
+        PlaidController.AccountResponse left = controller.updateAccountTracking(
+                jwt, "brokerage", new PlaidController.AccountTrackingRequest(false, false, 100));
+        PlaidController.AccountResponse kept = controller.updateAccountTracking(
+                jwt, "brokerage", new PlaidController.AccountTrackingRequest(false, null, 100));
+
+        assertFalse(left.countsInNetWorth());
+        assertFalse(kept.countsInNetWorth());
     }
 
     @Test
@@ -631,7 +648,7 @@ class PlaidControllerTests {
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.updateAccountTracking(
-                        jwt, "joint", new PlaidController.AccountTrackingRequest(true, 0)));
+                        jwt, "joint", new PlaidController.AccountTrackingRequest(true, null, 0)));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         verify(accountRepository, never()).save(any());
@@ -644,7 +661,7 @@ class PlaidControllerTests {
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.updateAccountTracking(
-                        jwt, "other", new PlaidController.AccountTrackingRequest(true, 50)));
+                        jwt, "other", new PlaidController.AccountTrackingRequest(true, null, 50)));
 
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
     }
@@ -657,7 +674,7 @@ class PlaidControllerTests {
     private static PlaidAccount account(String accountId, int sharePercent) {
         PlaidAccount account = new PlaidAccount(accountId, "item-id", USER_ID);
         account.updateSnapshot(accountId, null, null, "depository", "checking", null, null, null, "USD", null);
-        account.updateTracking(true, sharePercent);
+        account.updateTracking(true, true, sharePercent);
         return account;
     }
 

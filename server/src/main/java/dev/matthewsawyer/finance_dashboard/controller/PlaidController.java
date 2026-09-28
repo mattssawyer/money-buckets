@@ -441,6 +441,7 @@ public class PlaidController {
             /** Whether spending can be tracked from the account: a bank account or credit card. */
             @JsonProperty("trackable") boolean trackable,
             @JsonProperty("tracks_spending") boolean tracksSpending,
+            @JsonProperty("counts_in_net_worth") boolean countsInNetWorth,
             @JsonProperty("share_percent") int sharePercent
     ) {
         static AccountResponse from(PlaidAccount account) {
@@ -460,12 +461,13 @@ public class PlaidController {
                     account.getType(),
                     account.isTrackable(),
                     account.tracksSpending(),
+                    account.countsInNetWorth(),
                     account.getSharePercent()
             );
         }
     }
 
-    /** Sets whether spending is counted from an account, and the user's share of it. */
+    /** Sets whether an account counts toward spending and net worth, and the user's share of it. */
     @PutMapping("/accounts/{accountId}/tracking")
     public AccountResponse updateAccountTracking(
             @AuthenticationPrincipal Jwt jwt,
@@ -474,8 +476,8 @@ public class PlaidController {
     ) {
         User user = userService.getOrCreateUser(jwt);
         try {
-            return AccountResponse.from(trackedAccounts.update(
-                    user.getId(), accountId, request.tracksSpending(), request.sharePercent()));
+            return AccountResponse.from(trackedAccounts.update(user.getId(), accountId,
+                    request.tracksSpending(), request.countsInNetWorth(), request.sharePercent()));
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
         } catch (IllegalArgumentException e) {
@@ -483,8 +485,10 @@ public class PlaidController {
         }
     }
 
+    /** Leaving out {@code counts_in_net_worth} keeps the current choice. */
     public record AccountTrackingRequest(
             @JsonProperty("tracks_spending") boolean tracksSpending,
+            @JsonProperty("counts_in_net_worth") Boolean countsInNetWorth,
             @JsonProperty("share_percent") int sharePercent
     ) {
     }
