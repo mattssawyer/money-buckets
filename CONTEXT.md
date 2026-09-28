@@ -26,6 +26,14 @@ _Avoid_: Current account, active account
 A checking, savings, money market or cash management account: where everyday money comes in and goes out. CDs, HSAs, prepaid cards, credit cards, loans and investment accounts aren't bank accounts.
 _Avoid_: Cash account, depository account (Plaid's broader word)
 
+**Tracked account**:
+A bank account or credit card the user counts spending from. Checking, cash management and credit card accounts start tracked; savings and money market accounts don't, since money moved into them is saved rather than spent. Spending, recent transactions and recurring streams cover every tracked account unless the user picks one account.
+_Avoid_: Spending account, included account
+
+**Shared account**:
+A tracked account the user splits with someone else, such as a joint account for rent and household bills. Only the user's share of its spending counts. A transfer between it and another tracked account isn't spending; that money counts when it's spent from the shared account.
+_Avoid_: Joint account (in code), split account
+
 **Investment account**:
 An account Plaid types as an investment, such as an IRA, 401(k), brokerage, HSA or 529. A cash HSA or cash-management account Plaid calls a bank account is not one.
 _Avoid_: Portfolio, retirement account (only some are)

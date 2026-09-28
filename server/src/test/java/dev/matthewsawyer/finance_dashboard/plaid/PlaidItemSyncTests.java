@@ -51,6 +51,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 
@@ -382,7 +383,7 @@ class PlaidItemSyncTests {
     }
 
     private List<String> transactionIds() {
-        return transactions.findRecent(userId, null, Pageable.ofSize(10)).stream()
+        return transactions.findRecent(userId, Set.of("checking"), Pageable.ofSize(10)).stream()
                 .map(transaction -> transaction.getTransactionId())
                 .toList();
     }

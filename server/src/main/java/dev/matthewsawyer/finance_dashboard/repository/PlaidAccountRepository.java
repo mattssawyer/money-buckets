@@ -4,6 +4,7 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PlaidAccountRepository extends JpaRepository<PlaidAccount, String> {
@@ -15,4 +16,8 @@ public interface PlaidAccountRepository extends JpaRepository<PlaidAccount, Stri
     List<PlaidAccount> findAllByItemId(String itemId);
 
     boolean existsByAccountIdAndUserId(String accountId, UUID userId);
+
+    Optional<PlaidAccount> findByAccountIdAndUserId(String accountId, UUID userId);
+
+    List<PlaidAccount> findAllByUserIdAndTracksSpendingIsTrue(UUID userId);
 }

@@ -2,6 +2,7 @@ package dev.matthewsawyer.finance_dashboard.plaid;
 
 import com.plaid.client.model.AccountBalance;
 import com.plaid.client.model.AccountBase;
+import com.plaid.client.model.AccountSubtype;
 import com.plaid.client.model.AccountType;
 import com.plaid.client.model.AccountsGetRequest;
 import com.plaid.client.model.AccountsGetResponse;
@@ -90,6 +91,42 @@ class AccountsSyncTests {
         assertEquals("investment", ira.getType());
         assertEquals(0, new BigDecimal("41000.25").compareTo(ira.getCurrentBalance()));
         assertEquals(List.of("checking", "ira"), storedIds());
+    }
+
+    @Test
+    void tracksSpendingFromNewCheckingAccountsAndCardsButNotSavingsOrInvestments() throws IOException {
+        stubAccounts(List.of(Products.TRANSACTIONS),
+                account("checking", AccountType.DEPOSITORY, 2500.0).subtype(AccountSubtype.CHECKING),
+                account("card", AccountType.CREDIT, 300.0).subtype(AccountSubtype.CREDIT_CARD),
+                account("savings", AccountType.DEPOSITORY, 9000.0).subtype(AccountSubtype.SAVINGS),
+                account("ira", AccountType.INVESTMENT, 41000.0).subtype(AccountSubtype.IRA));
+
+        accountsSync.sync(item, MON);
+
+        assertTrue(stored("checking").tracksSpending());
+        assertTrue(stored("card").tracksSpending());
+        assertFalse(stored("savings").tracksSpending());
+        assertFalse(stored("ira").tracksSpending());
+        assertEquals(100, stored("checking").getSharePercent());
+    }
+
+    @Test
+    void keepsTheUsersTrackingChoicesWhenPlaidRefreshesAnAccount() throws IOException {
+        stubAccounts(List.of(Products.TRANSACTIONS),
+                account("joint", AccountType.DEPOSITORY, 2500.0).subtype(AccountSubtype.CHECKING),
+                account("savings", AccountType.DEPOSITORY, 9000.0).subtype(AccountSubtype.SAVINGS));
+        accountsSync.sync(item, MON);
+        PlaidAccount joint = stored("joint");
+        joint.updateTracking(true, 50);
+        accounts.save(joint);
+        PlaidAccount savings = stored("savings");
+        savings.updateTracking(true, 100);
+        accounts.save(savings);
+
+        accountsSync.sync(item, TUE);
+
+        assertEquals(50, stored("joint").getSharePercent());
+        assertTrue(stored("savings").tracksSpending());
     }
 
     @Test
