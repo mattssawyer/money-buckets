@@ -138,30 +138,69 @@ describe('accounts page', () => {
     })
   })
 
-  it('saves the user\'s share of a shared account', async () => {
+  it('shows a share only for shared accounts', async () => {
+    vi.mocked(getAccounts).mockResolvedValue([checking, { ...joint, share_percent: 60 }])
     const wrapper = mountPage()
     await flushPromises()
 
-    await cell(row(wrapper, 'Joint'), 'Your share').get('input').setValue('50')
+    expect(cell(row(wrapper, 'Checking'), 'Shared').find('.share-field').exists()).toBe(false)
+    const jointShared = cell(row(wrapper, 'Joint'), 'Shared')
+    expect(jointShared.get('.switch').element).toHaveProperty('checked', true)
+    expect(jointShared.get('.share-field input').element).toHaveProperty('value', '60')
+  })
+
+  it('marks an account as shared at an even split, then saves a new share', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await cell(row(wrapper, 'Joint'), 'Shared').get('.switch').setValue(true)
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenLastCalledWith('Joint', {
+      tracks_spending: true,
+      counts_in_net_worth: true,
+      share_percent: 50,
+    })
+    const share = cell(row(wrapper, 'Joint'), 'Shared').get('.share-field input')
+    expect(share.element).toHaveProperty('value', '50')
+
+    await share.setValue('60')
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenLastCalledWith('Joint', {
+      tracks_spending: true,
+      counts_in_net_worth: true,
+      share_percent: 60,
+    })
+  })
+
+  it('counts the whole account again when it stops being shared', async () => {
+    vi.mocked(getAccounts).mockResolvedValue([{ ...joint, share_percent: 50 }])
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await cell(row(wrapper, 'Joint'), 'Shared').get('.switch').setValue(false)
     await flushPromises()
 
     expect(updateAccountTracking).toHaveBeenCalledWith('Joint', {
       tracks_spending: true,
       counts_in_net_worth: true,
-      share_percent: 50,
+      share_percent: 100,
     })
+    expect(cell(row(wrapper, 'Joint'), 'Shared').find('.share-field').exists()).toBe(false)
   })
 
-  it('ignores a share outside 1 to 100 percent', async () => {
+  it('ignores a share outside 1 to 99 percent', async () => {
+    vi.mocked(getAccounts).mockResolvedValue([{ ...joint, share_percent: 50 }])
     const wrapper = mountPage()
     await flushPromises()
 
-    const share = cell(row(wrapper, 'Joint'), 'Your share').get('input')
-    await share.setValue('0')
+    const share = cell(row(wrapper, 'Joint'), 'Shared').get('.share-field input')
+    await share.setValue('100')
     await flushPromises()
 
     expect(updateAccountTracking).not.toHaveBeenCalled()
-    expect(share.element).toHaveProperty('value', '100')
+    expect(share.element).toHaveProperty('value', '50')
   })
 
   it('puts a change back and says so when it can\u2019t be saved', async () => {

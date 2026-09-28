@@ -16,6 +16,9 @@ import {
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { formatMoney } from '../investments/history'
 
+/** Marking an account as shared starts at an even split. */
+const DEFAULT_SHARED_PERCENT = 50
+
 interface AccountGroup {
   id: string
   title: string
@@ -128,11 +131,20 @@ function onSwitch(account: PlaidAccount, key: 'tracks_spending' | 'counts_in_net
   void save(account, { [key]: event.target.checked })
 }
 
+function isShared(account: PlaidAccount) {
+  return account.share_percent < 100
+}
+
+function onSharedChange(account: PlaidAccount, event: Event) {
+  if (!(event.target instanceof HTMLInputElement)) return
+  void save(account, { share_percent: event.target.checked ? DEFAULT_SHARED_PERCENT : 100 })
+}
+
 function onShareChange(account: PlaidAccount, event: Event) {
   const input = event.target
   if (!(input instanceof HTMLInputElement)) return
   const share = Number(input.value)
-  if (!Number.isInteger(share) || share < 1 || share > 100) {
+  if (!Number.isInteger(share) || share < 1 || share > 99) {
     input.value = String(account.share_percent)
     return
   }
@@ -200,7 +212,7 @@ function onShareChange(account: PlaidAccount, event: Event) {
                   <th scope="col" class="column-balance">Balance</th>
                   <th scope="col" class="column-setting">Spending</th>
                   <th scope="col" class="column-setting">Net worth</th>
-                  <th scope="col" class="column-setting">Your share</th>
+                  <th scope="col" class="column-shared">Shared</th>
                 </tr>
               </thead>
               <tbody>
@@ -208,7 +220,6 @@ function onShareChange(account: PlaidAccount, event: Event) {
                   v-for="account in group.accounts"
                   :key="account.account_id"
                   :aria-busy="saving.has(account.account_id)"
-                  :class="{ saving: saving.has(account.account_id) }"
                 >
                   <th scope="row" class="column-account">
                     <span class="account-name">{{ accountLabel(account) }}</span>
@@ -245,19 +256,29 @@ function onShareChange(account: PlaidAccount, event: Event) {
                       @change="onSwitch(account, 'counts_in_net_worth', $event)"
                     />
                   </td>
-                  <td class="column-setting" data-label="Your share">
-                    <span class="share-field">
+                  <td class="column-shared" data-label="Shared">
+                    <span class="shared-cell">
                       <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        step="1"
-                        inputmode="numeric"
-                        :value="account.share_percent"
-                        :aria-label="`Your share of ${accountLabel(account)}, in percent`"
-                        @change="onShareChange(account, $event)"
+                        type="checkbox"
+                        role="switch"
+                        class="switch"
+                        :checked="isShared(account)"
+                        :aria-label="`${accountLabel(account)} is shared`"
+                        @change="onSharedChange(account, $event)"
                       />
-                      <span aria-hidden="true">%</span>
+                      <span v-if="isShared(account)" class="share-field">
+                        <input
+                          type="number"
+                          min="1"
+                          max="99"
+                          step="1"
+                          inputmode="numeric"
+                          :value="account.share_percent"
+                          :aria-label="`Your share of ${accountLabel(account)}, in percent`"
+                          @change="onShareChange(account, $event)"
+                        />
+                        <span aria-hidden="true">%</span>
+                      </span>
                     </span>
                   </td>
                 </tr>
@@ -409,6 +430,23 @@ h1 {
   width: 6.5rem;
 }
 
+/* Wide enough for the switch and the share beside it, so switches line up either way. */
+.column-shared {
+  width: 9.5rem;
+}
+
+.account-table th.column-shared,
+.account-table td.column-shared {
+  padding-left: 1.25rem;
+  text-align: left;
+}
+
+.shared-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
 .account-table thead .column-balance,
 .account-table td.column-balance {
   padding-right: 1.5rem;
@@ -435,10 +473,6 @@ h1 {
 .account-table tbody th {
   font-weight: inherit;
   text-align: left;
-}
-
-.account-table tbody tr.saving {
-  opacity: 0.6;
 }
 
 .account-name,
@@ -610,8 +644,10 @@ h1 {
   }
 
   .account-table td.column-balance,
-  .account-table td.column-setting {
+  .account-table td.column-setting,
+  .account-table td.column-shared {
     padding-right: 0;
+    padding-left: 0;
     text-align: right;
   }
 
