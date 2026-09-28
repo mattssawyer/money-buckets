@@ -44,3 +44,9 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// Build only the executable jar so the start command in railway.json can
+// run build/libs/*.jar without knowing the project name or version.
+tasks.named('jar') {
+	enabled = false
+}
