@@ -17,10 +17,14 @@ import {
   getLinkedItemIds,
   getSpendingByBucket,
   getTransactions,
+  answerRecurringCandidate,
+  getRecurringCandidates,
   getRecurringTransactions,
   syncRecurringTransactions,
+  undoRecurringAnswer,
   type PlaidItem,
   type PlaidTransaction,
+  type RecurringCandidate,
   type RecurringStream,
   type SpendingByBucket,
 } from '../api/PlaidService'
@@ -35,6 +39,7 @@ import {
 } from '../api/plaidLabels'
 import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
 import { spendingByCategory } from '../spending/byCategory'
+import { isConfirmedCandidate, withConfirmed } from '../spending/recurring'
 
 const RECENT_TRANSACTION_COUNT = 25
 const RECURRING_STREAM_COUNT = 20
@@ -47,6 +52,8 @@ const FREQUENCY_LABELS: Record<string, string> = {
   BIWEEKLY: 'Every 2 weeks',
   SEMI_MONTHLY: 'Twice a month',
   MONTHLY: 'Monthly',
+  QUARTERLY: 'Every 3 months',
+  SEMI_ANNUALLY: 'Twice a year',
   ANNUALLY: 'Yearly',
   UNKNOWN: 'Recurring',
 }
@@ -68,6 +75,11 @@ const itemIds = ref<string[]>([])
 const transactions = ref<PlaidTransaction[]>([])
 const allTransactionsVisible = ref(false)
 const recurring = ref<RecurringStream[]>([])
+const candidates = ref<RecurringCandidate[]>([])
+const showDismissed = ref(false)
+// The candidate whose answer is being saved; answers are saved one at a time.
+const answeringKey = ref<string>()
+const answerError = ref('')
 const spending = ref<SpendingByBucket>()
 // Unknown until loaded, so the plan prompt never flashes for someone who has a plan.
 const hasSpendingPlan = ref<boolean>()
@@ -107,6 +119,15 @@ const selectedAccountLabel = computed(() => {
   if (account) return accountLabel(account)
   return accounts.value.length ? 'All tracked accounts' : ''
 })
+const recurringList = computed(() =>
+  withConfirmed(recurring.value, candidates.value).slice(0, RECURRING_STREAM_COUNT),
+)
+const suggestedCandidates = computed(() =>
+  candidates.value.filter((candidate) => candidate.status === 'SUGGESTED'),
+)
+const dismissedCandidates = computed(() =>
+  candidates.value.filter((candidate) => candidate.status === 'DISMISSED'),
+)
 const spendingTotal = computed(() => spending.value?.total ?? 0)
 const spendingMonth = computed(() =>
   spending.value
@@ -234,6 +255,14 @@ function recurringMeta(stream: RecurringStream) {
   return cadence
 }
 
+// A guess is only as good as the last charge it came from, so say when that was.
+function candidateMeta(candidate: RecurringCandidate) {
+  const cadence = frequencyLabel(candidate.frequency)
+  return candidate.last_date
+    ? `${cadence}? · Last ${formatTransactionDate(candidate.last_date)}`
+    : `${cadence}?`
+}
+
 function formatRecurringAmount(stream: RecurringStream) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -341,14 +370,49 @@ async function loadRecurring() {
   loadingRecurring.value = true
   recurringError.value = ''
   recurringSyncFailed.value = false
+  answerError.value = ''
   try {
-    const streams = await getRecurringTransactions(selectedAccountId.value, RECURRING_STREAM_COUNT)
-    if (!disposed) recurring.value = streams.slice(0, RECURRING_STREAM_COUNT)
+    // Candidates are only guesses, so Plaid's streams still show when they can't be loaded.
+    const [streams, found] = await Promise.all([
+      getRecurringTransactions(selectedAccountId.value, RECURRING_STREAM_COUNT),
+      getRecurringCandidates(selectedAccountId.value).catch(() => []),
+    ])
+    if (disposed) return
+    recurring.value = streams.slice(0, RECURRING_STREAM_COUNT)
+    candidates.value = found
   } catch {
     if (!disposed) recurringError.value = 'We couldn’t load your recurring transactions.'
   } finally {
     if (!disposed) loadingRecurring.value = false
   }
+}
+
+/**
+ * Saves the user's yes or no, or with null forgets it. The list changes straight away and goes
+ * back if the save fails.
+ */
+async function answerCandidate(candidate: RecurringCandidate, confirmed: boolean | null) {
+  if (answeringKey.value) return
+  const previous = candidate.status
+  answeringKey.value = candidate.stream_id
+  answerError.value = ''
+  setStatus(candidate, confirmed === null ? 'SUGGESTED' : confirmed ? 'CONFIRMED' : 'DISMISSED')
+  try {
+    if (confirmed === null) await undoRecurringAnswer(candidate)
+    else await answerRecurringCandidate(candidate, confirmed)
+  } catch {
+    if (disposed) return
+    setStatus(candidate, previous)
+    answerError.value = 'We couldn’t save your answer. Please try again.'
+  } finally {
+    if (!disposed) answeringKey.value = undefined
+  }
+}
+
+function setStatus(candidate: RecurringCandidate, status: RecurringCandidate['status']) {
+  candidates.value = candidates.value.map((entry) =>
+    entry.stream_id === candidate.stream_id ? { ...entry, status } : entry,
+  )
 }
 
 async function syncRecurring() {
@@ -670,28 +734,148 @@ async function openPlaidLink() {
                 />
               </div>
 
-              <p v-else-if="!recurring.length" class="transactions-empty">
-                No recurring transactions found yet. Plaid can take up to a day to find them after
-                you link a bank.
-              </p>
+              <template v-else>
+                <p
+                  v-if="!recurringList.length && !suggestedCandidates.length"
+                  class="transactions-empty"
+                >
+                  No recurring transactions found yet. Plaid can take up to a day to find them
+                  after you link a bank.
+                </p>
 
-              <ul v-else class="transactions-list" tabindex="0">
-                <li v-for="stream in recurring" :key="stream.stream_id" class="transaction-row">
-                  <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
-                    {{ recurringLabel(stream).charAt(0) }}
-                  </span>
-                  <span class="transaction-details">
-                    <span class="transaction-name">{{ recurringLabel(stream) }}</span>
-                    <span class="transaction-meta">{{ recurringMeta(stream) }}</span>
-                  </span>
-                  <span
-                    class="transaction-amount"
-                    :class="{ 'transaction-amount-inflow': stream.amount < 0 }"
+                <ul v-if="recurringList.length" class="transactions-list" tabindex="0">
+                  <li
+                    v-for="stream in recurringList"
+                    :key="stream.stream_id"
+                    class="transaction-row"
                   >
-                    {{ formatRecurringAmount(stream) }}
-                  </span>
-                </li>
-              </ul>
+                    <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
+                      {{ recurringLabel(stream).charAt(0) }}
+                    </span>
+                    <span class="transaction-details">
+                      <span class="transaction-name">{{ recurringLabel(stream) }}</span>
+                      <span class="transaction-meta">
+                        {{ recurringMeta(stream) }}
+                        <template v-if="isConfirmedCandidate(stream)">
+                          · Confirmed by you ·
+                          <button
+                            type="button"
+                            class="candidate-undo"
+                            :disabled="answeringKey !== undefined"
+                            :aria-label="`Undo confirming ${recurringLabel(stream)}`"
+                            @click="answerCandidate(stream, null)"
+                          >
+                            Undo
+                          </button>
+                        </template>
+                      </span>
+                    </span>
+                    <span
+                      class="transaction-amount"
+                      :class="{ 'transaction-amount-inflow': stream.amount < 0 }"
+                    >
+                      {{ formatRecurringAmount(stream) }}
+                    </span>
+                  </li>
+                </ul>
+
+                <Message v-if="answerError" severity="error" class="candidate-error">
+                  {{ answerError }}
+                </Message>
+
+                <div
+                  v-if="suggestedCandidates.length"
+                  class="candidates"
+                  role="group"
+                  aria-labelledby="candidates-heading"
+                >
+                  <h3 id="candidates-heading" class="candidates-heading">Possibly recurring</h3>
+                  <p class="candidates-hint">
+                    Plaid hasn’t seen these enough times to be sure. Do they repeat?
+                  </p>
+                  <ul class="transactions-list candidates-list" tabindex="0">
+                    <li
+                      v-for="candidate in suggestedCandidates"
+                      :key="candidate.stream_id"
+                      class="transaction-row"
+                    >
+                      <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
+                        {{ recurringLabel(candidate).charAt(0) }}
+                      </span>
+                      <span class="transaction-details">
+                        <span class="transaction-name">{{ recurringLabel(candidate) }}</span>
+                        <span class="transaction-meta">
+                          {{ candidateMeta(candidate) }} · {{ formatRecurringAmount(candidate) }}
+                        </span>
+                      </span>
+                      <span class="candidate-actions">
+                        <Button
+                          label="Yes"
+                          size="small"
+                          severity="secondary"
+                          :disabled="answeringKey !== undefined"
+                          :aria-label="`Yes, ${recurringLabel(candidate)} repeats`"
+                          @click="answerCandidate(candidate, true)"
+                        />
+                        <Button
+                          label="No"
+                          size="small"
+                          severity="secondary"
+                          text
+                          :disabled="answeringKey !== undefined"
+                          :aria-label="`No, ${recurringLabel(candidate)} doesn’t repeat`"
+                          @click="answerCandidate(candidate, false)"
+                        />
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+
+                <template v-if="dismissedCandidates.length">
+                  <Button
+                    :label="
+                      showDismissed ? 'Hide dismissed' : `Show dismissed (${dismissedCandidates.length})`
+                    "
+                    severity="secondary"
+                    size="small"
+                    text
+                    class="dismissed-toggle"
+                    :aria-expanded="showDismissed"
+                    aria-controls="dismissed-candidates"
+                    @click="showDismissed = !showDismissed"
+                  />
+                  <ul
+                    v-if="showDismissed"
+                    id="dismissed-candidates"
+                    class="transactions-list candidates-list"
+                    tabindex="0"
+                  >
+                    <li
+                      v-for="candidate in dismissedCandidates"
+                      :key="candidate.stream_id"
+                      class="transaction-row"
+                    >
+                      <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
+                        {{ recurringLabel(candidate).charAt(0) }}
+                      </span>
+                      <span class="transaction-details">
+                        <span class="transaction-name">{{ recurringLabel(candidate) }}</span>
+                        <span class="transaction-meta">Not recurring</span>
+                      </span>
+                      <Button
+                        label="Undo"
+                        size="small"
+                        severity="secondary"
+                        text
+                        class="candidate-actions"
+                        :disabled="answeringKey !== undefined"
+                        :aria-label="`Undo dismissing ${recurringLabel(candidate)}`"
+                        @click="answerCandidate(candidate, null)"
+                      />
+                    </li>
+                  </ul>
+                </template>
+              </template>
             </section>
           </div>
 
@@ -1327,6 +1511,63 @@ h1 {
 
 .recurring-card .transactions-list {
   max-height: 13.5rem;
+}
+
+.candidates {
+  margin-top: 1rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--app-divider);
+}
+
+.candidates-heading {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.candidates-hint {
+  margin: 0.25rem 0 0;
+  color: var(--app-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.recurring-card .candidates-list {
+  max-height: 11rem;
+  margin-top: 0.25rem;
+}
+
+.candidate-actions {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.candidate-undo {
+  padding: 0;
+  color: var(--app-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.candidate-undo:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.candidate-error {
+  margin-top: 0.75rem;
+}
+
+.dismissed-toggle {
+  align-self: flex-start;
+  margin: 0.5rem 0 0 -0.5rem;
 }
 
 .transactions-list::-webkit-scrollbar {

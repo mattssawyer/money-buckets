@@ -13,14 +13,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Asks TypeSafe's System One model a single Choice question. See
- * <a href="https://docs.typesafe.ai/api">the API reference</a>.
+ * Asks TypeSafe's System One model questions about one state, in a single request so they run
+ * in parallel. See <a href="https://docs.typesafe.ai/api">the API reference</a>.
  */
 @Component
 class TypeSafeClient {
 
     private static final String MODEL = "jev-latest";
-    private static final String QUESTION_ID = "answer";
 
     // Rate limited and overloaded; both clear up after a short wait.
     private static final Set<Integer> RETRYABLE_STATUSES = Set.of(429, 529);
@@ -51,14 +50,14 @@ class TypeSafeClient {
     }
 
     /**
-     * Returns the chosen option, one of {@code question}'s criteria keys. Retries rate limiting
-     * and overload with backoff; any other failure is thrown.
+     * Returns an answer for every question, keyed like {@code questions}. Retries rate limiting
+     * and overload with backoff; any other failure, or a missing answer, is thrown.
      */
-    ChoiceAnswer choose(Object state, Map<String, Object> question) {
+    Answers ask(Object state, Map<String, Map<String, Object>> questions) {
         Map<String, Object> body = Map.of(
                 "model", MODEL,
                 "state", state,
-                "questions", Map.of(QUESTION_ID, question));
+                "questions", questions);
 
         Duration backoff = FIRST_BACKOFF;
         for (int attempt = 1; ; attempt++) {
@@ -69,10 +68,10 @@ class TypeSafeClient {
                         .retrieve()
                         .body(SystemOneResponse.class);
                 if (response == null || response.answers() == null
-                        || response.answers().get(QUESTION_ID) == null) {
-                    throw new IllegalStateException("TypeSafe returned no answer");
+                        || !response.answers().keySet().containsAll(questions.keySet())) {
+                    throw new IllegalStateException("TypeSafe didn't answer every question");
                 }
-                return response.answers().get(QUESTION_ID);
+                return new Answers(response.answers());
             } catch (RestClientResponseException e) {
                 if (attempt >= MAX_ATTEMPTS || !RETRYABLE_STATUSES.contains(e.getStatusCode().value())) {
                     throw e;
@@ -92,12 +91,34 @@ class TypeSafeClient {
         }
     }
 
-    record ChoiceAnswer(
+    /** One question's answer: {@code choice} for a Choice, {@code noul} (0–1, how likely yes) for a Noul. */
+    record Answer(
             @JsonProperty("choice") String choice,
-            @JsonProperty("confidence") double confidence
+            @JsonProperty("confidence") Double confidence,
+            @JsonProperty("noul") Double noul
     ) {
+        static Answer choice(String choice) {
+            return new Answer(choice, 1.0, null);
+        }
+
+        static Answer noul(double probability) {
+            return new Answer(null, null, probability);
+        }
     }
 
-    private record SystemOneResponse(@JsonProperty("answers") Map<String, ChoiceAnswer> answers) {
+    record Answers(Map<String, Answer> byQuestion) {
+
+        /** The chosen option of a Choice question. */
+        String choice(String questionId) {
+            return byQuestion.get(questionId).choice();
+        }
+
+        /** How likely the answer to a Noul question is yes, from 0 to 1. */
+        double noul(String questionId) {
+            return byQuestion.get(questionId).noul();
+        }
+    }
+
+    private record SystemOneResponse(@JsonProperty("answers") Map<String, Answer> answers) {
     }
 }

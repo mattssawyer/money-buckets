@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SpendingPlanSetup from '../SpendingPlanSetup.vue'
-import { getRecurringTransactions, type RecurringStream } from '../../api/PlaidService'
+import {
+  getRecurringCandidates,
+  getRecurringTransactions,
+  type RecurringCandidate,
+  type RecurringStream,
+} from '../../api/PlaidService'
 
 import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
 import { defaultPlan } from '../../spendingPlan/plan'
@@ -10,6 +15,7 @@ import type { SavedPlan } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../api/PlaidService', () => ({
   getRecurringTransactions: vi.fn(),
+  getRecurringCandidates: vi.fn<(accountId?: string) => Promise<RecurringCandidate[]>>(),
 }))
 
 vi.mock('../../api/SpendingPlanService', () => ({
@@ -66,6 +72,7 @@ beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
   vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
+  vi.mocked(getRecurringCandidates).mockResolvedValue([])
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
@@ -125,6 +132,64 @@ describe('spending plan setup', () => {
     await flushPromises()
 
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1200')
+  })
+
+  it('fills in payments the user confirmed, and points to the ones they haven’t answered', async () => {
+    const candidate = (overrides: Partial<RecurringCandidate>): RecurringCandidate => ({
+      ...rent,
+      kind: 'BILL',
+      merchant_key: 'netflix',
+      probability: 0.9,
+      status: 'SUGGESTED',
+      ...overrides,
+    })
+    vi.mocked(getRecurringTransactions).mockResolvedValue([rent])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([
+      candidate({
+        stream_id: 'candidate-pay',
+        kind: 'PAYCHECK',
+        merchant_name: 'Acme payroll',
+        amount: -2400,
+        frequency: 'BIWEEKLY',
+        is_inflow: true,
+        category: 'INCOME',
+        category_detailed: 'INCOME_WAGES',
+        status: 'CONFIRMED',
+      }),
+      candidate({
+        stream_id: 'candidate-netflix',
+        merchant_name: 'Netflix',
+        amount: 15.49,
+        category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+        status: 'SUGGESTED',
+      }),
+      candidate({
+        stream_id: 'candidate-hulu',
+        merchant_name: 'Hulu',
+        amount: 7.99,
+        category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+        status: 'DISMISSED',
+      }),
+    ])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
+    expect(wrapper.get('[aria-label="Subscriptions amount"]').element).toHaveProperty('value', '')
+    const notes = wrapper.findAll('.autofill-note')
+    expect(notes[1]?.text()).toBe(
+      '1 payment might be recurring. Confirm them on Home to fill them in. Go to Home',
+    )
+    expect(notes[1]?.get('a').attributes('href')).toBe('/')
+  })
+
+  it('fills in Plaid’s recurring payments when candidates can’t be loaded', async () => {
+    vi.mocked(getRecurringCandidates).mockRejectedValue(new Error('offline'))
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
+    expect(wrapper.findAll('.autofill-note')).toHaveLength(1)
   })
 
   it('lets you edit, add, and remove fixed cost rows', async () => {

@@ -1,6 +1,7 @@
 package dev.matthewsawyer.finance_dashboard.repository;
 
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
@@ -107,4 +109,108 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             @Param("transactionId") String transactionId,
             @Param("readUpdatedAt") Instant readUpdatedAt,
             @Param("bucket") Bucket bucket);
+
+    /**
+     * Stores a transaction's bucket together with Jev's recurring judgment, guarded like
+     * {@link #updateBucket}. A null {@code judgedAt} means it wasn't asked whether it repeats.
+     */
+    @Modifying
+    @Transactional
+    @Query("""
+            UPDATE PlaidTransaction t
+            SET t.bucket = :bucket,
+                t.recurringProbability = :probability,
+                t.usualFrequency = :frequency,
+                t.recurringJudgedAt = :judgedAt
+            WHERE t.transactionId = :transactionId AND t.updatedAt = :readUpdatedAt
+            """)
+    int updateSorted(
+            @Param("transactionId") String transactionId,
+            @Param("readUpdatedAt") Instant readUpdatedAt,
+            @Param("bucket") Bucket bucket,
+            @Param("probability") BigDecimal probability,
+            @Param("frequency") RecurringFrequency frequency,
+            @Param("judgedAt") Instant judgedAt);
+
+    /** Stores Jev's recurring judgment without touching the bucket, guarded like {@link #updateBucket}. */
+    @Modifying
+    @Transactional
+    @Query("""
+            UPDATE PlaidTransaction t
+            SET t.recurringProbability = :probability,
+                t.usualFrequency = :frequency,
+                t.recurringJudgedAt = :judgedAt
+            WHERE t.transactionId = :transactionId AND t.updatedAt = :readUpdatedAt
+            """)
+    int updateRecurring(
+            @Param("transactionId") String transactionId,
+            @Param("readUpdatedAt") Instant readUpdatedAt,
+            @Param("probability") BigDecimal probability,
+            @Param("frequency") RecurringFrequency frequency,
+            @Param("judgedAt") Instant judgedAt);
+
+    /**
+     * Transactions still waiting for Jev's recurring judgment, newest first: pay coming in, and
+     * spending that has already been sorted (money out not sorted yet is judged as it's sorted).
+     * Money that only moved between the user's own accounts is never a bill.
+     */
+    @Query("""
+            SELECT t FROM PlaidTransaction t
+            WHERE t.userId = :userId
+              AND t.recurringJudgedAt IS NULL
+              AND (
+                (t.personalFinanceCategoryPrimary = 'INCOME' AND t.amount < 0)
+                OR (t.amount > 0 AND t.bucket IS NOT NULL
+                    AND t.bucket <> dev.matthewsawyer.finance_dashboard.model.Bucket.NOT_COUNTED
+                    AND (t.personalFinanceCategoryPrimary IS NULL
+                         OR t.personalFinanceCategoryPrimary NOT IN :excludedCategories)
+                    AND (t.personalFinanceCategoryDetailed IS NULL
+                         OR t.personalFinanceCategoryDetailed NOT IN :excludedCategories))
+              )
+            ORDER BY t.transactionDate DESC, t.transactionId ASC
+            """)
+    List<PlaidTransaction> findToJudge(
+            @Param("userId") UUID userId,
+            @Param("excludedCategories") Collection<String> excludedCategories);
+
+    /**
+     * Transactions in the given accounts that Jev has judged whether they repeat, newest first:
+     * the same pay and spending {@link #findToJudge} asks about.
+     */
+    @Query("""
+            SELECT t FROM PlaidTransaction t
+            WHERE t.userId = :userId
+              AND t.accountId IN :accountIds
+              AND t.recurringJudgedAt IS NOT NULL
+              AND (
+                (t.personalFinanceCategoryPrimary = 'INCOME' AND t.amount < 0)
+                OR (t.amount > 0 AND t.bucket IS NOT NULL
+                    AND t.bucket <> dev.matthewsawyer.finance_dashboard.model.Bucket.NOT_COUNTED
+                    AND (t.personalFinanceCategoryPrimary IS NULL
+                         OR t.personalFinanceCategoryPrimary NOT IN :excludedCategories)
+                    AND (t.personalFinanceCategoryDetailed IS NULL
+                         OR t.personalFinanceCategoryDetailed NOT IN :excludedCategories))
+              )
+            ORDER BY t.transactionDate DESC, t.transactionId ASC
+            """)
+    List<PlaidTransaction> findJudged(
+            @Param("userId") UUID userId,
+            @Param("accountIds") Collection<String> accountIds,
+            @Param("excludedCategories") Collection<String> excludedCategories);
+
+    /** Users with transactions {@link #findToJudge} would return, such as everyone's history on first release. */
+    @Query("""
+            SELECT DISTINCT t.userId FROM PlaidTransaction t
+            WHERE t.recurringJudgedAt IS NULL
+              AND (
+                (t.personalFinanceCategoryPrimary = 'INCOME' AND t.amount < 0)
+                OR (t.amount > 0 AND t.bucket IS NOT NULL
+                    AND t.bucket <> dev.matthewsawyer.finance_dashboard.model.Bucket.NOT_COUNTED
+                    AND (t.personalFinanceCategoryPrimary IS NULL
+                         OR t.personalFinanceCategoryPrimary NOT IN :excludedCategories)
+                    AND (t.personalFinanceCategoryDetailed IS NULL
+                         OR t.personalFinanceCategoryDetailed NOT IN :excludedCategories))
+              )
+            """)
+    List<UUID> findUsersWithTransactionsToJudge(@Param("excludedCategories") Collection<String> excludedCategories);
 }

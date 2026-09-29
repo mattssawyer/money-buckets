@@ -12,10 +12,14 @@ import {
   getTransactions,
   getTransactionPage,
   getRecurringTransactions,
+  getRecurringCandidates,
+  answerRecurringCandidate,
+  undoRecurringAnswer,
   removeItem,
   syncRecurringTransactions,
   type PlaidAccount,
   type PlaidTransaction,
+  type RecurringCandidate,
   type RecurringStream,
   type SpendingByBucket,
 } from '../../api/PlaidService'
@@ -33,6 +37,10 @@ vi.mock('../../api/PlaidService', () => ({
   getTransactions: vi.fn(),
   getTransactionPage: vi.fn(),
   getRecurringTransactions: vi.fn(),
+  getRecurringCandidates: vi.fn<(accountId?: string) => Promise<RecurringCandidate[]>>(),
+  answerRecurringCandidate:
+    vi.fn<(candidate: RecurringCandidate, confirmed: boolean) => Promise<void>>(),
+  undoRecurringAnswer: vi.fn<(candidate: RecurringCandidate) => Promise<void>>(),
   syncRecurringTransactions: vi.fn<() => Promise<void>>(),
   removeItem: vi.fn(),
 }))
@@ -227,6 +235,7 @@ beforeEach(() => {
   vi.mocked(getTransactions).mockResolvedValue([coffee])
   vi.mocked(getSpendingByBucket).mockResolvedValue(spending)
   vi.mocked(getRecurringTransactions).mockResolvedValue([rent])
+  vi.mocked(getRecurringCandidates).mockResolvedValue([])
   vi.mocked(getSpendingPlan).mockResolvedValue({} as SpendingPlanResponse)
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
@@ -839,6 +848,117 @@ describe('homepage account selector', () => {
     expect(wrapper.get('.balance-amount').text()).toBe('$8,400.00')
     expect(getTransactions).toHaveBeenCalledWith(25, 'savings')
     expect(getRecurringTransactions).toHaveBeenCalledWith('savings', 20)
+  })
+})
+
+describe('homepage recurring candidates', () => {
+  const netflix: RecurringCandidate = {
+    stream_id: 'candidate-netflix',
+    kind: 'BILL',
+    merchant_key: 'netflix',
+    account_id: 'checking',
+    merchant_name: 'Netflix',
+    description: 'Netflix',
+    amount: 15.49,
+    iso_currency_code: 'USD',
+    frequency: 'MONTHLY',
+    next_date: '2026-10-19',
+    last_date: '2026-09-19',
+    is_inflow: false,
+    category: 'ENTERTAINMENT',
+    category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+    share_percent: 100,
+    probability: 0.93,
+    status: 'SUGGESTED',
+  }
+
+  it('asks about payments Jev thinks repeat', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(getRecurringCandidates).toHaveBeenCalledWith(undefined)
+    expect(wrapper.get('#candidates-heading').text()).toBe('Possibly recurring')
+    expect(wrapper.get('.candidates .transaction-name').text()).toBe('Netflix')
+    expect(wrapper.get('.candidates .transaction-meta').text()).toBe(
+      'Monthly? · Last Sep 19 · -$15.49',
+    )
+  })
+
+  it('moves a confirmed payment into the recurring list', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    vi.mocked(answerRecurringCandidate).mockResolvedValue()
+    const wrapper = mountHome()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Yes, Netflix repeats"]').trigger('click')
+    await flushPromises()
+
+    expect(answerRecurringCandidate).toHaveBeenCalledWith(netflix, true)
+    expect(wrapper.find('.candidates').exists()).toBe(false)
+    const names = wrapper.findAll('.recurring-card .transaction-name').map((name) => name.text())
+    expect(names).toEqual(['Landlord', 'Netflix'])
+    // The template's line breaks collapse to single spaces on screen.
+    const meta = wrapper
+      .findAll('.recurring-card .transaction-meta')[1]
+      ?.text()
+      .replace(/\s+/g, ' ')
+    expect(meta).toBe('Monthly · Next Oct 19 · Confirmed by you · Undo')
+  })
+
+  it('keeps dismissed payments out of the way until asked, and undoes them', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    vi.mocked(answerRecurringCandidate).mockResolvedValue()
+    vi.mocked(undoRecurringAnswer).mockResolvedValue()
+    const wrapper = mountHome()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="No, Netflix doesn’t repeat"]').trigger('click')
+    await flushPromises()
+
+    expect(answerRecurringCandidate).toHaveBeenCalledWith(netflix, false)
+    expect(wrapper.find('.candidates').exists()).toBe(false)
+    expect(wrapper.find('#dismissed-candidates').exists()).toBe(false)
+
+    await wrapper.get('.dismissed-toggle').trigger('click')
+    expect(wrapper.get('#dismissed-candidates').text()).toContain('Netflix')
+
+    await wrapper.get('[aria-label="Undo dismissing Netflix"]').trigger('click')
+    await flushPromises()
+
+    expect(undoRecurringAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ merchant_key: 'netflix' }),
+    )
+    expect(wrapper.get('.candidates .transaction-name').text()).toBe('Netflix')
+    expect(wrapper.find('.dismissed-toggle').exists()).toBe(false)
+  })
+
+  it('puts a payment back when its answer can’t be saved', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    vi.mocked(answerRecurringCandidate).mockRejectedValue(new Error('offline'))
+    const wrapper = mountHome()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Yes, Netflix repeats"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.candidates .transaction-name').text()).toBe('Netflix')
+    expect(wrapper.text()).toContain('We couldn’t save your answer. Please try again.')
+  })
+
+  it('still lists Plaid’s streams when candidates can’t be loaded', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockRejectedValue(new Error('offline'))
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(wrapper.get('.recurring-card .transaction-name').text()).toBe('Landlord')
+    expect(wrapper.find('.candidates').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('We couldn’t load your recurring transactions.')
   })
 })
 
