@@ -949,6 +949,17 @@ describe('homepage recurring candidates', () => {
     expect(wrapper.get('.candidates .transaction-name').text()).toBe('Netflix')
     expect(wrapper.text()).toContain('We couldn’t save your answer. Please try again.')
   })
+
+  it('still lists Plaid’s streams when candidates can’t be loaded', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockRejectedValue(new Error('offline'))
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(wrapper.get('.recurring-card .transaction-name').text()).toBe('Landlord')
+    expect(wrapper.find('.candidates').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('We couldn’t load your recurring transactions.')
+  })
 })
 
 describe('homepage recurring transactions', () => {

@@ -372,9 +372,10 @@ async function loadRecurring() {
   recurringSyncFailed.value = false
   answerError.value = ''
   try {
+    // Candidates are only guesses, so Plaid's streams still show when they can't be loaded.
     const [streams, found] = await Promise.all([
       getRecurringTransactions(selectedAccountId.value, RECURRING_STREAM_COUNT),
-      getRecurringCandidates(selectedAccountId.value),
+      getRecurringCandidates(selectedAccountId.value).catch(() => []),
     ])
     if (disposed) return
     recurring.value = streams.slice(0, RECURRING_STREAM_COUNT)

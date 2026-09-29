@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,7 +18,8 @@ import java.util.UUID;
  * transaction, so it covers the merchant's later charges and outlives Jev's judgments of them.
  */
 @Entity
-@Table(name = "recurring_answers")
+@Table(name = "recurring_answers", uniqueConstraints = @UniqueConstraint(
+        name = "recurring_answers_unique", columnNames = {"user_id", "kind", "merchant_key"}))
 public class RecurringAnswer {
 
     @Id

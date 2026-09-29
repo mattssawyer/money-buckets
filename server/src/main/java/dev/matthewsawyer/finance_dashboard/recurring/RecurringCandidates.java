@@ -11,8 +11,10 @@ import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository
 import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -47,6 +49,7 @@ public class RecurringCandidates {
     private final PlaidRecurringStreamRepository streamRepository;
     private final RecurringAnswerRepository answerRepository;
     private final TrackedAccounts trackedAccounts;
+    private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
     public RecurringCandidates(
@@ -54,12 +57,14 @@ public class RecurringCandidates {
             PlaidRecurringStreamRepository streamRepository,
             RecurringAnswerRepository answerRepository,
             TrackedAccounts trackedAccounts,
+            TransactionTemplate transactionTemplate,
             Clock clock
     ) {
         this.transactionRepository = transactionRepository;
         this.streamRepository = streamRepository;
         this.answerRepository = answerRepository;
         this.trackedAccounts = trackedAccounts;
+        this.transactionTemplate = transactionTemplate;
         this.clock = clock;
     }
 
@@ -90,13 +95,25 @@ public class RecurringCandidates {
         return group(judged, shares, detectedByPlaid, answers, LocalDate.now(clock));
     }
 
-    /** Stores the user's yes or no for a merchant, replacing any earlier answer. */
-    @Transactional
+    /**
+     * Stores the user's yes or no for a merchant, replacing any earlier answer. Two answers for a
+     * merchant with none stored yet can both try to add one; the one that loses updates the
+     * winner's instead, in a transaction of its own since the failed insert spoils the first.
+     */
     public void answer(UUID userId, RecurringKind kind, String merchantKey, boolean confirmed) {
+        try {
+            transactionTemplate.executeWithoutResult(status -> store(userId, kind, merchantKey, confirmed));
+        } catch (DataIntegrityViolationException e) {
+            transactionTemplate.executeWithoutResult(status -> store(userId, kind, merchantKey, confirmed));
+        }
+    }
+
+    private void store(UUID userId, RecurringKind kind, String merchantKey, boolean confirmed) {
         RecurringAnswer answer = answerRepository.findByUserIdAndKindAndMerchantKey(userId, kind, merchantKey)
                 .orElseGet(() -> new RecurringAnswer(userId, kind, merchantKey));
         answer.answer(confirmed, Instant.now(clock));
-        answerRepository.save(answer);
+        // Flushed here so a clashing insert fails inside the transaction rather than at commit.
+        answerRepository.saveAndFlush(answer);
     }
 
     /** Forgets the user's answer for a merchant, so it's suggested again. */

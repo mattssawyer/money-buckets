@@ -4,6 +4,7 @@ import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
 import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
@@ -17,7 +18,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -25,11 +29,17 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "PLAID_CLIENT_ID=test-client-id",
@@ -45,6 +55,7 @@ class RecurringCandidatesTests {
     @Autowired private PlaidRecurringStreamRepository streams;
     @Autowired private RecurringAnswerRepository answers;
     @Autowired private TrackedAccounts trackedAccounts;
+    @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
 
     private RecurringCandidates candidates;
@@ -53,7 +64,8 @@ class RecurringCandidatesTests {
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
-        candidates = new RecurringCandidates(transactions, streams, answers, trackedAccounts, clock);
+        candidates = new RecurringCandidates(
+                transactions, streams, answers, trackedAccounts, transactionTemplate, clock);
         account("checking", true, 100);
     }
 
@@ -159,6 +171,26 @@ class RecurringCandidatesTests {
 
         assertEquals(1, answers.findAllByUserId(userId).size());
         assertEquals(RecurringCandidate.Status.CONFIRMED, status("netflix"));
+    }
+
+    @Test
+    void updatesTheOtherAnswerWhenTwoAnswersForANewMerchantClash() {
+        RecurringAnswerRepository clashing = mock(RecurringAnswerRepository.class);
+        RecurringAnswer storedFirst = new RecurringAnswer(userId, RecurringKind.BILL, "netflix");
+        storedFirst.answer(false, Instant.now());
+        // Nothing is stored when this answer looks, but another request adds one before it saves.
+        when(clashing.findByUserIdAndKindAndMerchantKey(userId, RecurringKind.BILL, "netflix"))
+                .thenReturn(Optional.empty(), Optional.of(storedFirst));
+        when(clashing.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("recurring_answers_unique"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        RecurringCandidates racing = new RecurringCandidates(transactions, streams, clashing, trackedAccounts,
+                new TransactionTemplate(mock(PlatformTransactionManager.class)), Clock.systemDefaultZone());
+
+        racing.answer(userId, RecurringKind.BILL, "netflix", true);
+
+        verify(clashing, times(2)).saveAndFlush(any());
+        assertTrue(storedFirst.isConfirmed());
     }
 
     @Test
