@@ -72,6 +72,23 @@ export interface RecurringStream {
   share_percent: number
 }
 
+/** Whether the user has answered a recurring candidate yet, and how. */
+export type RecurringCandidateStatus = 'SUGGESTED' | 'CONFIRMED' | 'DISMISSED'
+
+/**
+ * A merchant Jev thinks the user pays (a bill) or is paid by (a paycheck) regularly, which Plaid
+ * hasn't detected as a recurring stream. Shaped like a stream, from its latest likely charge, so
+ * a confirmed one can be listed and planned like Plaid's; its stream_id is made up.
+ */
+export interface RecurringCandidate extends RecurringStream {
+  kind: 'BILL' | 'PAYCHECK'
+  /** What the user's answer is stored under. */
+  merchant_key: string
+  /** How likely Jev thinks the likeliest charge is to repeat, 0–1. */
+  probability: number
+  status: RecurringCandidateStatus
+}
+
 export interface CategorySpend {
   /** Plaid primary personal finance category, or UNCATEGORIZED. */
   category: string
@@ -231,4 +248,33 @@ export async function getRecurringTransactions(
   )
 
   return data.streams
+}
+
+/** Every recurring candidate in the tracked accounts, or in one account, answered or not. */
+export async function getRecurringCandidates(accountId?: string): Promise<RecurringCandidate[]> {
+  const { data } = await apiClient.get<{ candidates: RecurringCandidate[] }>(
+    '/plaid/transactions/recurring/candidates',
+    { params: accountId ? { account_id: accountId } : {} },
+  )
+
+  return data.candidates
+}
+
+/** Stores the user's yes or no for a candidate's merchant, covering its later charges too. */
+export async function answerRecurringCandidate(
+  candidate: RecurringCandidate,
+  confirmed: boolean,
+): Promise<void> {
+  await apiClient.put('/plaid/transactions/recurring/candidates/answer', {
+    kind: candidate.kind,
+    merchant_key: candidate.merchant_key,
+    confirmed,
+  })
+}
+
+/** Forgets the user's answer, so the candidate is suggested again. */
+export async function undoRecurringAnswer(candidate: RecurringCandidate): Promise<void> {
+  await apiClient.delete('/plaid/transactions/recurring/candidates/answer', {
+    params: { kind: candidate.kind, merchant_key: candidate.merchant_key },
+  })
 }

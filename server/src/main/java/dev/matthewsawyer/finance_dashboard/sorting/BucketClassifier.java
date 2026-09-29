@@ -42,6 +42,8 @@ class BucketClassifier {
                             + "checking, without being spent, saved or invested.",
                     "not_for", "Cash withdrawals or payments to other people."));
 
+    private static final String BUCKET_QUESTION_ID = "bucket";
+
     private static final String QUESTION =
             "Which part of the user's Conscious Spending Plan does `transaction` belong to?";
 
@@ -67,11 +69,26 @@ class BucketClassifier {
         return typeSafe.isConfigured();
     }
 
-    Bucket classify(PlaidTransaction transaction, PlanLines plan) {
-        TypeSafeClient.ChoiceAnswer answer = plan.isEmpty()
-                ? typeSafe.choose(new State(TransactionState.of(transaction), null), WITHOUT_PLAN)
-                : typeSafe.choose(new State(TransactionState.of(transaction), PlanState.of(plan)), WITH_PLAN);
-        return Bucket.valueOf(answer.choice().toUpperCase(Locale.ROOT));
+    /**
+     * Sorts {@code transaction}. With {@code judgeRecurring}, the same request also asks whether
+     * it repeats, since the questions run in parallel and can't see each other's answers.
+     */
+    Sorted classify(PlaidTransaction transaction, PlanLines plan, boolean judgeRecurring) {
+        Map<String, Map<String, Object>> questions = new LinkedHashMap<>();
+        questions.put(BUCKET_QUESTION_ID, plan.isEmpty() ? WITHOUT_PLAN : WITH_PLAN);
+        if (judgeRecurring) {
+            questions.putAll(RecurringJudge.questions(transaction));
+        }
+        State state = new State(TransactionState.of(transaction), plan.isEmpty() ? null : PlanState.of(plan));
+
+        TypeSafeClient.Answers answers = typeSafe.ask(state, questions);
+        return new Sorted(
+                Bucket.valueOf(answers.choice(BUCKET_QUESTION_ID).toUpperCase(Locale.ROOT)),
+                judgeRecurring ? RecurringJudge.read(answers) : null);
+    }
+
+    /** A transaction's bucket, and whether it repeats when that was asked too. */
+    record Sorted(Bucket bucket, RecurringJudge.RecurringJudgment recurring) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -92,11 +109,13 @@ class BucketClassifier {
         // The model reads amounts better without a sign, so direction says which way money moved.
         static TransactionState of(PlaidTransaction transaction) {
             BigDecimal amount = transaction.getAmount();
+            String direction = amount.signum() >= 0 ? "money out"
+                    : RecurringJudge.isPay(transaction) ? "money in" : "refund";
             return new TransactionState(
                     transaction.getName(),
                     transaction.getMerchantName(),
                     amount.abs().setScale(2, RoundingMode.HALF_UP),
-                    amount.signum() < 0 ? "refund" : "money out",
+                    direction,
                     readableCategory(
                             transaction.getPersonalFinanceCategoryPrimary(),
                             transaction.getPersonalFinanceCategoryDetailed()),
@@ -133,7 +152,7 @@ class BucketClassifier {
         return category.replace('_', ' ').toLowerCase(Locale.ROOT);
     }
 
-    private static Map<String, Object> ordered(Object... keysAndValues) {
+    static Map<String, Object> ordered(Object... keysAndValues) {
         Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i < keysAndValues.length; i += 2) {
             map.put((String) keysAndValues[i], keysAndValues[i + 1]);

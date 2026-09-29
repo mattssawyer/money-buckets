@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
-import { getRecurringTransactions } from '../api/PlaidService'
+import { getRecurringCandidates, getRecurringTransactions } from '../api/PlaidService'
 import { saveSpendingPlan } from '../api/SpendingPlanService'
 import { estimateMonthlyTakeHome, planFromRecurring } from '../spendingPlan/fromRecurring'
 import { formatPlanAmount, parseAmount } from '../spendingPlan/money'
@@ -21,6 +21,7 @@ import {
   type PlanLineDraft,
 } from '../spendingPlan/plan'
 import { fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
+import { withConfirmed } from '../spending/recurring'
 
 const props = defineProps<{
   /** Edit this saved plan. Without it, the dialog runs a new setup from the tracked accounts' bills. */
@@ -87,6 +88,8 @@ const plan = ref<PlanRows>({ fixedCosts: [], investments: [], savings: [] })
 const expandedRows = ref(new Set<string>())
 const saving = ref(false)
 const saveError = ref('')
+// Payments Jev thinks repeat that the user hasn't confirmed or dismissed, so they aren't filled in.
+const unansweredCandidates = ref(0)
 
 const evaluation = computed(() => evaluatePlan(takeHome.value, plan.value, bufferPercent.value))
 const guiltFree = computed(() => evaluation.value.guiltFree)
@@ -118,11 +121,21 @@ async function save() {
   }
 }
 
-/** Fills in amounts from the recurring transactions in every tracked account. */
+/**
+ * Fills in amounts from the recurring transactions in every tracked account: Plaid's, and the
+ * ones the user confirmed. Plaid's alone still fill in when candidates can't be loaded.
+ */
 async function loadEstimates() {
   loadingEstimates.value = true
   try {
-    const streams = await getRecurringTransactions(undefined, 50)
+    const [found, candidates] = await Promise.all([
+      getRecurringTransactions(undefined, 50),
+      getRecurringCandidates().catch(() => []),
+    ])
+    unansweredCandidates.value = candidates.filter(
+      (candidate) => candidate.status === 'SUGGESTED',
+    ).length
+    const streams = withConfirmed(found, candidates)
     const estimated = estimateMonthlyTakeHome(streams)
     takeHome.value = estimated
     setPlan(planFromRecurring(streams))
@@ -254,6 +267,16 @@ function amountValue(amount: number | null) {
           <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
           Amounts found in your tracked accounts’ recurring transactions are filled in for you.
           <RouterLink to="/accounts">Choose accounts</RouterLink>
+        </p>
+        <p v-if="unansweredCandidates" class="autofill-note">
+          <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
+          {{
+            unansweredCandidates === 1
+              ? '1 payment might be recurring.'
+              : `${unansweredCandidates} payments might be recurring.`
+          }}
+          Confirm them on Home to fill them in.
+          <RouterLink to="/">Go to Home</RouterLink>
         </p>
       </div>
 

@@ -78,6 +78,23 @@ public class PlaidTransaction {
     @Column(name = "bucket", length = 32)
     private Bucket bucket;
 
+    /**
+     * How likely Jev thinks it is that this is a recurring bill or subscription (money out) or a
+     * paycheck (money in), from 0 to 1. Like the bucket, sync clears it when Plaid changes the
+     * transaction, so it's asked again.
+     */
+    @Column(name = "recurring_probability", precision = 5, scale = 4)
+    private BigDecimal recurringProbability;
+
+    /** How often Jev thinks a payment like this is usually made, if it repeats. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "usual_frequency", length = 32)
+    private RecurringFrequency usualFrequency;
+
+    /** When Jev last judged whether this repeats; null until then. */
+    @Column(name = "recurring_judged_at")
+    private Instant recurringJudgedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -236,6 +253,18 @@ public class PlaidTransaction {
 
     public Bucket getBucket() {
         return bucket;
+    }
+
+    public BigDecimal getRecurringProbability() {
+        return recurringProbability;
+    }
+
+    public RecurringFrequency getUsualFrequency() {
+        return usualFrequency;
+    }
+
+    public Instant getRecurringJudgedAt() {
+        return recurringJudgedAt;
     }
 
     public Instant getCreatedAt() {

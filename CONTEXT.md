@@ -50,6 +50,10 @@ _Avoid_: Portfolio value, total balance
 A payment or deposit Plaid has detected repeating on an account, such as a bill or a paycheck.
 _Avoid_: Recurring transaction, subscription
 
+**Recurring candidate**:
+A merchant Jev judges the user likely pays regularly (a bill or subscription) or is paid by regularly (a paycheck), from their transactions in tracked accounts, when Plaid hasn't detected it as a recurring stream. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same merchant, the recurring stream takes its place.
+_Avoid_: Suggested stream, suspected subscription, Jev stream
+
 ### Keeping data current
 
 **Item linking**:

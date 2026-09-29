@@ -41,6 +41,8 @@ const MONTHLY_MULTIPLIER: Record<string, number> = {
   BIWEEKLY: 26 / 12,
   SEMI_MONTHLY: 2,
   MONTHLY: 1,
+  QUARTERLY: 1 / 3,
+  SEMI_ANNUALLY: 1 / 6,
   ANNUALLY: 1 / 12,
 }
 
