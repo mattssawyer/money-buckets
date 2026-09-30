@@ -133,6 +133,24 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             @Param("accountIds") Collection<String> accountIds,
             @Param("excludedCategories") Collection<String> excludedCategories);
 
+    /** All of the user's transactions, in every account. */
+    List<PlaidTransaction> findAllByUserId(UUID userId);
+
+    /**
+     * Sets these transactions' bucket, or leaves them unsorted with null, and marks them changed,
+     * so a sort that read them earlier can't store its answer over this one.
+     */
+    @Modifying
+    @Transactional
+    @Query("""
+            UPDATE PlaidTransaction t SET t.bucket = :bucket, t.updatedAt = :changedAt
+            WHERE t.transactionId IN :transactionIds
+            """)
+    int setBuckets(
+            @Param("transactionIds") Collection<String> transactionIds,
+            @Param("bucket") Bucket bucket,
+            @Param("changedAt") Instant changedAt);
+
     @Query("SELECT DISTINCT t.userId FROM PlaidTransaction t")
     List<UUID> findUserIdsWithTransactions();
 }

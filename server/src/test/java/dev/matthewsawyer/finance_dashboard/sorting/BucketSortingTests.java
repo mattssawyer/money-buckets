@@ -5,6 +5,7 @@ import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeCorrections;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
@@ -48,6 +49,7 @@ class BucketSortingTests {
     @Autowired private PlaidTransactionRepository transactions;
     @Autowired private SpendingPlanService planService;
     @Autowired private EntityManager entityManager;
+    @Autowired private PayeeCorrections corrections;
 
     private final TypeSafeClient typeSafe = mock(TypeSafeClient.class);
     private final RecurringPayees payees = mock(RecurringPayees.class);
@@ -58,7 +60,8 @@ class BucketSortingTests {
     void setUp() {
         // Jobs and questions run inline so each test sees the finished sort.
         sorting = new BucketSorting(
-                transactions, planService, new BucketClassifier(typeSafe), payees, Runnable::run, Runnable::run);
+                transactions, planService, new BucketClassifier(typeSafe), corrections, payees,
+                Runnable::run, Runnable::run);
         userId = UUID.randomUUID();
         when(typeSafe.isConfigured()).thenReturn(true);
     }
@@ -73,6 +76,22 @@ class BucketSortingTests {
 
         assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
         assertEquals(Bucket.GUILT_FREE, bucket("coffee"));
+    }
+
+    @Test
+    void keepsTheBucketTheUserChoseForAPayeeWithoutAskingJev() {
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, null);
+        store(transaction("rent", "Sterling Group", "HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE"));
+        store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+        answer(Map.of("Sterling Group", "guilt_free", "Starbucks", "guilt_free"));
+
+        sorting.sortLater(userId);
+        savePlan("Subscriptions");
+        sorting.planSaved(userId, PlanLines.NONE);
+
+        assertEquals(Bucket.FIXED_COSTS, bucket("rent"), "a plan save sorting everything again keeps it too");
+        assertEquals(Bucket.GUILT_FREE, bucket("coffee"));
+        verify(typeSafe, times(2)).ask(any(), any());
     }
 
     @Test
@@ -159,6 +178,20 @@ class BucketSortingTests {
 
         sorting.sortLater(userId);
 
+        assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
+        assertNull(bucket("coffee"));
+    }
+
+    @Test
+    void sortsCorrectedPayeesEvenWithoutAnApiKey() {
+        when(typeSafe.isConfigured()).thenReturn(false);
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, null);
+        store(transaction("rent", "Sterling Group", "HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE"));
+        store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+
+        sorting.sortLater(userId);
+
+        verify(typeSafe, never()).ask(any(), any());
         assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
         assertNull(bucket("coffee"));
     }

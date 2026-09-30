@@ -1,7 +1,9 @@
 package dev.matthewsawyer.finance_dashboard.sorting;
 
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
+import dev.matthewsawyer.finance_dashboard.model.PayeeCorrection;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeCorrections;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
@@ -13,6 +15,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -26,7 +29,8 @@ import java.util.concurrent.RejectedExecutionException;
  * about every transaction, so it runs off the caller's thread, and its jobs run one at a time so
  * an older job can never overwrite a newer one's answers.
  *
- * <p>Failures leave transactions unsorted rather than guessing; the next sort retries them.
+ * <p>A payee the user corrected keeps the bucket they chose; Jev isn't asked about its charges.
+ * Failures leave transactions unsorted rather than guessing; the next sort retries them.
  */
 @Service
 public class BucketSorting {
@@ -44,6 +48,7 @@ public class BucketSorting {
     private final PlaidTransactionRepository transactionRepository;
     private final SpendingPlanService planService;
     private final BucketClassifier classifier;
+    private final PayeeCorrections corrections;
     private final RecurringPayees recurringPayees;
     private final Executor jobExecutor;
     private final Executor classifyExecutor;
@@ -52,6 +57,7 @@ public class BucketSorting {
             PlaidTransactionRepository transactionRepository,
             SpendingPlanService planService,
             BucketClassifier classifier,
+            PayeeCorrections corrections,
             RecurringPayees recurringPayees,
             @Qualifier("sortingJobExecutor") Executor jobExecutor,
             @Qualifier("sortingClassifyExecutor") Executor classifyExecutor
@@ -59,6 +65,7 @@ public class BucketSorting {
         this.transactionRepository = transactionRepository;
         this.planService = planService;
         this.classifier = classifier;
+        this.corrections = corrections;
         this.recurringPayees = recurringPayees;
         this.jobExecutor = jobExecutor;
         this.classifyExecutor = classifyExecutor;
@@ -70,9 +77,6 @@ public class BucketSorting {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void catchUp() {
-        if (!classifier.isAvailable()) {
-            return;
-        }
         for (UUID userId : transactionRepository.findUserIdsWithTransactions()) {
             sortLater(userId);
         }
@@ -106,10 +110,6 @@ public class BucketSorting {
     }
 
     private void run(UUID userId, boolean includeSorted) {
-        if (!classifier.isAvailable()) {
-            log.info("Skipping sorting for user {}: no TypeSafe API key is set", userId);
-            return;
-        }
         try {
             sort(userId, includeSorted);
             recurringPayees.judge(userId);
@@ -120,7 +120,8 @@ public class BucketSorting {
 
     /**
      * Asks about every transaction in parallel and stores each bucket as it's read, skipping the
-     * ones whose question failed; the next job asks them again.
+     * ones whose question failed; the next job asks them again. Without a TypeSafe API key, only
+     * payees the user corrected are sorted.
      */
     private void sort(UUID userId, boolean includeSorted) {
         List<PlaidTransaction> transactions = transactionRepository.findToSort(userId, includeSorted, NOT_PLAN_MONEY);
@@ -128,9 +129,22 @@ public class BucketSorting {
             return;
         }
         PlanLines plan = planLines(userId);
+        Map<String, PayeeCorrection> corrected = corrections.byPayee(userId);
+        boolean canAsk = classifier.isAvailable();
+        if (!canAsk) {
+            log.info("No TypeSafe API key is set; sorting only corrected payees for user {}", userId);
+        }
         List<CompletableFuture<Bucket>> answers = transactions.stream()
-                .map(transaction -> CompletableFuture.supplyAsync(
-                        () -> classifier.classify(transaction, plan), classifyExecutor))
+                .map(transaction -> {
+                    String payee = PayeeCorrections.payeeKey(transaction);
+                    PayeeCorrection correction = payee == null ? null : corrected.get(payee);
+                    if (correction != null && correction.getBucket() != null) {
+                        return CompletableFuture.completedFuture(correction.getBucket());
+                    }
+                    return canAsk
+                            ? CompletableFuture.supplyAsync(() -> classifier.classify(transaction, plan), classifyExecutor)
+                            : CompletableFuture.<Bucket>completedFuture(null);
+                })
                 .toList();
 
         int stored = 0;
@@ -146,7 +160,7 @@ public class BucketSorting {
                 firstFailure = firstFailure == null ? e : firstFailure;
                 continue;
             }
-            if (bucket != transaction.getBucket()) {
+            if (bucket != null && bucket != transaction.getBucket()) {
                 stored += transactionRepository.updateBucket(
                         transaction.getTransactionId(), transaction.getUpdatedAt(), bucket);
             }

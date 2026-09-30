@@ -31,6 +31,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   UNCATEGORIZED: 'Uncategorized',
 }
 
+/** Categories a user can file spending under, in the order they're offered. */
+export const SPENDING_CATEGORIES = Object.keys(CATEGORY_LABELS)
+  .filter((category) => category !== 'UNCATEGORIZED')
+  .sort((a, b) => categoryLabel(a).localeCompare(categoryLabel(b)))
+
 export function firstPresent(...values: Array<string | null | undefined>) {
   return values.find((value) => value != null && value.trim() !== '')
 }

@@ -36,7 +36,7 @@ import java.util.UUID;
 public class RecurringCandidates {
 
     /** How likely a charge has to be to repeat before its merchant is suggested. */
-    static final BigDecimal SUGGEST_AT = new BigDecimal("0.5");
+    public static final BigDecimal SUGGEST_AT = new BigDecimal("0.5");
 
     // Charges closer together than this are one payment split up or retried, not a schedule.
     private static final int MIN_SCHEDULE_DAYS = 5;

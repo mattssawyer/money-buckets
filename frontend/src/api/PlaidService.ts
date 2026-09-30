@@ -44,9 +44,31 @@ export interface PlaidTransaction {
   pending: boolean
   category: string | null
   /** Null until sorting reaches it. NOT_COUNTED is money moved between own accounts. */
-  bucket: Exclude<Bucket, 'UNSORTED'> | 'NOT_COUNTED' | null
+  bucket: SpendingBucket | null
   /** The user's share of the account's money, 1–100; amount is the whole transaction's. */
   share_percent: number
+  /** Who was paid, or paid the user; corrections and recurring answers are kept per payee. */
+  payee_key: string | null
+  payee_kind: RecurringKind | null
+  /** Whether the user set the payee's bucket, or its category, themselves. */
+  bucket_corrected: boolean
+  category_corrected: boolean
+  /** Whether the payee repeats, as far as Plaid, the user or Jev have said. */
+  recurring: TransactionRecurring | null
+}
+
+export type RecurringKind = 'BILL' | 'PAYCHECK'
+
+/**
+ * DETECTED: Plaid found it recurring. CONFIRMED / DISMISSED: the user said it does or doesn't
+ * repeat. SUGGESTED: Jev thinks it repeats and the user hasn't answered.
+ */
+export type TransactionRecurring = 'DETECTED' | 'CONFIRMED' | 'DISMISSED' | 'SUGGESTED'
+
+/** A payee, as recurring answers and corrections are stored under. */
+export interface PayeeRef {
+  kind: RecurringKind
+  merchant_key: string
 }
 
 export interface TransactionPage {
@@ -88,7 +110,7 @@ export type RecurringCandidateStatus = 'SUGGESTED' | 'CONFIRMED' | 'DISMISSED'
  * confirmed one can be listed and planned like Plaid's; its stream_id is made up.
  */
 export interface RecurringCandidate extends RecurringStream {
-  kind: 'BILL' | 'PAYCHECK'
+  kind: RecurringKind
   /** What the user's answer is stored under. */
   merchant_key: string
   /** How likely Jev thinks the payments are regular, 0–1. */
@@ -269,7 +291,7 @@ export async function getRecurringCandidates(accountId?: string): Promise<Recurr
 
 /** Stores the user's yes or no for a candidate's merchant, covering its later charges too. */
 export async function answerRecurringCandidate(
-  candidate: RecurringCandidate,
+  candidate: PayeeRef,
   confirmed: boolean,
 ): Promise<void> {
   await apiClient.put('/plaid/transactions/recurring/candidates/answer', {
@@ -280,8 +302,28 @@ export async function answerRecurringCandidate(
 }
 
 /** Forgets the user's answer, so the candidate is suggested again. */
-export async function undoRecurringAnswer(candidate: RecurringCandidate): Promise<void> {
+export async function undoRecurringAnswer(candidate: PayeeRef): Promise<void> {
   await apiClient.delete('/plaid/transactions/recurring/candidates/answer', {
     params: { kind: candidate.kind, merchant_key: candidate.merchant_key },
   })
 }
+
+/**
+ * Sets the bucket and category for every charge from a payee, now and later. Null leaves that
+ * part to sorting or Plaid.
+ */
+export async function correctPayee(
+  merchantKey: string,
+  bucket: SpendingBucket | null,
+  category: string | null,
+): Promise<void> {
+  await apiClient.put('/payees/corrections', { merchant_key: merchantKey, bucket, category })
+}
+
+/** Forgets a payee's correction, so its charges are sorted again. */
+export async function undoPayeeCorrection(merchantKey: string): Promise<void> {
+  await apiClient.delete('/payees/corrections', { params: { merchant_key: merchantKey } })
+}
+
+/** A bucket a transaction's money can count toward. */
+export type SpendingBucket = Exclude<Bucket, 'UNSORTED'> | 'NOT_COUNTED'

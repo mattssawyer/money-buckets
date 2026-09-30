@@ -169,7 +169,7 @@ public class RecurringPayees {
     }
 
     /** Payees Plaid detects as a recurring stream in the given accounts. */
-    Set<RecurringMerchant> detectedByPlaid(UUID userId, Collection<String> accountIds) {
+    public Set<RecurringMerchant> detectedByPlaid(UUID userId, Collection<String> accountIds) {
         Set<RecurringMerchant> detected = new HashSet<>();
         for (PlaidRecurringStream stream : streamRepository.findAllByUserIdAndAccountIdIn(userId, accountIds)) {
             RecurringMerchant payee = RecurringMerchant.of(stream);
