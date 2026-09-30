@@ -184,6 +184,10 @@ const spendingChartOptions: ChartOptions<'doughnut'> = {
 }
 let handler: ReturnType<Window['Plaid']['create']> | undefined
 let disposed = false
+// Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
+const startTransactions = latestRequest()
+const startSpending = latestRequest()
+const startRecurring = latestRequest()
 
 onMounted(loadConnections)
 onUnmounted(() => {
@@ -291,6 +295,25 @@ function loadCards() {
   return Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
 }
 
+/** Tries loading the account list again, and the cards too if that changes what's shown. */
+async function retryAccounts() {
+  const shown = selectedAccountId.value
+  await loadAccountList()
+  if (!disposed && selectedAccountId.value !== shown) void loadCards()
+}
+
+/**
+ * Numbers a loader's requests; the check each start returns is true only while its request is
+ * the latest and the page is still open.
+ */
+function latestRequest() {
+  let latest = 0
+  return () => {
+    const request = ++latest
+    return () => !disposed && request === latest
+  }
+}
+
 function onAccountChange(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
@@ -313,7 +336,7 @@ async function loadSpending() {
   loadingSpending.value = true
   spendingError.value = ''
   const accountId = selectedAccountId.value
-  const current = () => !disposed && accountId === selectedAccountId.value
+  const current = startSpending()
   try {
     const summary = await getSpendingByBucket(accountId)
     if (!current()) return
@@ -347,10 +370,9 @@ function recheckUnsorted(accountId: string | undefined) {
 async function loadTransactions() {
   loadingTransactions.value = true
   transactionsError.value = ''
-  const accountId = selectedAccountId.value
-  const current = () => !disposed && accountId === selectedAccountId.value
+  const current = startTransactions()
   try {
-    const recent = await getTransactions(RECENT_TRANSACTION_COUNT, accountId)
+    const recent = await getTransactions(RECENT_TRANSACTION_COUNT, selectedAccountId.value)
     if (current()) transactions.value = recent
   } catch {
     if (current()) transactionsError.value = 'We couldn’t load your recent transactions.'
@@ -365,7 +387,7 @@ async function loadRecurring() {
   recurringSyncFailed.value = false
   answerError.value = ''
   const accountId = selectedAccountId.value
-  const current = () => !disposed && accountId === selectedAccountId.value
+  const current = startRecurring()
   try {
     // Candidates are only guesses, so Plaid's streams still show when they can't be loaded.
     const [streams, found] = await Promise.all([
@@ -608,7 +630,7 @@ async function openPlaidLink() {
                 label="Try again"
                 severity="secondary"
                 class="retry-button"
-                @click="loadAccountList"
+                @click="retryAccounts"
               />
             </div>
 
