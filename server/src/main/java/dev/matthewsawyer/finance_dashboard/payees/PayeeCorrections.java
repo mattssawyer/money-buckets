@@ -65,40 +65,45 @@ public class PayeeCorrections {
     /**
      * Stores the user's bucket and category for a payee, replacing any earlier correction, and
      * moves the payee's existing charges to that bucket. A bucket handed back to automatic leaves
-     * the charges unsorted, for sorting to decide again. Two corrections racing to add the first
-     * one for a payee end with the later one updating the other's, like recurring answers.
+     * the charges unsorted, for sorting to decide again.
+     *
+     * <p>The correction and its charges change in one transaction, with the correction's row
+     * locked, so two changes to one payee can't leave its charges in the other one's bucket. Two
+     * corrections racing to add the first one for a payee end with the later one updating the
+     * other's, like recurring answers.
      */
     public void correct(UUID userId, String merchantKey, Bucket bucket, String category) {
-        Bucket before;
         try {
-            before = transactionTemplate.execute(status -> store(userId, merchantKey, bucket, category));
+            transactionTemplate.executeWithoutResult(status -> store(userId, merchantKey, bucket, category));
         } catch (DataIntegrityViolationException e) {
-            before = transactionTemplate.execute(status -> store(userId, merchantKey, bucket, category));
-        }
-        if (bucket != null || before != null) {
-            setBuckets(userId, merchantKey, bucket);
+            transactionTemplate.executeWithoutResult(status -> store(userId, merchantKey, bucket, category));
         }
     }
 
-    /** Forgets a payee's correction. Its charges are left unsorted, for sorting to decide again. */
+    /**
+     * Forgets a payee's correction. Its charges are left unsorted, for sorting to decide again.
+     * Locked like {@link #correct}, so it can't clear the charges of a correction made meanwhile.
+     */
     public void undo(UUID userId, String merchantKey) {
-        correctionRepository.findByUserIdAndMerchantKey(userId, merchantKey).ifPresent(correction -> {
-            correctionRepository.delete(correction);
-            if (correction.getBucket() != null) {
-                setBuckets(userId, merchantKey, null);
-            }
-        });
+        transactionTemplate.executeWithoutResult(status ->
+                correctionRepository.lock(userId, merchantKey).ifPresent(correction -> {
+                    correctionRepository.delete(correction);
+                    if (correction.getBucket() != null) {
+                        setBuckets(userId, merchantKey, null);
+                    }
+                }));
     }
 
-    /** Stores the correction and returns the bucket it had before, if any. */
-    private Bucket store(UUID userId, String merchantKey, Bucket bucket, String category) {
-        PayeeCorrection correction = correctionRepository.findByUserIdAndMerchantKey(userId, merchantKey)
+    private void store(UUID userId, String merchantKey, Bucket bucket, String category) {
+        PayeeCorrection correction = correctionRepository.lock(userId, merchantKey)
                 .orElseGet(() -> new PayeeCorrection(userId, merchantKey));
         Bucket before = correction.getBucket();
         correction.correct(bucket, category, Instant.now(clock));
         // Flushed here so a clashing insert fails inside the transaction rather than at commit.
         correctionRepository.saveAndFlush(correction);
-        return before;
+        if (bucket != null || before != null) {
+            setBuckets(userId, merchantKey, bucket);
+        }
     }
 
     /**
