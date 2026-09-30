@@ -4,14 +4,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
+import dev.matthewsawyer.finance_dashboard.model.PlaidCategory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import static dev.matthewsawyer.finance_dashboard.sorting.TypeSafeClient.ordered;
 
 /**
  * Decides which bucket one transaction belongs to, using the user's plan lines to settle
@@ -69,26 +71,12 @@ class BucketClassifier {
         return typeSafe.isConfigured();
     }
 
-    /**
-     * Sorts {@code transaction}. With {@code judgeRecurring}, the same request also asks whether
-     * it repeats, since the questions run in parallel and can't see each other's answers.
-     */
-    Sorted classify(PlaidTransaction transaction, PlanLines plan, boolean judgeRecurring) {
-        Map<String, Map<String, Object>> questions = new LinkedHashMap<>();
-        questions.put(BUCKET_QUESTION_ID, plan.isEmpty() ? WITHOUT_PLAN : WITH_PLAN);
-        if (judgeRecurring) {
-            questions.putAll(RecurringJudge.questions(transaction));
-        }
+    /** The bucket {@code transaction} belongs in. */
+    Bucket classify(PlaidTransaction transaction, PlanLines plan) {
         State state = new State(TransactionState.of(transaction), plan.isEmpty() ? null : PlanState.of(plan));
-
-        TypeSafeClient.Answers answers = typeSafe.ask(state, questions);
-        return new Sorted(
-                Bucket.valueOf(answers.choice(BUCKET_QUESTION_ID).toUpperCase(Locale.ROOT)),
-                judgeRecurring ? RecurringJudge.read(answers) : null);
-    }
-
-    /** A transaction's bucket, and whether it repeats when that was asked too. */
-    record Sorted(Bucket bucket, RecurringJudge.RecurringJudgment recurring) {
+        TypeSafeClient.Answers answers = typeSafe.ask(
+                state, Map.of(BUCKET_QUESTION_ID, plan.isEmpty() ? WITHOUT_PLAN : WITH_PLAN));
+        return Bucket.valueOf(answers.choice(BUCKET_QUESTION_ID).toUpperCase(Locale.ROOT));
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -109,14 +97,13 @@ class BucketClassifier {
         // The model reads amounts better without a sign, so direction says which way money moved.
         static TransactionState of(PlaidTransaction transaction) {
             BigDecimal amount = transaction.getAmount();
-            String direction = amount.signum() >= 0 ? "money out"
-                    : RecurringJudge.isPay(transaction) ? "money in" : "refund";
+            String direction = amount.signum() >= 0 ? "money out" : "refund";
             return new TransactionState(
                     transaction.getName(),
                     transaction.getMerchantName(),
                     amount.abs().setScale(2, RoundingMode.HALF_UP),
                     direction,
-                    readableCategory(
+                    PlaidCategory.readable(
                             transaction.getPersonalFinanceCategoryPrimary(),
                             transaction.getPersonalFinanceCategoryDetailed()),
                     transaction.getPaymentChannel());
@@ -137,26 +124,4 @@ class BucketClassifier {
     record Lines(@JsonProperty("lines") List<String> lines) {
     }
 
-    /** Turns FOOD_AND_DRINK / FOOD_AND_DRINK_COFFEE into "food and drink: coffee". */
-    static String readableCategory(String primary, String detailed) {
-        if (detailed == null) {
-            return primary == null ? null : words(primary);
-        }
-        if (primary == null || !detailed.startsWith(primary + "_")) {
-            return words(detailed);
-        }
-        return words(primary) + ": " + words(detailed.substring(primary.length() + 1));
-    }
-
-    private static String words(String category) {
-        return category.replace('_', ' ').toLowerCase(Locale.ROOT);
-    }
-
-    static Map<String, Object> ordered(Object... keysAndValues) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i < keysAndValues.length; i += 2) {
-            map.put((String) keysAndValues[i], keysAndValues[i + 1]);
-        }
-        return map;
-    }
 }

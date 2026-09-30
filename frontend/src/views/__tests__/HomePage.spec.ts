@@ -180,6 +180,8 @@ const rent: RecurringStream = {
   category: 'RENT_AND_UTILITIES',
   category_detailed: 'RENT_AND_UTILITIES_RENT',
   share_percent: 100,
+  plan_bucket: null,
+  plan_line: null,
 }
 
 let linkOptions: Parameters<Window['Plaid']['create']>[0]
@@ -868,6 +870,8 @@ describe('homepage recurring candidates', () => {
     category: 'ENTERTAINMENT',
     category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
     share_percent: 100,
+    plan_bucket: null,
+    plan_line: null,
     probability: 0.93,
     status: 'SUGGESTED',
   }

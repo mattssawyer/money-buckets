@@ -50,8 +50,12 @@ _Avoid_: Portfolio value, total balance
 A payment or deposit Plaid has detected repeating on an account, such as a bill or a paycheck.
 _Avoid_: Recurring transaction, subscription
 
+**Payee**:
+Who the user pays (a bill) or is paid by (a paycheck), identified by the merchant, or the description when Plaid found no merchant. Jev judges each payee from all of its recent charges at once: whether the payments are regular, how often, and which plan line they belong under. A well-known subscription is recognized from one charge; a payee whose name says nothing, like rent paid to a property manager, once the same amount repeats.
+_Avoid_: Merchant (Plaid's field, which a payee falls back from), vendor
+
 **Recurring candidate**:
-A merchant Jev judges the user likely pays regularly (a bill or subscription) or is paid by regularly (a paycheck), from their transactions in tracked accounts, when Plaid hasn't detected it as a recurring stream. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same merchant, the recurring stream takes its place.
+A payee Jev judges the user likely pays or is paid by regularly, in tracked accounts, when Plaid hasn't detected it as a recurring stream. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same payee, the recurring stream takes its place.
 _Avoid_: Suggested stream, suspected subscription, Jev stream
 
 ### Keeping data current
@@ -86,6 +90,10 @@ _Avoid_: Row, entry
 One of the amounts a line can be split into, such as each insurance policy under "Insurance". It may come from a recurring stream. When a line has breakdown items, its amount is their sum.
 _Avoid_: Item on its own (clashes with Plaid item), sub-line
 
+**Placing a bill**:
+Putting a recurring bill on a plan line as a breakdown item during plan setup, on the line Jev chose for its payee. The user places or skips bills Jev put on no line.
+_Avoid_: Mapping, assigning
+
 **Take-home pay**:
 What lands in the user's account each month after taxes and paycheck deductions.
 _Avoid_: Income, salary, net pay
@@ -115,5 +123,5 @@ A plan outcome that needs the user's attention: fixed costs above their target, 
 _Avoid_: Over budget, warning
 
 **Sorting**:
-Deciding each transaction's bucket, using the user's plan lines as a guide, so a streaming charge lands in fixed costs when the plan lists subscriptions there. New transactions are sorted after each item sync, and every transaction is sorted again when a save changes the plan's lines.
+Deciding each transaction's bucket, using the user's plan lines as a guide, so a streaming charge lands in fixed costs when the plan lists subscriptions there. New transactions are sorted after each item sync, and every transaction is sorted again when a save changes the plan's lines. Payees are judged right after, since sorting decides which money only moved between the user's own accounts.
 _Avoid_: Categorizing, classifying

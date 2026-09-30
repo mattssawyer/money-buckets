@@ -5,9 +5,13 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
+import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
+import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
@@ -68,6 +72,7 @@ public class PlaidController {
     private final PlaidRecurringStreamRepository recurringStreamRepository;
     private final TrackedAccounts trackedAccounts;
     private final Spending spending;
+    private final RecurringPayees recurringPayees;
     private final UserService userService;
 
     public PlaidController(
@@ -78,6 +83,7 @@ public class PlaidController {
             PlaidRecurringStreamRepository recurringStreamRepository,
             TrackedAccounts trackedAccounts,
             Spending spending,
+            RecurringPayees recurringPayees,
             UserService userService
     ) {
         this.itemLinking = itemLinking;
@@ -87,6 +93,7 @@ public class PlaidController {
         this.recurringStreamRepository = recurringStreamRepository;
         this.trackedAccounts = trackedAccounts;
         this.spending = spending;
+        this.recurringPayees = recurringPayees;
         this.userService = userService;
     }
 
@@ -246,8 +253,10 @@ public class PlaidController {
                 ? List.of()
                 : recurringStreamRepository.findAllByUserIdAndAccountIdIn(user.getId(), shares.keySet());
 
+        Map<RecurringMerchant, RecurringPayee> payees = stored.isEmpty() ? Map.of() : recurringPayees.judged(user.getId());
         List<RecurringStreamResponse> streams = stored.stream()
-                .map(stream -> RecurringStreamResponse.from(stream, shares.get(stream.getAccountId())))
+                .map(stream -> RecurringStreamResponse.from(
+                        stream, shares.get(stream.getAccountId()), payees.get(RecurringMerchant.of(stream))))
                 .sorted(Comparator
                         .comparing(RecurringStreamResponse::nextDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(RecurringStreamResponse::lastDate, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -275,9 +284,12 @@ public class PlaidController {
             @JsonProperty("category") String category,
             @JsonProperty("category_detailed") String categoryDetailed,
             /** The user's share of the account's money, in percent; the amount is the whole stream's. */
-            @JsonProperty("share_percent") int sharePercent
+            @JsonProperty("share_percent") int sharePercent,
+            /** The plan line Jev put the payee's bills under; null for pay, and until it's judged. */
+            @JsonProperty("plan_bucket") SpendingPlanBucket planBucket,
+            @JsonProperty("plan_line") String planLine
     ) {
-        static RecurringStreamResponse from(PlaidRecurringStream stream, int sharePercent) {
+        static RecurringStreamResponse from(PlaidRecurringStream stream, int sharePercent, RecurringPayee payee) {
             return new RecurringStreamResponse(
                     stream.getStreamId(),
                     stream.getAccountId(),
@@ -291,7 +303,9 @@ public class PlaidController {
                     stream.isInflow(),
                     stream.getCategory(),
                     stream.getCategoryDetailed(),
-                    sharePercent
+                    sharePercent,
+                    payee == null ? null : payee.getPlanBucket(),
+                    payee == null ? null : payee.getPlanLine()
             );
         }
     }

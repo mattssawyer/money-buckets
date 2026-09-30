@@ -1,13 +1,11 @@
 package dev.matthewsawyer.finance_dashboard.sorting;
 
-import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
-import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
-import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import jakarta.persistence.EntityManager;
@@ -48,11 +46,11 @@ import static org.mockito.Mockito.when;
 class BucketSortingTests {
 
     @Autowired private PlaidTransactionRepository transactions;
-    @Autowired private PlaidRecurringStreamRepository streams;
     @Autowired private SpendingPlanService planService;
     @Autowired private EntityManager entityManager;
 
     private final TypeSafeClient typeSafe = mock(TypeSafeClient.class);
+    private final RecurringPayees payees = mock(RecurringPayees.class);
     private BucketSorting sorting;
     private UUID userId;
 
@@ -60,8 +58,7 @@ class BucketSortingTests {
     void setUp() {
         // Jobs and questions run inline so each test sees the finished sort.
         sorting = new BucketSorting(
-                transactions, streams, planService, new BucketClassifier(typeSafe), new RecurringJudge(typeSafe),
-                Runnable::run, Runnable::run);
+                transactions, planService, new BucketClassifier(typeSafe), payees, Runnable::run, Runnable::run);
         userId = UUID.randomUUID();
         when(typeSafe.isConfigured()).thenReturn(true);
     }
@@ -79,121 +76,48 @@ class BucketSortingTests {
     }
 
     @Test
-    void neverSortsPayOrAsksAboutCardPayments() {
+    void neverSortsPayOrCardPayments() {
         store(pay("pay", "ACME payroll"));
         store(transaction("card", "Card autopay", "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"));
-        answer(Map.of());
 
         sorting.sortLater(userId);
 
-        assertEquals(List.of(Set.of(RecurringJudge.REPEATS, RecurringJudge.USUAL_FREQUENCY)), askedQuestionIds());
+        verify(typeSafe, never()).ask(any(), any());
         assertNull(bucket("pay"));
         assertNull(bucket("card"));
     }
 
     @Test
-    void asksWhetherSpendingRepeatsInTheSortingRequest() {
+    void judgesRecurringPayeesAfterSorting() {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
-        answer(Map.of("Netflix", "fixed_costs"), 0.92);
+        answer(Map.of("Netflix", "fixed_costs"));
+        // Payees are read from sorted spending, so the bucket must be stored first.
+        doAnswer(invocation -> {
+            assertEquals(Bucket.FIXED_COSTS, bucket("netflix"));
+            return null;
+        }).when(payees).judge(userId);
 
         sorting.sortLater(userId);
 
-        assertEquals(List.of(Set.of("bucket", RecurringJudge.REPEATS, RecurringJudge.USUAL_FREQUENCY)),
-                askedQuestionIds());
-        PlaidTransaction netflix = stored("netflix");
-        assertEquals(Bucket.FIXED_COSTS, netflix.getBucket());
-        assertEquals(new BigDecimal("0.9200"), netflix.getRecurringProbability());
-        assertEquals(RecurringFrequency.MONTHLY, netflix.getUsualFrequency());
-        assertNotNull(netflix.getRecurringJudgedAt());
+        verify(payees).judge(userId);
     }
 
     @Test
-    void asksWhetherPayRepeatsAsAPaycheck() {
-        store(pay("pay", "ACME payroll"));
-        answer(Map.of(), 0.97);
-
+    void judgesRecurringPayeesEvenWhenNothingNeedsSorting() {
         sorting.sortLater(userId);
 
-        assertEquals("money in", askedState().transaction().direction());
-        assertEquals(new BigDecimal("0.9700"), stored("pay").getRecurringProbability());
+        verify(payees).judge(userId);
     }
 
     @Test
-    void neverAsksWhetherAMerchantPlaidDetectsRepeats() {
-        streams.saveAndFlush(new PlaidRecurringStream(
-                "netflix-stream", "item", userId, "checking", new BigDecimal("15.49"), "MONTHLY", false)
-                .merchantName("NETFLIX"));
-        streams.saveAndFlush(new PlaidRecurringStream(
-                "pay-stream", "item", userId, "checking", new BigDecimal("-4000"), "BIWEEKLY", true)
-                .description("ACME PAYROLL"));
+    void catchesEveryoneUpOnStartup() {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
-        store(pay("pay", "ACME payroll"));
-        answer(Map.of("Netflix", "fixed_costs"), 0.9);
+        answer(Map.of("Netflix", "fixed_costs"));
 
-        sorting.sortLater(userId);
+        sorting.catchUp();
 
-        assertEquals(List.of(Set.of("bucket")), askedQuestionIds());
         assertEquals(Bucket.FIXED_COSTS, bucket("netflix"));
-        assertNull(stored("netflix").getRecurringJudgedAt());
-        assertNull(stored("pay").getRecurringJudgedAt());
-    }
-
-    @Test
-    void asksAboutAMerchantPlaidDetectsOnlyInAnotherAccount() {
-        streams.saveAndFlush(new PlaidRecurringStream(
-                "netflix-stream", "item", userId, "credit-card", new BigDecimal("15.49"), "MONTHLY", false)
-                .merchantName("Netflix"));
-        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
-        answer(Map.of("Netflix", "fixed_costs"), 0.9);
-
-        sorting.sortLater(userId);
-
-        assertEquals(List.of(Set.of("bucket", RecurringJudge.REPEATS, RecurringJudge.USUAL_FREQUENCY)),
-                askedQuestionIds());
-    }
-
-    @Test
-    void judgesSpendingSortedBeforeRecurringJudgmentsExisted() {
-        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
-        transactions.updateBucket("netflix", stored("netflix").getUpdatedAt(), Bucket.FIXED_COSTS);
-        answer(Map.of(), 0.9);
-
-        sorting.sortLater(userId);
-
-        assertEquals(List.of(Set.of(RecurringJudge.REPEATS, RecurringJudge.USUAL_FREQUENCY)), askedQuestionIds());
-        assertEquals(new BigDecimal("0.9000"), stored("netflix").getRecurringProbability());
-        assertEquals(Bucket.FIXED_COSTS, stored("netflix").getBucket());
-    }
-
-    @Test
-    void neverAsksWhetherMovesBetweenOwnAccountsOrRefundsRepeat() {
-        store(transaction("to-savings", "Transfer to savings", "TRANSFER_OUT", "TRANSFER_OUT_ACCOUNT_TRANSFER"));
-        transactions.updateBucket("to-savings", stored("to-savings").getUpdatedAt(), Bucket.NOT_COUNTED);
-        store(new PlaidTransaction("refund", "item", userId, "checking", new BigDecimal("-20"), LocalDate.now())
-                .name("Target refund")
-                .personalFinanceCategory("GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_SUPERSTORES"));
-        answer(Map.of("Target refund", "guilt_free"));
-
-        sorting.sortLater(userId);
-
-        assertEquals(List.of(Set.of("bucket")), askedQuestionIds());
-        assertNull(stored("to-savings").getRecurringJudgedAt());
-        assertNull(stored("refund").getRecurringJudgedAt());
-    }
-
-    @Test
-    void keepsTheRecurringJudgmentWhenAPlanSaveSortsAgain() {
-        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
-        answer(Map.of("Netflix", "guilt_free"), 0.9);
-        sorting.sortLater(userId);
-
-        savePlan("Subscriptions");
-        answer(Map.of("Netflix", "fixed_costs"), 0.1);
-        sorting.planSaved(userId, PlanLines.NONE);
-
-        assertEquals(List.of(Set.of("bucket")), askedQuestionIds().subList(1, 2));
-        assertEquals(Bucket.FIXED_COSTS, stored("netflix").getBucket());
-        assertEquals(new BigDecimal("0.9000"), stored("netflix").getRecurringProbability());
+        verify(payees).judge(userId);
     }
 
     @Test
@@ -230,7 +154,7 @@ class BucketSortingTests {
             if (description(invocation.getArgument(0)).equals("Starbucks")) {
                 throw new IllegalStateException("TypeSafe unavailable");
             }
-            return answers(invocation.getArgument(1), "fixed_costs", 0.1);
+            return answers("fixed_costs");
         });
 
         sorting.sortLater(userId);
@@ -262,13 +186,12 @@ class BucketSortingTests {
                     """)
                     .setParameter("now", Instant.now().plusSeconds(1))
                     .executeUpdate();
-            return answers(invocation.getArgument(1), "guilt_free", 0.1);
+            return answers("guilt_free");
         });
 
         sorting.sortLater(userId);
 
         assertNull(bucket("coffee"));
-        assertNull(stored("coffee").getRecurringJudgedAt());
     }
 
     @Test
@@ -296,15 +219,6 @@ class BucketSortingTests {
         verify(typeSafe, times(1)).ask(any(), any());
     }
 
-    @Test
-    void readsPlaidCategoriesAsWords() {
-        assertEquals("food and drink: coffee",
-                BucketClassifier.readableCategory("FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
-        assertEquals("travel", BucketClassifier.readableCategory("TRAVEL", null));
-        assertEquals("other transfer", BucketClassifier.readableCategory("TRANSFER_OUT", "OTHER_TRANSFER"));
-        assertNull(BucketClassifier.readableCategory(null, null));
-    }
-
     private PlaidTransaction transaction(String id, String name, String primary, String detailed) {
         return new PlaidTransaction(id, "item", userId, "checking", new BigDecimal("15.4900"), LocalDate.now())
                 .name(name)
@@ -330,42 +244,20 @@ class BucketSortingTests {
                 .personalFinanceCategory("INCOME", "INCOME_SALARY");
     }
 
+    /** Answers the bucket question with the bucket for each description. */
     private void answer(Map<String, String> bucketByDescription) {
-        answer(bucketByDescription, 0.1);
-    }
-
-    /** Answers every question asked: the bucket by description, and {@code repeats} for whether it repeats. */
-    private void answer(Map<String, String> bucketByDescription, double repeats) {
-        doAnswer(invocation -> answers(
-                invocation.getArgument(1), bucketByDescription.get(description(invocation.getArgument(0))), repeats))
+        doAnswer(invocation -> answers(bucketByDescription.get(description(invocation.getArgument(0)))))
                 .when(typeSafe).ask(any(), any());
     }
 
-    private static TypeSafeClient.Answers answers(
-            Map<String, Map<String, Object>> questions, String bucket, double repeats) {
-        Map<String, TypeSafeClient.Answer> byQuestion = new HashMap<>();
-        for (String questionId : questions.keySet()) {
-            byQuestion.put(questionId, switch (questionId) {
-                case RecurringJudge.REPEATS -> TypeSafeClient.Answer.noul(repeats);
-                case RecurringJudge.USUAL_FREQUENCY -> TypeSafeClient.Answer.choice("monthly");
-                default -> TypeSafeClient.Answer.choice(bucket);
-            });
-        }
-        return new TypeSafeClient.Answers(byQuestion);
+    private static TypeSafeClient.Answers answers(String bucket) {
+        return new TypeSafeClient.Answers(Map.of("bucket", TypeSafeClient.Answer.choice(bucket)));
     }
 
     private BucketClassifier.State askedState() {
         ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
         verify(typeSafe).ask(state.capture(), any());
         return assertInstanceOf(BucketClassifier.State.class, state.getValue());
-    }
-
-    /** The question ids of every request, in the order they were asked. */
-    @SuppressWarnings("unchecked")
-    private List<Set<String>> askedQuestionIds() {
-        ArgumentCaptor<Map<String, Map<String, Object>>> questions = ArgumentCaptor.forClass(Map.class);
-        verify(typeSafe, atLeast(0)).ask(any(), questions.capture());
-        return questions.getAllValues().stream().map(asked -> Set.copyOf(asked.keySet())).toList();
     }
 
     private static String description(Object state) {

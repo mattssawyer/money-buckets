@@ -3,6 +3,11 @@ package dev.matthewsawyer.finance_dashboard.controller;
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
+import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
+import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
+import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
+import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
@@ -30,6 +35,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -74,6 +80,9 @@ class PlaidControllerTests {
     private PlaidRecurringStreamRepository recurringStreamRepository;
 
     @Mock
+    private RecurringPayees recurringPayees;
+
+    @Mock
     private UserService userService;
 
     private PlaidController controller;
@@ -91,6 +100,7 @@ class PlaidControllerTests {
                 recurringStreamRepository,
                 trackedAccounts,
                 new Spending(transactionRepository, trackedAccounts),
+                recurringPayees,
                 userService
         );
         jwt = Jwt.withTokenValue("token")
@@ -441,6 +451,9 @@ class PlaidControllerTests {
                         LocalDate.of(2026, 10, 12), false),
                 storedStream("pay", "checking", "Payroll", new BigDecimal("-2400.0"), "BIWEEKLY",
                         LocalDate.of(2026, 9, 25), true)));
+        RecurringPayee landlord = new RecurringPayee(USER_ID, new RecurringMerchant(RecurringKind.BILL, "landlord"));
+        landlord.judged(null, null, SpendingPlanBucket.FIXED_COSTS, "Rent/mortgage", "state", Instant.now());
+        when(recurringPayees.judged(USER_ID)).thenReturn(Map.of(landlord.payee(), landlord));
 
         List<PlaidController.RecurringStreamResponse> streams =
                 controller.getRecurringTransactions(jwt, null, null).get("streams");
@@ -453,6 +466,9 @@ class PlaidControllerTests {
         assertTrue(streams.get(0).isInflow());
         assertEquals("FOOD_AND_DRINK", streams.get(1).category());
         assertEquals("FOOD_AND_DRINK_GROCERIES", streams.get(1).categoryDetailed());
+        assertEquals(SpendingPlanBucket.FIXED_COSTS, streams.get(1).planBucket());
+        assertEquals("Rent/mortgage", streams.get(1).planLine());
+        assertNull(streams.get(2).planLine(), "Netflix hasn't been judged yet");
     }
 
     @Test

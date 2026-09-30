@@ -16,6 +16,8 @@ const stream: RecurringStream = {
   category: 'RENT_AND_UTILITIES',
   category_detailed: 'RENT_AND_UTILITIES_RENT',
   share_percent: 100,
+  plan_bucket: null,
+  plan_line: null,
 }
 
 function candidate(overrides: Partial<RecurringCandidate>): RecurringCandidate {
