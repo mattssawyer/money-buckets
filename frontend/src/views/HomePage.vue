@@ -38,7 +38,6 @@ import {
   yourAmount,
 } from '../api/plaidLabels'
 import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
-import { spendingByCategory } from '../spending/byCategory'
 import { isConfirmedCandidate, withConfirmed } from '../spending/recurring'
 
 const RECENT_TRANSACTION_COUNT = 25
@@ -83,8 +82,6 @@ const answerError = ref('')
 const spending = ref<SpendingByBucket>()
 // Unknown until loaded, so the plan prompt never flashes for someone who has a plan.
 const hasSpendingPlan = ref<boolean>()
-// Whether there's a plan decides how spending is charted, so hold the chart until it's known.
-const checkingSpendingPlan = ref(false)
 // Legend rows the user has flipped from how they start. Buckets start open and categories start
 // closed. Category keys include the bucket, since the same category can appear under two buckets.
 const toggledRows = ref(new Set<string>())
@@ -115,7 +112,8 @@ const greeting = computed(() => {
   return firstName ? `Good ${timeOfDay}, ${firstName}` : `Good ${timeOfDay}`
 })
 const selectedAccountLabel = computed(() => {
-  const account = selectedAccount.value ?? (hasMultipleAccounts.value ? undefined : accounts.value[0])
+  const account =
+    selectedAccount.value ?? (hasMultipleAccounts.value ? undefined : accounts.value[0])
   if (account) return accountLabel(account)
   return accounts.value.length ? 'All tracked accounts' : ''
 })
@@ -136,24 +134,15 @@ const spendingMonth = computed(() =>
       )
     : '',
 )
-// Before there's a plan nothing is sorted into buckets, so chart Plaid's categories instead.
-const chartsCategories = computed(() => hasSpendingPlan.value === false)
+// Transactions are sorted into buckets with or without a plan, so spending is always charted by
+// bucket, the same buckets the transactions list shows.
 const spendingLegend = computed(() => {
   if (!spending.value) return []
-  if (chartsCategories.value)
-    return spendingByCategory(spending.value).map((entry) => ({
-      ...entry,
-      key: entry.category,
-      label: categoryLabel(entry.category),
-      startsOpen: false,
-      categories: undefined,
-    }))
   return spending.value.buckets.map((entry) => ({
     ...entry,
     ...BUCKET_STYLES[entry.bucket],
     key: entry.bucket,
     startsOpen: true,
-    transactions: undefined,
     categories: entry.categories.map((category) => ({
       ...category,
       key: `${entry.bucket}/${category.category}`,
@@ -280,7 +269,9 @@ async function loadConnections() {
     itemIds.value = savedItemIds
     await loadAccounts()
     if (disposed) return
-    await Promise.all([loadTransactions(), loadSpending(), loadRecurring(), loadSpendingPlan()])
+    // The plan check only decides whether to show a nudge, so the dashboard doesn't wait on it.
+    void loadSpendingPlan()
+    await Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
   } catch {
     if (!disposed)
       connectionError.value = 'We couldn’t load your connected accounts. Please try again.'
@@ -303,14 +294,11 @@ function onAccountChange(event: Event) {
 
 async function loadSpendingPlan() {
   if (!itemIds.value.length) return
-  checkingSpendingPlan.value = true
   try {
     const plan = await getSpendingPlan()
     if (!disposed) hasSpendingPlan.value = plan !== null
   } catch {
     // The prompt is only a nudge, so leave it hidden when the plan can't be checked.
-  } finally {
-    if (!disposed) checkingSpendingPlan.value = false
   }
 }
 
@@ -444,7 +432,9 @@ async function finishLink(publicToken: string) {
     if (!itemIds.value.includes(itemId)) itemIds.value.push(itemId)
     await loadAccounts()
     if (disposed) return
-    await Promise.all([loadTransactions(), loadSpending(), loadRecurring(), loadSpendingPlan()])
+    // The plan check only decides whether to show a nudge, so the dashboard doesn't wait on it.
+    void loadSpendingPlan()
+    await Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
   } catch {
     if (!disposed) linkError.value = 'Your account connection could not be saved. Please try again.'
   } finally {
@@ -739,8 +729,8 @@ async function openPlaidLink() {
                   v-if="!recurringList.length && !suggestedCandidates.length"
                   class="transactions-empty"
                 >
-                  No recurring transactions found yet. Plaid can take up to a day to find them
-                  after you link a bank.
+                  No recurring transactions found yet. Plaid can take up to a day to find them after
+                  you link a bank.
                 </p>
 
                 <ul v-if="recurringList.length" class="transactions-list" tabindex="0">
@@ -834,7 +824,9 @@ async function openPlaidLink() {
                 <template v-if="dismissedCandidates.length">
                   <Button
                     :label="
-                      showDismissed ? 'Hide dismissed' : `Show dismissed (${dismissedCandidates.length})`
+                      showDismissed
+                        ? 'Hide dismissed'
+                        : `Show dismissed (${dismissedCandidates.length})`
                     "
                     severity="secondary"
                     size="small"
@@ -883,13 +875,13 @@ async function openPlaidLink() {
             class="panel spending-card"
             role="region"
             aria-labelledby="spending-heading"
-            :aria-busy="loadingSpending || checkingSpendingPlan"
+            :aria-busy="loadingSpending"
           >
             <h2 id="spending-heading" class="card-label">
               Spending<template v-if="spendingMonth"> · {{ spendingMonth }}</template>
             </h2>
             <div
-              v-if="loadingSpending || checkingSpendingPlan"
+              v-if="loadingSpending"
               class="spending-chart"
               role="status"
               aria-label="Loading your spending breakdown"
@@ -914,7 +906,7 @@ async function openPlaidLink() {
             <div v-else class="spending-body">
               <p v-if="hasSpendingPlan === false" class="spending-plan-prompt">
                 <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
-                to see your spending sorted into buckets.
+                to set a target for each bucket.
               </p>
               <div class="spending-chart">
                 <Chart
@@ -922,7 +914,7 @@ async function openPlaidLink() {
                   :data="spendingChartData"
                   :options="spendingChartOptions"
                   class="spending-chart-canvas"
-                  :aria-label="`Spending by ${chartsCategories ? 'category' : 'bucket'} for ${spendingMonth}`"
+                  :aria-label="`Spending by bucket for ${spendingMonth}`"
                 />
                 <div class="spending-total" aria-hidden="true">
                   <span class="spending-total-amount">{{ formatWholeDollars(spendingTotal) }}</span>
@@ -961,11 +953,7 @@ async function openPlaidLink() {
                     class="spending-panel"
                     :inert="!isOpen(entry) || undefined"
                   >
-                    <ul
-                      v-if="entry.categories"
-                      class="spending-categories"
-                      :aria-label="`${entry.label} by category`"
-                    >
+                    <ul class="spending-categories" :aria-label="`${entry.label} by category`">
                       <li
                         v-for="category in entry.categories"
                         :key="category.category"
@@ -1015,27 +1003,6 @@ async function openPlaidLink() {
                             </li>
                           </ul>
                         </div>
-                      </li>
-                    </ul>
-                    <ul
-                      v-else
-                      class="spending-transactions"
-                      :aria-label="`${entry.label} transactions`"
-                    >
-                      <li
-                        v-for="transaction in entry.transactions"
-                        :key="transaction.transaction_id"
-                        class="spending-transaction-row"
-                      >
-                        <span class="spending-transaction-name">
-                          {{ transactionLabel(transaction) }}
-                        </span>
-                        <span class="spending-transaction-date">
-                          {{ spendingDate(transaction) }}
-                        </span>
-                        <span class="spending-legend-amount">
-                          {{ formatBalance(yourAmount(transaction)) }}
-                        </span>
                       </li>
                     </ul>
                   </div>
