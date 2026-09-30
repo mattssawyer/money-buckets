@@ -734,42 +734,30 @@ describe('homepage spending breakdown', () => {
 
     const prompt = wrapper.get('.spending-plan-prompt')
     expect(prompt.text()).toBe(
-      'Create your spending plan to see your spending sorted into buckets.',
+      'Create your spending plan to set a target for each bucket.',
     )
     expect(prompt.get('a').attributes('href')).toBe('/spending-plan')
   })
 
-  it('charts Plaid categories instead of buckets when there is no plan', async () => {
+  it('charts buckets before there is a plan, like the transactions list', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getSpendingPlan).mockResolvedValue(null)
     const wrapper = mountHome()
     await flushPromises()
 
     const slices = wrapper.findAll('.chart-stub li').map((slice) => slice.text())
-    expect(slices).toEqual(['Rent & utilities: 1450', 'Transfers out: 300', 'Food & drink: 94.5'])
-    const rows = wrapper.findAll('.spending-legend > li > button')
-    expect(rows.map((row) => row.text())).toEqual([
-      'Rent & utilities$1,450.00',
-      'Transfers out$300.00',
-      'Food & drink$94.50',
-    ])
-    const colors = rows.map((row) => row.get('.spending-swatch').attributes('style'))
-    expect(new Set(colors).size).toBe(3)
+    expect(slices).toEqual(['Fixed costs: 1532.5', 'Guilt-free spending: 12', 'Savings: 300'])
+    expect(wrapper.find('[aria-label="Fixed costs by category"]').exists()).toBe(true)
+  })
 
-    const food = rows[2]!
-    expect(food.attributes('aria-expanded')).toBe('false')
-    await food.trigger('click')
+  it('shows the dashboard without waiting for the plan check', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getSpendingPlan).mockReturnValue(new Promise(() => {}))
+    const wrapper = mountHome()
+    await flushPromises()
 
-    expect(food.attributes('aria-expanded')).toBe('true')
-    const transactions = wrapper
-      .get('[aria-label="Food & drink transactions"]')
-      .findAll('.spending-transaction-row')
-      .map((row) => row.text())
-    expect(transactions).toEqual([
-      'Coffee ShopSep 17$12.00',
-      'Whole FoodsSep 14$60.00',
-      "Trader Joe'sSep 3$22.50",
-    ])
+    expect(wrapper.findAll('.chart-stub li')).toHaveLength(3)
+    expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
   })
 
   it('does not ask for a spending plan once there is one', async () => {
