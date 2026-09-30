@@ -111,4 +111,19 @@ describe('transactions dialog', () => {
     expect(getTransactionPage).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Coffee Shop')
   })
+
+  it('labels money coming in for what it is rather than as waiting to be sorted', async () => {
+    vi.mocked(getTransactionPage).mockResolvedValue({
+      transactions: [
+        { ...coffee, transaction_id: 'pay', amount: -2400, category: 'INCOME', bucket: null },
+        { ...coffee, transaction_id: 'in', amount: -900, category: 'TRANSFER_IN', bucket: null },
+      ],
+      total: 2,
+    })
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+
+    const buckets = wrapper.findAll('.bucket').map((cell) => cell.text())
+    expect(buckets).toEqual(['Income', 'Transfer in'])
+  })
 })

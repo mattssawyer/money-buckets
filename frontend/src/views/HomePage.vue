@@ -1604,7 +1604,7 @@ h1 {
   align-items: center;
   gap: 0.75rem;
   min-height: 3.25rem;
-  padding: 0.875rem 0;
+  padding: 0.625rem 0;
 }
 
 .transaction-row:not(:last-child)::after {
@@ -1671,7 +1671,7 @@ h1 {
 
 .transaction-details {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.0625rem;
   min-width: 0;
 }
 
