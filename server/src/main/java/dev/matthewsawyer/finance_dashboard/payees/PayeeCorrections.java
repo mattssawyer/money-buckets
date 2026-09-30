@@ -44,13 +44,13 @@ public class PayeeCorrections {
     }
 
     /**
-     * The payee a transaction's spending is corrected under, or null for money coming in, which
-     * has no bucket, and for transactions with neither a merchant nor a description.
+     * The payee a transaction's spending is corrected under: its charges and its refunds alike.
+     * Null for pay, which has no bucket, and for transactions with neither a merchant nor a
+     * description.
      */
     public static String payeeKey(PlaidTransaction transaction) {
         RecurringMerchant payee = RecurringMerchant.of(transaction);
-        return payee == null || payee.kind() != RecurringKind.BILL || transaction.getAmount().signum() <= 0
-                ? null : payee.key();
+        return payee == null || payee.kind() != RecurringKind.BILL ? null : payee.key();
     }
 
     /** The user's corrections, by payee key. */
@@ -64,21 +64,19 @@ public class PayeeCorrections {
 
     /**
      * Stores the user's bucket and category for a payee, replacing any earlier correction, and
-     * moves the payee's existing charges to that bucket. Two corrections racing to add the first
+     * moves the payee's existing charges to that bucket. A bucket handed back to automatic leaves
+     * the charges unsorted, for sorting to decide again. Two corrections racing to add the first
      * one for a payee end with the later one updating the other's, like recurring answers.
      */
     public void correct(UUID userId, String merchantKey, Bucket bucket, String category) {
+        Bucket before;
         try {
-            transactionTemplate.executeWithoutResult(status -> store(userId, merchantKey, bucket, category));
+            before = transactionTemplate.execute(status -> store(userId, merchantKey, bucket, category));
         } catch (DataIntegrityViolationException e) {
-            transactionTemplate.executeWithoutResult(status -> store(userId, merchantKey, bucket, category));
+            before = transactionTemplate.execute(status -> store(userId, merchantKey, bucket, category));
         }
-        if (bucket != null) {
-            for (PlaidTransaction charge : charges(userId, merchantKey)) {
-                if (charge.getBucket() != bucket) {
-                    transactionRepository.updateBucket(charge.getTransactionId(), charge.getUpdatedAt(), bucket);
-                }
-            }
+        if (bucket != null || before != null) {
+            setBuckets(userId, merchantKey, bucket);
         }
     }
 
@@ -87,27 +85,33 @@ public class PayeeCorrections {
         correctionRepository.findByUserIdAndMerchantKey(userId, merchantKey).ifPresent(correction -> {
             correctionRepository.delete(correction);
             if (correction.getBucket() != null) {
-                List<String> ids = charges(userId, merchantKey).stream()
-                        .map(PlaidTransaction::getTransactionId)
-                        .toList();
-                if (!ids.isEmpty()) {
-                    transactionRepository.clearBuckets(ids);
-                }
+                setBuckets(userId, merchantKey, null);
             }
         });
     }
 
-    private void store(UUID userId, String merchantKey, Bucket bucket, String category) {
+    /** Stores the correction and returns the bucket it had before, if any. */
+    private Bucket store(UUID userId, String merchantKey, Bucket bucket, String category) {
         PayeeCorrection correction = correctionRepository.findByUserIdAndMerchantKey(userId, merchantKey)
                 .orElseGet(() -> new PayeeCorrection(userId, merchantKey));
+        Bucket before = correction.getBucket();
         correction.correct(bucket, category, Instant.now(clock));
         // Flushed here so a clashing insert fails inside the transaction rather than at commit.
         correctionRepository.saveAndFlush(correction);
+        return before;
     }
 
-    private List<PlaidTransaction> charges(UUID userId, String merchantKey) {
-        return transactionRepository.findMoneyOut(userId).stream()
+    /**
+     * Sets the bucket on all of the payee's charges and refunds, even ones already in it: each is
+     * marked changed, so a sort already under way can't store Jev's answer over the user's.
+     */
+    private void setBuckets(UUID userId, String merchantKey, Bucket bucket) {
+        List<String> ids = transactionRepository.findAllByUserId(userId).stream()
                 .filter(transaction -> merchantKey.equals(payeeKey(transaction)))
+                .map(PlaidTransaction::getTransactionId)
                 .toList();
+        if (!ids.isEmpty()) {
+            transactionRepository.setBuckets(ids, bucket, Instant.now(clock));
+        }
     }
 }

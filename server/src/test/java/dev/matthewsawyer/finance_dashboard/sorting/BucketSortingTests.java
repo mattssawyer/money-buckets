@@ -183,6 +183,20 @@ class BucketSortingTests {
     }
 
     @Test
+    void sortsCorrectedPayeesEvenWithoutAnApiKey() {
+        when(typeSafe.isConfigured()).thenReturn(false);
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, null);
+        store(transaction("rent", "Sterling Group", "HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE"));
+        store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+
+        sorting.sortLater(userId);
+
+        verify(typeSafe, never()).ask(any(), any());
+        assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
+        assertNull(bucket("coffee"));
+    }
+
+    @Test
     void skipsSortingWithoutAnApiKey() {
         when(typeSafe.isConfigured()).thenReturn(false);
         store(transaction("rent", "Rent ACH", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT"));

@@ -77,9 +77,6 @@ public class BucketSorting {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void catchUp() {
-        if (!classifier.isAvailable()) {
-            return;
-        }
         for (UUID userId : transactionRepository.findUserIdsWithTransactions()) {
             sortLater(userId);
         }
@@ -113,10 +110,6 @@ public class BucketSorting {
     }
 
     private void run(UUID userId, boolean includeSorted) {
-        if (!classifier.isAvailable()) {
-            log.info("Skipping sorting for user {}: no TypeSafe API key is set", userId);
-            return;
-        }
         try {
             sort(userId, includeSorted);
             recurringPayees.judge(userId);
@@ -127,7 +120,8 @@ public class BucketSorting {
 
     /**
      * Asks about every transaction in parallel and stores each bucket as it's read, skipping the
-     * ones whose question failed; the next job asks them again.
+     * ones whose question failed; the next job asks them again. Without a TypeSafe API key, only
+     * payees the user corrected are sorted.
      */
     private void sort(UUID userId, boolean includeSorted) {
         List<PlaidTransaction> transactions = transactionRepository.findToSort(userId, includeSorted, NOT_PLAN_MONEY);
@@ -136,13 +130,20 @@ public class BucketSorting {
         }
         PlanLines plan = planLines(userId);
         Map<String, PayeeCorrection> corrected = corrections.byPayee(userId);
+        boolean canAsk = classifier.isAvailable();
+        if (!canAsk) {
+            log.info("No TypeSafe API key is set; sorting only corrected payees for user {}", userId);
+        }
         List<CompletableFuture<Bucket>> answers = transactions.stream()
                 .map(transaction -> {
                     String payee = PayeeCorrections.payeeKey(transaction);
                     PayeeCorrection correction = payee == null ? null : corrected.get(payee);
-                    return correction != null && correction.getBucket() != null
-                            ? CompletableFuture.completedFuture(correction.getBucket())
-                            : CompletableFuture.supplyAsync(() -> classifier.classify(transaction, plan), classifyExecutor);
+                    if (correction != null && correction.getBucket() != null) {
+                        return CompletableFuture.completedFuture(correction.getBucket());
+                    }
+                    return canAsk
+                            ? CompletableFuture.supplyAsync(() -> classifier.classify(transaction, plan), classifyExecutor)
+                            : CompletableFuture.<Bucket>completedFuture(null);
                 })
                 .toList();
 
@@ -159,7 +160,7 @@ public class BucketSorting {
                 firstFailure = firstFailure == null ? e : firstFailure;
                 continue;
             }
-            if (bucket != transaction.getBucket()) {
+            if (bucket != null && bucket != transaction.getBucket()) {
                 stored += transactionRepository.updateBucket(
                         transaction.getTransactionId(), transaction.getUpdatedAt(), bucket);
             }

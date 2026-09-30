@@ -70,9 +70,11 @@ const categories = computed(() => {
     : SPENDING_CATEGORIES
 })
 
+// Starts from the transaction each time the editor opens, so picks left unsaved last time are gone.
 watch(
-  () => props.transaction,
-  (transaction) => {
+  [() => props.transaction, visible],
+  ([transaction, open]) => {
+    if (!open) return
     bucket.value = transaction?.bucket ?? ''
     category.value = transaction?.category ?? ''
     error.value = ''

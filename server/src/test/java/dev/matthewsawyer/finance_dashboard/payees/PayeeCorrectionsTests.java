@@ -77,6 +77,39 @@ class PayeeCorrectionsTests {
     }
 
     @Test
+    void keepsASortAlreadyUnderWayFromStoringItsAnswerOverTheCorrection() {
+        charge("rent", "Sterling Group", "1554.91", Bucket.FIXED_COSTS);
+        // A sort read the charge before the correction, and gets Jev's answer after it.
+        PlaidTransaction readBySort = transactions.findById("rent").orElseThrow();
+        entityManager.clear();
+
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, null);
+
+        assertEquals(0, transactions.updateBucket("rent", readBySort.getUpdatedAt(), Bucket.GUILT_FREE));
+        assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
+    }
+
+    @Test
+    void leavesTheChargesUnsortedWhenTheBucketGoesBackToAutomatic() {
+        charge("rent", "Sterling Group", "1554.91", Bucket.GUILT_FREE);
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, "RENT_AND_UTILITIES");
+
+        corrections.correct(userId, "sterling group", null, "RENT_AND_UTILITIES");
+
+        assertNull(bucket("rent"));
+    }
+
+    @Test
+    void movesThePayeesRefundsWithItsCharges() {
+        charge("rent", "Sterling Group", "1554.91", Bucket.GUILT_FREE);
+        charge("deposit-back", "Sterling Group", "-200.00", Bucket.GUILT_FREE);
+
+        corrections.correct(userId, "sterling group", Bucket.FIXED_COSTS, null);
+
+        assertEquals(Bucket.FIXED_COSTS, bucket("deposit-back"));
+    }
+
+    @Test
     void correctsOnlySpendingNotPay() {
         PlaidTransaction pay = new PlaidTransaction("pay", "item", userId, "checking", new BigDecimal("-2400"),
                 LocalDate.now()).name("ACME PAYROLL").personalFinanceCategory("INCOME", "INCOME_WAGES");

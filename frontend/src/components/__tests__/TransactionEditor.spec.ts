@@ -90,6 +90,19 @@ describe('transaction editor', () => {
     expect(correctPayee).toHaveBeenCalledWith('sterling group', 'FIXED_COSTS', null)
   })
 
+  it('forgets unsaved picks when it opens again', async () => {
+    const wrapper = await mountEditor(rent)
+
+    await wrapper.get('[aria-label="Bucket"]').setValue('FIXED_COSTS')
+    await wrapper.setProps({ visible: false })
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+
+    expect((wrapper.get('[aria-label="Bucket"]').element as HTMLSelectElement).value).toBe(
+      'GUILT_FREE',
+    )
+  })
+
   it('saves nothing until something changes', async () => {
     const wrapper = await mountEditor(rent)
 

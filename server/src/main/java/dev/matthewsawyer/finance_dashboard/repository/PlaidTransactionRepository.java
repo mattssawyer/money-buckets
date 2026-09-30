@@ -133,19 +133,23 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             @Param("accountIds") Collection<String> accountIds,
             @Param("excludedCategories") Collection<String> excludedCategories);
 
-    /** All of the user's money out, in every account, newest first. */
-    @Query("""
-            SELECT t FROM PlaidTransaction t
-            WHERE t.userId = :userId AND t.amount > 0
-            ORDER BY t.transactionDate DESC, t.transactionId ASC
-            """)
-    List<PlaidTransaction> findMoneyOut(@Param("userId") UUID userId);
+    /** All of the user's transactions, in every account. */
+    List<PlaidTransaction> findAllByUserId(UUID userId);
 
-    /** Leaves these transactions unsorted, so the next sort decides their bucket again. */
+    /**
+     * Sets these transactions' bucket, or leaves them unsorted with null, and marks them changed,
+     * so a sort that read them earlier can't store its answer over this one.
+     */
     @Modifying
     @Transactional
-    @Query("UPDATE PlaidTransaction t SET t.bucket = NULL WHERE t.transactionId IN :transactionIds")
-    int clearBuckets(@Param("transactionIds") Collection<String> transactionIds);
+    @Query("""
+            UPDATE PlaidTransaction t SET t.bucket = :bucket, t.updatedAt = :changedAt
+            WHERE t.transactionId IN :transactionIds
+            """)
+    int setBuckets(
+            @Param("transactionIds") Collection<String> transactionIds,
+            @Param("bucket") Bucket bucket,
+            @Param("changedAt") Instant changedAt);
 
     @Query("SELECT DISTINCT t.userId FROM PlaidTransaction t")
     List<UUID> findUserIdsWithTransactions();
