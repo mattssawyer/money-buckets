@@ -70,16 +70,23 @@ class BucketClassifier {
     }
 
     /**
-     * Sorts {@code transaction}. With {@code judgeRecurring}, the same request also asks whether
-     * it repeats, since the questions run in parallel and can't see each other's answers.
+     * Sorts {@code transaction}. Given the payee's other charges, the same request also asks
+     * whether it repeats, since the questions run in parallel and can't see each other's answers.
+     *
+     * @param otherCharges the user's other charges from the same payee, or null not to ask
+     *     whether it repeats
      */
-    Sorted classify(PlaidTransaction transaction, PlanLines plan, boolean judgeRecurring) {
+    Sorted classify(PlaidTransaction transaction, PlanLines plan, List<PlaidTransaction> otherCharges) {
+        boolean judgeRecurring = otherCharges != null;
         Map<String, Map<String, Object>> questions = new LinkedHashMap<>();
         questions.put(BUCKET_QUESTION_ID, plan.isEmpty() ? WITHOUT_PLAN : WITH_PLAN);
         if (judgeRecurring) {
             questions.putAll(RecurringJudge.questions(transaction));
         }
-        State state = new State(TransactionState.of(transaction), plan.isEmpty() ? null : PlanState.of(plan));
+        State state = new State(
+                TransactionState.of(transaction, judgeRecurring),
+                plan.isEmpty() ? null : PlanState.of(plan),
+                judgeRecurring ? Charge.all(otherCharges) : null);
 
         TypeSafeClient.Answers answers = typeSafe.ask(state, questions);
         return new Sorted(
@@ -94,11 +101,18 @@ class BucketClassifier {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record State(
             @JsonProperty("transaction") TransactionState transaction,
-            @JsonProperty("spending_plan") PlanState spendingPlan
+            @JsonProperty("spending_plan") PlanState spendingPlan,
+            @JsonProperty("other_charges_from_same_payee") List<Charge> otherChargesFromSamePayee
     ) {
     }
 
+    /**
+     * Only asking whether a transaction repeats needs its date, to compare with the payee's other
+     * charges; sorting's state stays as it was evaluated.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record TransactionState(
+            @JsonProperty("date") String date,
             @JsonProperty("description") String description,
             @JsonProperty("merchant") String merchant,
             @JsonProperty("amount_usd") BigDecimal amountUsd,
@@ -107,11 +121,12 @@ class BucketClassifier {
             @JsonProperty("payment_channel") String paymentChannel
     ) {
         // The model reads amounts better without a sign, so direction says which way money moved.
-        static TransactionState of(PlaidTransaction transaction) {
+        static TransactionState of(PlaidTransaction transaction, boolean withDate) {
             BigDecimal amount = transaction.getAmount();
             String direction = amount.signum() >= 0 ? "money out"
                     : RecurringJudge.isPay(transaction) ? "money in" : "refund";
             return new TransactionState(
+                    withDate ? transaction.getTransactionDate().toString() : null,
                     transaction.getName(),
                     transaction.getMerchantName(),
                     amount.abs().setScale(2, RoundingMode.HALF_UP),
@@ -120,6 +135,23 @@ class BucketClassifier {
                             transaction.getPersonalFinanceCategoryPrimary(),
                             transaction.getPersonalFinanceCategoryDetailed()),
                     transaction.getPaymentChannel());
+        }
+    }
+
+    /**
+     * One of the payee's other charges. The same amount at a steady interval is what gives a bill
+     * away when its name and category don't, such as rent paid to a property manager.
+     */
+    record Charge(
+            @JsonProperty("date") String date,
+            @JsonProperty("amount_usd") BigDecimal amountUsd
+    ) {
+        static List<Charge> all(List<PlaidTransaction> charges) {
+            return charges.stream()
+                    .map(charge -> new Charge(
+                            charge.getTransactionDate().toString(),
+                            charge.getAmount().abs().setScale(2, RoundingMode.HALF_UP)))
+                    .toList();
         }
     }
 

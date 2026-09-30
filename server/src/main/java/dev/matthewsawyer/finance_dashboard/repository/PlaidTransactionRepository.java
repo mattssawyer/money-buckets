@@ -198,6 +198,14 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
             @Param("accountIds") Collection<String> accountIds,
             @Param("excludedCategories") Collection<String> excludedCategories);
 
+    /** All of the user's money out, in every account, newest first. */
+    @Query("""
+            SELECT t FROM PlaidTransaction t
+            WHERE t.userId = :userId AND t.amount > 0
+            ORDER BY t.transactionDate DESC, t.transactionId ASC
+            """)
+    List<PlaidTransaction> findMoneyOut(@Param("userId") UUID userId);
+
     /** Users with transactions {@link #findToJudge} would return, such as everyone's history on first release. */
     @Query("""
             SELECT DISTINCT t.userId FROM PlaidTransaction t

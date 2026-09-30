@@ -46,3 +46,33 @@ export async function saveSpendingPlan(plan: SpendingPlanRequest): Promise<Spend
   const { data } = await apiClient.put<SpendingPlanResponse>('/spending-plan', plan)
   return data
 }
+
+export interface RecurringPaymentPayload {
+  id: string
+  description: string | null
+  merchant: string | null
+  /** The whole payment, not the user's share: who's paid and how much is what tells its line. */
+  amount: number
+  frequency: string
+}
+
+export interface ChosenLine {
+  id: string
+  bucket: SpendingPlanBucket
+  line: string
+}
+
+/**
+ * Asks Jev which of the plan's lines each recurring payment belongs under. Payments that fit no
+ * line are left out of the answer.
+ */
+export async function chooseRecurringLines(
+  lines: { fixed_costs: string[]; investments: string[]; savings: string[] },
+  payments: RecurringPaymentPayload[],
+): Promise<ChosenLine[]> {
+  const { data } = await apiClient.post<{ lines: ChosenLine[] }>('/spending-plan/recurring-lines', {
+    lines,
+    payments,
+  })
+  return data.lines
+}

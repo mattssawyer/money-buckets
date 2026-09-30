@@ -9,7 +9,11 @@ import {
   type RecurringStream,
 } from '../../api/PlaidService'
 
-import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
+import {
+  chooseRecurringLines,
+  saveSpendingPlan,
+  type SpendingPlanRequest,
+} from '../../api/SpendingPlanService'
 import { defaultPlan } from '../../spendingPlan/plan'
 import type { SavedPlan } from '../../spendingPlan/savedPlan'
 
@@ -20,6 +24,7 @@ vi.mock('../../api/PlaidService', () => ({
 
 vi.mock('../../api/SpendingPlanService', () => ({
   saveSpendingPlan: vi.fn(),
+  chooseRecurringLines: vi.fn(),
 }))
 
 enableAutoUnmount(afterEach)
@@ -73,6 +78,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
   vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
   vi.mocked(getRecurringCandidates).mockResolvedValue([])
+  vi.mocked(chooseRecurringLines).mockResolvedValue([])
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
@@ -104,7 +110,60 @@ const savedPlan: SavedPlan = {
   },
 }
 
+// Rent Plaid labels home improvement, so its category names no line.
+const sterlingRent: RecurringStream = {
+  ...rent,
+  stream_id: 'sterling',
+  merchant_name: 'Sterling Group',
+  description: 'STERLING GROUP WEB PMTS',
+  amount: 1554.91,
+  category: 'HOME_IMPROVEMENT',
+  category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
+}
+
 describe('spending plan setup', () => {
+  it('puts bills Plaid can’t place on the line Jev chooses', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    vi.mocked(chooseRecurringLines).mockResolvedValue([
+      { id: 'sterling', bucket: 'FIXED_COSTS', line: 'Rent/mortgage' },
+    ])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1554.91')
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+  })
+
+  it('lists bills nobody could place and adds one to the line the user picks', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const list = wrapper.get('[aria-labelledby="unplaced-heading"]')
+    expect(list.text()).toContain('Sterling Group')
+    expect(list.text()).toContain('$1,554.91/mo')
+    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
+
+    const select = wrapper.get('[aria-label="Line for Sterling Group"]')
+    const rentRow = select.findAll('option').find((option) => option.text() === 'Rent/mortgage')
+    await select.setValue(rentRow!.attributes('value'))
+    await wrapper.get('[aria-label="Add Sterling Group"]').trigger('click')
+
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1554.91')
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+  })
+
+  it('lets the user skip a bill that belongs on no line', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Skip Sterling Group"]').trigger('click')
+
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').element).toHaveProperty('value', '')
+  })
+
   it('estimates from every tracked account and links to choosing them', async () => {
     const wrapper = mountSetup()
     await flushPromises()

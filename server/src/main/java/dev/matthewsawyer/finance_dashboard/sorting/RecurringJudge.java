@@ -4,6 +4,7 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -23,8 +24,11 @@ class RecurringJudge {
 
     private static final Map<String, Object> BILL = ordered(
             "type", "noul",
-            "instructions", "Is `transaction` a charge for a bill or subscription that the user is likely "
-                    + "charged again on a regular schedule?",
+            "instructions", ordered(
+                    "question", "Is `transaction` a charge for a bill or subscription that the user is likely "
+                            + "charged again on a regular schedule?",
+                    "guidance", "`other_charges_from_same_payee` lists the user's other charges from the same "
+                            + "payee; the same amount on a regular schedule suggests a bill."),
             "criteria", ordered(
                     "true", "A bill or subscription charged on a schedule: rent, utilities, phone, internet, "
                             + "insurance, loan payments, streaming, software, memberships or gym fees.",
@@ -75,9 +79,16 @@ class RecurringJudge {
                 RecurringFrequency.valueOf(answers.choice(USUAL_FREQUENCY).toUpperCase(Locale.ROOT)));
     }
 
-    RecurringJudgment judge(PlaidTransaction transaction) {
-        BucketClassifier.State state =
-                new BucketClassifier.State(BucketClassifier.TransactionState.of(transaction), null);
+    /**
+     * Asks whether {@code transaction} repeats. Money out is judged alongside the user's other
+     * charges from the same payee; pay is judged on its own.
+     */
+    RecurringJudgment judge(PlaidTransaction transaction, List<PlaidTransaction> otherCharges) {
+        boolean pay = isPay(transaction);
+        BucketClassifier.State state = new BucketClassifier.State(
+                BucketClassifier.TransactionState.of(transaction, !pay),
+                null,
+                pay ? null : BucketClassifier.Charge.all(otherCharges));
         return read(typeSafe.ask(state, questions(transaction)));
     }
 

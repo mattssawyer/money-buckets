@@ -1,7 +1,16 @@
 import type { RecurringStream } from '../api/PlaidService'
+import type { ChosenLine, RecurringPaymentPayload } from '../api/SpendingPlanService'
 import { recurringLabel, yourAmount } from '../api/plaidLabels'
 import { roundCents } from './money'
-import { PLAN_LINES, defaultPlan, type BucketId, type PlanDraft } from './plan'
+import {
+  PLAN_LINES,
+  defaultPlan,
+  type BucketId,
+  type PlanDraft,
+  type PlanItemDraft,
+  type PlanLineDraft,
+} from './plan'
+import { BUCKET_IDS } from './savedPlan'
 
 type PlanLine = { [B in BucketId]: { bucket: B; line: (typeof PLAN_LINES)[B][number] } }[BucketId]
 
@@ -64,6 +73,12 @@ export function estimateMonthlyTakeHome(streams: RecurringStream[]): number | nu
   return total > 0 ? roundCents(total) : null
 }
 
+/**
+ * Money out that never goes on a plan line: card payments, whose purchases already count on the
+ * card itself.
+ */
+const NOT_PLAN_MONEY = new Set(['LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'])
+
 /** The spreadsheet's lines for every bucket, broken down into the recurring bills that match. */
 export function planFromRecurring(streams: RecurringStream[]): PlanDraft {
   const plan = defaultPlan()
@@ -71,13 +86,90 @@ export function planFromRecurring(streams: RecurringStream[]): PlanDraft {
     if (stream.is_inflow || !stream.category_detailed) continue
     const match = LINE_BY_DETAILED_CATEGORY[stream.category_detailed]
     if (!match) continue
-    plan[match.bucket]
-      .find((line) => line.name === match.line)
-      ?.items.push({
-        name: recurringLabel(stream),
-        amount: toMonthlyAmount(yourAmount(stream), stream.frequency),
-        streamId: stream.stream_id,
-      })
+    addToLine(plan, match.bucket, match.line, stream)
   }
   return plan
+}
+
+/**
+ * Recurring bills whose Plaid category names no line, such as rent Plaid labels home
+ * improvement: Jev places them, or the user does.
+ */
+export function unplacedBills(streams: RecurringStream[]): RecurringStream[] {
+  return streams.filter(
+    (stream) =>
+      !stream.is_inflow &&
+      !(stream.category_detailed && NOT_PLAN_MONEY.has(stream.category_detailed)) &&
+      !(stream.category_detailed && stream.category_detailed in LINE_BY_DETAILED_CATEGORY),
+  )
+}
+
+/**
+ * Asks Jev which line each bill belongs under and adds it there. Returns the bills left for the
+ * user to place: ones that fit no line, or all of them when Jev can't be asked.
+ */
+export async function placeBills(
+  plan: PlanDraft,
+  bills: RecurringStream[],
+  choose: (
+    lines: { fixed_costs: string[]; investments: string[]; savings: string[] },
+    payments: RecurringPaymentPayload[],
+  ) => Promise<ChosenLine[]>,
+): Promise<RecurringStream[]> {
+  if (bills.length === 0) return []
+  let chosen: ChosenLine[] = []
+  try {
+    chosen = await choose(
+      {
+        fixed_costs: lineNames(plan.fixedCosts),
+        investments: lineNames(plan.investments),
+        savings: lineNames(plan.savings),
+      },
+      bills.map((bill) => ({
+        id: bill.stream_id,
+        description: bill.description,
+        merchant: bill.merchant_name,
+        amount: Math.abs(bill.amount),
+        frequency: bill.frequency,
+      })),
+    )
+  } catch {
+    // Leave every bill for the user to place.
+  }
+
+  const lineById = new Map(chosen.map((choice) => [choice.id, choice]))
+  const left: RecurringStream[] = []
+  for (const bill of bills) {
+    const choice = lineById.get(bill.stream_id)
+    if (choice) addToLine(plan, BUCKET_IDS[choice.bucket], choice.line, bill)
+    else left.push(bill)
+  }
+  return left
+}
+
+function lineNames(lines: PlanLineDraft[]): string[] {
+  return lines.map((line) => line.name.trim()).filter((name) => name !== '')
+}
+
+/** Adds a recurring bill to the named line as a monthly item, adding the line if it's gone. */
+export function addToLine(
+  plan: PlanDraft,
+  bucket: BucketId,
+  lineName: string,
+  stream: RecurringStream,
+) {
+  let line = plan[bucket].find((candidate) => candidate.name === lineName)
+  if (!line) {
+    line = { name: lineName, amount: null, items: [], fromPaycheck: false }
+    plan[bucket].push(line)
+  }
+  line.items.push(recurringItem(stream))
+}
+
+export function recurringItem(stream: RecurringStream): PlanItemDraft {
+  return {
+    name: recurringLabel(stream),
+    amount: toMonthlyAmount(yourAmount(stream), stream.frequency),
+    streamId: stream.stream_id,
+  }
 }

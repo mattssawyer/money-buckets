@@ -1,13 +1,18 @@
 package dev.matthewsawyer.finance_dashboard.controller;
 
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.ItemRequest;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.ChosenLine;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.LineNames;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.LineRequest;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.PaymentRequest;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.RecurringLinesRequest;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingPlanRequest;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingPlanResponse;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import dev.matthewsawyer.finance_dashboard.model.User;
+import dev.matthewsawyer.finance_dashboard.sorting.PlanLineChooser;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -28,6 +33,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -58,6 +64,9 @@ class SpendingPlanControllerTests {
     private BucketSorting bucketSorting;
 
     @Mock
+    private PlanLineChooser lineChooser;
+
+    @Mock
     private UserService userService;
 
     private SpendingPlanController controller;
@@ -65,11 +74,42 @@ class SpendingPlanControllerTests {
 
     @BeforeEach
     void setUp() {
-        controller = new SpendingPlanController(planService, accountRepository, bucketSorting, userService);
+        controller = new SpendingPlanController(planService, accountRepository, bucketSorting, lineChooser, userService);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject("user_123").build();
         User user = new User("user_123");
         ReflectionTestUtils.setField(user, "id", USER_ID);
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
+    }
+
+    @Test
+    void placesRecurringPaymentsOnTheLinesJevChooses() {
+        LineNames lines = new LineNames(List.of("Rent/mortgage", " Utilities "), List.of(), List.of("Vacations"));
+        PaymentRequest rent = new PaymentRequest(
+                "stream-1", "STERLING GROUP WEB PMTS", "Sterling Group", new BigDecimal("777.46"), "MONTHLY");
+        when(lineChooser.choose(anyList(), any())).thenReturn(Map.of(
+                "stream-1", new PlanLineChooser.Line(SpendingPlanBucket.FIXED_COSTS, "Rent/mortgage")));
+
+        var response = controller.chooseRecurringLines(jwt, new RecurringLinesRequest(lines, List.of(rent)));
+
+        assertEquals(List.of(new ChosenLine("stream-1", SpendingPlanBucket.FIXED_COSTS, "Rent/mortgage")),
+                response.lines());
+        verify(lineChooser).choose(
+                List.of(new PlanLineChooser.Payment(
+                        "stream-1", "STERLING GROUP WEB PMTS", "Sterling Group", new BigDecimal("777.46"), "MONTHLY")),
+                new PlanLines(List.of("Rent/mortgage", "Utilities"), List.of(), List.of("Vacations")));
+    }
+
+    @Test
+    void rejectsTooManyPaymentsToPlace() {
+        LineNames lines = new LineNames(List.of("Rent/mortgage"), List.of(), List.of());
+        List<PaymentRequest> payments = Collections.nCopies(SpendingPlanController.MAX_PAYMENTS + 1,
+                new PaymentRequest("id", "Rent", null, BigDecimal.TEN, "MONTHLY"));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.chooseRecurringLines(jwt, new RecurringLinesRequest(lines, payments)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verifyNoInteractions(lineChooser);
     }
 
     @Test

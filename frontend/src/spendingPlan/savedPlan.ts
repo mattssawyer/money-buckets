@@ -20,7 +20,7 @@ const API_BUCKETS: Record<BucketId, SpendingPlanBucket> = {
   savings: 'SAVINGS',
 }
 
-const BUCKET_IDS: Record<SpendingPlanBucket, BucketId> = {
+export const BUCKET_IDS: Record<SpendingPlanBucket, BucketId> = {
   FIXED_COSTS: 'fixedCosts',
   INVESTMENTS: 'investments',
   SAVINGS: 'savings',

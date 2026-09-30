@@ -6,6 +6,7 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanItem;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import dev.matthewsawyer.finance_dashboard.model.User;
+import dev.matthewsawyer.finance_dashboard.sorting.PlanLineChooser;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @RestController
@@ -36,22 +39,79 @@ public class SpendingPlanController {
     /** NUMERIC(19, 4) holds 15 digits before the decimal point. */
     static final BigDecimal MAX_AMOUNT = new BigDecimal("1e15");
     static final BigDecimal MAX_BUFFER_PERCENT = new BigDecimal("100");
+    static final int MAX_PAYMENTS = 100;
 
     private final SpendingPlanService planService;
     private final PlaidAccountRepository accountRepository;
     private final BucketSorting bucketSorting;
+    private final PlanLineChooser lineChooser;
     private final UserService userService;
 
     public SpendingPlanController(
             SpendingPlanService planService,
             PlaidAccountRepository accountRepository,
             BucketSorting bucketSorting,
+            PlanLineChooser lineChooser,
             UserService userService
     ) {
         this.planService = planService;
         this.accountRepository = accountRepository;
         this.bucketSorting = bucketSorting;
+        this.lineChooser = lineChooser;
         this.userService = userService;
+    }
+
+    /**
+     * Picks the plan line each recurring payment belongs under, for payments setup couldn't place
+     * from Plaid's category. Payments that fit no line are left out of the answer.
+     */
+    @PostMapping("/recurring-lines")
+    public RecurringLinesResponse chooseRecurringLines(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody RecurringLinesRequest request
+    ) {
+        userService.getOrCreateUser(jwt);
+        if (request == null || request.lines() == null) {
+            throw badRequest("Plan lines are required");
+        }
+        List<PaymentRequest> payments = Objects.requireNonNullElse(request.payments(), List.of());
+        if (payments.size() > MAX_PAYMENTS) {
+            throw badRequest("At most " + MAX_PAYMENTS + " payments can be placed at once");
+        }
+        PlanLines lines = new PlanLines(
+                checkNames(request.lines().fixedCosts()),
+                checkNames(request.lines().investments()),
+                checkNames(request.lines().savings()));
+        if (lines.fixedCosts().size() + lines.investments().size() + lines.savings().size() > MAX_LINES) {
+            throw badRequest("A plan can have at most " + MAX_LINES + " lines");
+        }
+
+        Map<String, PlanLineChooser.Line> chosen = lineChooser.choose(
+                payments.stream().map(SpendingPlanController::toPayment).toList(), lines);
+        return new RecurringLinesResponse(chosen.entrySet().stream()
+                .map(entry -> new ChosenLine(entry.getKey(), entry.getValue().bucket(), entry.getValue().name()))
+                .toList());
+    }
+
+    private static PlanLineChooser.Payment toPayment(PaymentRequest payment) {
+        if (payment == null || payment.id() == null || payment.id().isBlank()) {
+            throw badRequest("Each payment needs an id");
+        }
+        if (payment.id().length() > MAX_NAME_LENGTH) {
+            throw badRequest("Payment ids can be at most " + MAX_NAME_LENGTH + " characters");
+        }
+        return new PlanLineChooser.Payment(
+                payment.id(),
+                checkName(payment.description()),
+                checkName(payment.merchant()),
+                payment.amount(),
+                checkName(payment.frequency()));
+    }
+
+    private static List<String> checkNames(List<String> names) {
+        return Objects.requireNonNullElse(names, List.<String>of()).stream()
+                .map(SpendingPlanController::checkName)
+                .toList();
     }
 
     @GetMapping
@@ -161,6 +221,38 @@ public class SpendingPlanController {
 
     private static ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+    public record RecurringLinesRequest(
+            @JsonProperty("lines") LineNames lines,
+            @JsonProperty("payments") List<PaymentRequest> payments
+    ) {
+    }
+
+    public record LineNames(
+            @JsonProperty("fixed_costs") List<String> fixedCosts,
+            @JsonProperty("investments") List<String> investments,
+            @JsonProperty("savings") List<String> savings
+    ) {
+    }
+
+    public record PaymentRequest(
+            @JsonProperty("id") String id,
+            @JsonProperty("description") String description,
+            @JsonProperty("merchant") String merchant,
+            @JsonProperty("amount") BigDecimal amount,
+            @JsonProperty("frequency") String frequency
+    ) {
+    }
+
+    public record RecurringLinesResponse(@JsonProperty("lines") List<ChosenLine> lines) {
+    }
+
+    public record ChosenLine(
+            @JsonProperty("id") String id,
+            @JsonProperty("bucket") SpendingPlanBucket bucket,
+            @JsonProperty("line") String line
+    ) {
     }
 
     public record SpendingPlanRequest(

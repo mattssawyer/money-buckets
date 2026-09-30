@@ -4,9 +4,20 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
-import { getRecurringCandidates, getRecurringTransactions } from '../api/PlaidService'
-import { saveSpendingPlan } from '../api/SpendingPlanService'
-import { estimateMonthlyTakeHome, planFromRecurring } from '../spendingPlan/fromRecurring'
+import {
+  getRecurringCandidates,
+  getRecurringTransactions,
+  type RecurringStream,
+} from '../api/PlaidService'
+import { recurringLabel } from '../api/plaidLabels'
+import { chooseRecurringLines, saveSpendingPlan } from '../api/SpendingPlanService'
+import {
+  estimateMonthlyTakeHome,
+  placeBills,
+  planFromRecurring,
+  recurringItem,
+  unplacedBills,
+} from '../spendingPlan/fromRecurring'
 import { formatPlanAmount, parseAmount } from '../spendingPlan/money'
 import {
   DEFAULT_BUFFER_PERCENT,
@@ -90,6 +101,10 @@ const saving = ref(false)
 const saveError = ref('')
 // Payments Jev thinks repeat that the user hasn't confirmed or dismissed, so they aren't filled in.
 const unansweredCandidates = ref(0)
+// Recurring bills neither Plaid's category nor Jev could put on a line, for the user to place.
+const unplaced = ref<RecurringStream[]>([])
+// The row each unplaced bill will be added to, by stream id.
+const placeInto = ref<Record<string, string>>({})
 
 const evaluation = computed(() => evaluatePlan(takeHome.value, plan.value, bufferPercent.value))
 const guiltFree = computed(() => evaluation.value.guiltFree)
@@ -138,7 +153,9 @@ async function loadEstimates() {
     const streams = withConfirmed(found, candidates)
     const estimated = estimateMonthlyTakeHome(streams)
     takeHome.value = estimated
-    setPlan(planFromRecurring(streams))
+    const draft = planFromRecurring(streams)
+    unplaced.value = await placeBills(draft, unplacedBills(streams), chooseRecurringLines)
+    setPlan(draft)
   } catch {
     takeHome.value = null
     setPlan(defaultPlan())
@@ -219,6 +236,26 @@ function addItem(row: PlanRow) {
   row.amount = null
 }
 
+function placeBill(bill: RecurringStream) {
+  const rowId = placeInto.value[bill.stream_id]
+  const row = BUCKETS.flatMap((bucket) => plan.value[bucket.id]).find((row) => row.id === rowId)
+  if (!row) return
+  // A typed line amount becomes an item first, so the bill adds to it rather than replacing it.
+  if (row.items.length === 0 && row.amount != null) addItem(row)
+  row.items.push(toItem(recurringItem(bill)))
+  skipBill(bill)
+}
+
+function skipBill(bill: RecurringStream) {
+  unplaced.value = unplaced.value.filter((other) => other !== bill)
+}
+
+function onPlaceIntoChange(bill: RecurringStream, event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLSelectElement)) return
+  placeInto.value[bill.stream_id] = target.value
+}
+
 function removeItem(row: PlanRow, id: string) {
   const removed = row.items.find((item) => item.id === id)
   row.items = row.items.filter((item) => item.id !== id)
@@ -279,6 +316,53 @@ function amountValue(amount: number | null) {
           <RouterLink to="/">Go to Home</RouterLink>
         </p>
       </div>
+
+      <section
+        v-if="!loadingEstimates && unplaced.length"
+        class="unplaced"
+        aria-labelledby="unplaced-heading"
+      >
+        <h2 id="unplaced-heading" class="unplaced-heading">Recurring payments to place</h2>
+        <p class="block-hint">
+          We couldn’t tell which line these belong on. Add each to a line, or skip it.
+        </p>
+        <div v-for="bill in unplaced" :key="bill.stream_id" class="sheet-row unplaced-row">
+          <span class="row-label">{{ recurringLabel(bill) }}</span>
+          <span class="unplaced-amount"
+            >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
+          >
+          <select
+            class="line-select"
+            :aria-label="`Line for ${recurringLabel(bill)}`"
+            :value="placeInto[bill.stream_id] ?? ''"
+            @change="onPlaceIntoChange(bill, $event)"
+          >
+            <option value="" disabled>Choose a line</option>
+            <optgroup v-for="bucket in BUCKETS" :key="bucket.id" :label="bucket.title">
+              <option v-for="row in plan[bucket.id]" :key="row.id" :value="row.id">
+                {{ row.name || bucket.lineNoun }}
+              </option>
+            </optgroup>
+          </select>
+          <button
+            type="button"
+            class="unplaced-action unplaced-add"
+            :disabled="!placeInto[bill.stream_id]"
+            :aria-label="`Add ${recurringLabel(bill)}`"
+            @click="placeBill(bill)"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            class="unplaced-action"
+            :aria-label="`Skip ${recurringLabel(bill)}`"
+            @click="skipBill(bill)"
+          >
+            Skip
+          </button>
+        </div>
+      </section>
 
       <section class="plan-block" aria-labelledby="plan-section-heading-income">
         <h2 id="plan-section-heading-income">Income</h2>
@@ -609,6 +693,71 @@ function amountValue(amount: number | null) {
 .autofill-note a {
   color: var(--app-text);
   font-weight: 500;
+}
+
+.unplaced {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 36.5rem;
+  padding: 0.875rem 1rem;
+  background: var(--app-inset);
+  border-radius: var(--app-radius-chip);
+}
+
+.unplaced-heading {
+  font-size: 0.9375rem;
+}
+
+.unplaced-row {
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+}
+
+.unplaced-amount {
+  flex: none;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.line-select {
+  flex: none;
+  max-width: 11rem;
+  appearance: none;
+  padding: 0.3rem 1.6rem 0.3rem 0.55rem;
+  color: var(--app-text);
+  background-color: var(--app-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.35rem center;
+  background-repeat: no-repeat;
+  border: 1px solid var(--app-control-border);
+  border-radius: var(--app-radius-chip);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.unplaced-action {
+  flex: none;
+  padding: 0.25rem 0.35rem;
+  color: var(--app-text-secondary);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.unplaced-action:hover:not(:disabled) {
+  color: var(--app-text);
+}
+
+.unplaced-add {
+  color: var(--app-text);
+  font-weight: 500;
+}
+
+.unplaced-action:disabled {
+  color: var(--app-text-subdued);
+  cursor: default;
 }
 
 .plan-form {

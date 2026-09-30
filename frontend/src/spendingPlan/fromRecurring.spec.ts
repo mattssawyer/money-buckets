@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RecurringStream } from '../api/PlaidService'
-import { estimateMonthlyTakeHome, planFromRecurring, toMonthlyAmount } from './fromRecurring'
+import {
+  estimateMonthlyTakeHome,
+  placeBills,
+  planFromRecurring,
+  toMonthlyAmount,
+  unplacedBills,
+} from './fromRecurring'
 import { PLAN_LINES, defaultPlan, lineAmount } from './plan'
 
 function stream(overrides: Partial<RecurringStream>): RecurringStream {
@@ -20,6 +26,10 @@ function stream(overrides: Partial<RecurringStream>): RecurringStream {
     share_percent: 100,
     ...overrides,
   }
+}
+
+function bill(overrides: Partial<RecurringStream>) {
+  return stream({ frequency: 'MONTHLY', is_inflow: false, ...overrides })
 }
 
 describe('toMonthlyAmount', () => {
@@ -84,10 +94,6 @@ describe('estimateMonthlyTakeHome', () => {
 })
 
 describe('planFromRecurring', () => {
-  function bill(overrides: Partial<RecurringStream>) {
-    return stream({ frequency: 'MONTHLY', is_inflow: false, ...overrides })
-  }
-
   function amounts(streams: RecurringStream[]) {
     return Object.fromEntries(
       planFromRecurring(streams).fixedCosts.map((row) => [row.name, lineAmount(row)]),
@@ -243,5 +249,86 @@ describe('planFromRecurring', () => {
       { name: 'Ally', amount: 200, streamId: 'hysa' },
     ])
     expect(plan.fixedCosts.every((row) => row.items.length === 0)).toBe(true)
+  })
+})
+
+describe('unplacedBills', () => {
+  it('keeps bills whose category names no line, but not card payments or deposits', () => {
+    const rent = bill({
+      stream_id: 'rent',
+      merchant_name: 'Sterling Group',
+      amount: 1554.91,
+      category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
+    })
+    const unknown = bill({ stream_id: 'unknown', amount: 20, category_detailed: null })
+
+    expect(
+      unplacedBills([
+        rent,
+        unknown,
+        bill({ stream_id: 'netflix', amount: 15.49, category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES' }),
+        bill({ stream_id: 'card', amount: 900, category_detailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' }),
+        stream({ amount: -2400 }),
+      ]),
+    ).toEqual([rent, unknown])
+  })
+})
+
+describe('placeBills', () => {
+  const rent = bill({
+    stream_id: 'rent',
+    merchant_name: 'Sterling Group',
+    description: 'STERLING GROUP WEB PMTS',
+    amount: 1554.91,
+    category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
+    share_percent: 50,
+  })
+  const toJoint = bill({ stream_id: 'to-joint', merchant_name: null, amount: 900 })
+
+  it('adds each bill to the line Jev chooses and returns the rest', async () => {
+    const plan = defaultPlan()
+    const choose = vi.fn().mockResolvedValue([
+      { id: 'rent', bucket: 'FIXED_COSTS', line: 'Rent/mortgage' },
+    ])
+
+    const left = await placeBills(plan, [rent, toJoint], choose)
+
+    expect(left).toEqual([toJoint])
+    expect(plan.fixedCosts.find((row) => row.name === 'Rent/mortgage')?.items).toEqual([
+      { name: 'Sterling Group', amount: 777.46, streamId: 'rent' },
+    ])
+    expect(choose).toHaveBeenCalledWith(
+      {
+        fixed_costs: [...PLAN_LINES.fixedCosts],
+        investments: [...PLAN_LINES.investments],
+        savings: [...PLAN_LINES.savings],
+      },
+      [
+        {
+          id: 'rent',
+          description: 'STERLING GROUP WEB PMTS',
+          merchant: 'Sterling Group',
+          amount: 1554.91,
+          frequency: 'MONTHLY',
+        },
+        expect.objectContaining({ id: 'to-joint' }),
+      ],
+    )
+  })
+
+  it("leaves every bill for the user when Jev can't be asked", async () => {
+    const plan = defaultPlan()
+
+    const left = await placeBills(plan, [rent], vi.fn().mockRejectedValue(new Error('offline')))
+
+    expect(left).toEqual([rent])
+    expect(plan).toEqual(defaultPlan())
+  })
+
+  it('asks nothing when every bill was placed from its category', async () => {
+    const choose = vi.fn()
+
+    expect(await placeBills(defaultPlan(), [], choose)).toEqual([])
+    expect(choose).not.toHaveBeenCalled()
   })
 })

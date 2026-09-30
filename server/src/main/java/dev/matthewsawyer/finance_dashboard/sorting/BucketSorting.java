@@ -16,8 +16,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -134,11 +137,14 @@ public class BucketSorting {
 
         PlanLines plan = planLines(userId);
         Set<AccountMerchant> detectedByPlaid = detectedByPlaid(userId);
+        ChargesByPayee chargesByPayee = new ChargesByPayee(transactionRepository.findMoneyOut(userId));
         askEach(userId, "Sorted",
                 transactionRepository.findToSort(userId, includeSorted, NOT_PLAN_MONEY),
                 transaction -> classifier.classify(
                         transaction, plan,
-                        transaction.getAmount().signum() > 0 && judgesRecurring(transaction, detectedByPlaid)),
+                        transaction.getAmount().signum() > 0 && judgesRecurring(transaction, detectedByPlaid)
+                                ? chargesByPayee.otherThan(transaction)
+                                : null),
                 (transaction, sorted) -> sorted.recurring() != null
                         ? transactionRepository.updateSorted(
                                 transaction.getTransactionId(), transaction.getUpdatedAt(), sorted.bucket(),
@@ -154,7 +160,7 @@ public class BucketSorting {
                 transactionRepository.findToJudge(userId, NOT_PLAN_MONEY).stream()
                         .filter(transaction -> judgesRecurring(transaction, detectedByPlaid))
                         .toList(),
-                recurringJudge::judge,
+                transaction -> recurringJudge.judge(transaction, chargesByPayee.otherThan(transaction)),
                 (transaction, judgment) -> transactionRepository.updateRecurring(
                         transaction.getTransactionId(), transaction.getUpdatedAt(),
                         probability(judgment), judgment.usualFrequency(), Instant.now()));
@@ -230,6 +236,33 @@ public class BucketSorting {
     }
 
     private record AccountMerchant(String accountId, RecurringMerchant merchant) {
+    }
+
+    /** The user's money out grouped by payee, in every account, so a move between accounts keeps its history. */
+    private static final class ChargesByPayee {
+
+        // Enough to show a monthly bill's pattern over a year without growing every request.
+        private static final int MAX_OTHER_CHARGES = 12;
+
+        private final Map<RecurringMerchant, List<PlaidTransaction>> byPayee = new HashMap<>();
+
+        ChargesByPayee(List<PlaidTransaction> moneyOut) {
+            for (PlaidTransaction charge : moneyOut) {
+                RecurringMerchant payee = RecurringMerchant.of(charge);
+                if (payee != null) {
+                    byPayee.computeIfAbsent(payee, key -> new ArrayList<>()).add(charge);
+                }
+            }
+        }
+
+        /** The payee's most recent other charges, newest first; empty for pay, which has no payee. */
+        List<PlaidTransaction> otherThan(PlaidTransaction transaction) {
+            RecurringMerchant payee = RecurringMerchant.of(transaction);
+            return byPayee.getOrDefault(payee, List.of()).stream()
+                    .filter(charge -> !charge.getTransactionId().equals(transaction.getTransactionId()))
+                    .limit(MAX_OTHER_CHARGES)
+                    .toList();
+        }
     }
 
     private static BigDecimal probability(RecurringJudge.RecurringJudgment judgment) {

@@ -153,6 +153,53 @@ class BucketSortingTests {
     }
 
     @Test
+    void showsJevThePayeesOtherChargesWhenAskingWhetherSpendingRepeats() {
+        // Rent Plaid calls home improvement: only the same charge a month earlier gives it away.
+        store(rent("rent-sep", LocalDate.of(2026, 9, 1), "savings-account"));
+        store(rent("rent-aug", LocalDate.of(2026, 8, 1), "checking"));
+        transactions.updateSorted("rent-aug", stored("rent-aug").getUpdatedAt(), Bucket.FIXED_COSTS,
+                new BigDecimal("0.2"), RecurringFrequency.MONTHLY, Instant.now());
+        entityManager.clear();
+        store(transaction("hardware", "The Home Depot", "HOME_IMPROVEMENT", "HOME_IMPROVEMENT_HARDWARE"));
+        answer(Map.of("Sterling Group", "fixed_costs", "The Home Depot", "guilt_free"), 0.85);
+
+        sorting.sortLater(userId);
+
+        BucketClassifier.State asked = askedStates().stream()
+                .filter(state -> state.transaction().description().equals("Sterling Group"))
+                .findFirst().orElseThrow();
+        assertEquals("2026-09-01", asked.transaction().date());
+        assertEquals(List.of(new BucketClassifier.Charge("2026-08-01", new BigDecimal("1554.91"))),
+                asked.otherChargesFromSamePayee());
+        assertEquals(new BigDecimal("0.8500"), stored("rent-sep").getRecurringProbability());
+    }
+
+    @Test
+    void leavesTheDateAndOtherChargesOutWhenOnlySorting() {
+        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
+        transactions.updateSorted("netflix", stored("netflix").getUpdatedAt(), Bucket.GUILT_FREE,
+                new BigDecimal("0.9"), RecurringFrequency.MONTHLY, Instant.now());
+        entityManager.clear();
+        answer(Map.of("Netflix", "fixed_costs"));
+
+        sorting.planSaved(userId, new PlanLines(List.of("Subscriptions"), List.of(), List.of()));
+
+        BucketClassifier.State asked = askedState();
+        assertNull(asked.transaction().date());
+        assertNull(asked.otherChargesFromSamePayee());
+    }
+
+    @Test
+    void judgesPayWithoutOtherCharges() {
+        store(pay("pay", "ACME payroll"));
+        answer(Map.of(), 0.97);
+
+        sorting.sortLater(userId);
+
+        assertNull(askedState().otherChargesFromSamePayee());
+    }
+
+    @Test
     void judgesSpendingSortedBeforeRecurringJudgmentsExisted() {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         transactions.updateBucket("netflix", stored("netflix").getUpdatedAt(), Bucket.FIXED_COSTS);
@@ -311,6 +358,12 @@ class BucketSortingTests {
                 .personalFinanceCategory(primary, detailed);
     }
 
+    private PlaidTransaction rent(String id, LocalDate date, String accountId) {
+        return new PlaidTransaction(id, "item", userId, accountId, new BigDecimal("1554.91"), date)
+                .name("Sterling Group")
+                .personalFinanceCategory("HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
+    }
+
     /** Saves and detaches, so sorting reads the transaction back from the database like it would in a job. */
     private void store(PlaidTransaction transaction) {
         transactions.saveAndFlush(transaction);
@@ -358,6 +411,12 @@ class BucketSortingTests {
         ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
         verify(typeSafe).ask(state.capture(), any());
         return assertInstanceOf(BucketClassifier.State.class, state.getValue());
+    }
+
+    private List<BucketClassifier.State> askedStates() {
+        ArgumentCaptor<Object> states = ArgumentCaptor.forClass(Object.class);
+        verify(typeSafe, atLeast(1)).ask(states.capture(), any());
+        return states.getAllValues().stream().map(BucketClassifier.State.class::cast).toList();
     }
 
     /** The question ids of every request, in the order they were asked. */

@@ -51,7 +51,7 @@ A payment or deposit Plaid has detected repeating on an account, such as a bill 
 _Avoid_: Recurring transaction, subscription
 
 **Recurring candidate**:
-A merchant Jev judges the user likely pays regularly (a bill or subscription) or is paid by regularly (a paycheck), from their transactions in tracked accounts, when Plaid hasn't detected it as a recurring stream. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same merchant, the recurring stream takes its place.
+A merchant Jev judges the user likely pays regularly (a bill or subscription) or is paid by regularly (a paycheck), from their transactions in tracked accounts, when Plaid hasn't detected it as a recurring stream. Jev judges each charge alongside the user's other charges from the same payee, since the same amount a month apart can give away a bill whose name and Plaid category don't, like rent paid to a property manager. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same merchant, the recurring stream takes its place.
 _Avoid_: Suggested stream, suspected subscription, Jev stream
 
 ### Keeping data current
@@ -85,6 +85,10 @@ _Avoid_: Row, entry
 **Breakdown item**:
 One of the amounts a line can be split into, such as each insurance policy under "Insurance". It may come from a recurring stream. When a line has breakdown items, its amount is their sum.
 _Avoid_: Item on its own (clashes with Plaid item), sub-line
+
+**Placing a bill**:
+Putting a recurring bill on a line as a breakdown item during plan setup. Plaid's category places most bills; Jev picks the line for ones whose category names none, and the user places or skips whatever is left.
+_Avoid_: Mapping, assigning
 
 **Take-home pay**:
 What lands in the user's account each month after taxes and paycheck deductions.
