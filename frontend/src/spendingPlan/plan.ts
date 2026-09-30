@@ -22,7 +22,10 @@ export const PLAN_COLORS = {
   guiltFree: '#eda100',
 } as const satisfies Record<BucketId | 'guiltFree', string>
 
-/** Default lines for each bucket, from the Conscious Spending Plan spreadsheet. */
+/**
+ * Default lines for each bucket, from the Conscious Spending Plan spreadsheet. The server offers
+ * Jev the same lines (PlanLines.DEFAULT) until a plan is saved, so keep the two in step.
+ */
 export const PLAN_LINES = {
   fixedCosts: [
     'Rent/mortgage',

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { RecurringStream } from '../api/PlaidService'
-import { estimateMonthlyTakeHome, planFromRecurring, toMonthlyAmount } from './fromRecurring'
+import type { SpendingPlanBucket } from '../api/SpendingPlanService'
+import {
+  estimateMonthlyTakeHome,
+  planFromRecurring,
+  toMonthlyAmount,
+  unplacedBills,
+} from './fromRecurring'
 import { PLAN_LINES, defaultPlan, lineAmount } from './plan'
 
 function stream(overrides: Partial<RecurringStream>): RecurringStream {
@@ -18,6 +24,8 @@ function stream(overrides: Partial<RecurringStream>): RecurringStream {
     category: 'INCOME',
     category_detailed: 'INCOME_WAGES',
     share_percent: 100,
+    plan_bucket: null,
+    plan_line: null,
     ...overrides,
   }
 }
@@ -83,6 +91,11 @@ describe('estimateMonthlyTakeHome', () => {
   })
 })
 
+/** Where Jev put a payee's bills. */
+function onLine(bucket: SpendingPlanBucket, line: string) {
+  return { plan_bucket: bucket, plan_line: line }
+}
+
 describe('planFromRecurring', () => {
   function bill(overrides: Partial<RecurringStream>) {
     return stream({ frequency: 'MONTHLY', is_inflow: false, ...overrides })
@@ -102,20 +115,20 @@ describe('planFromRecurring', () => {
     expect(plan).toEqual(defaultPlan())
   })
 
-  it('fills in monthly amounts for lines that match a recurring bill', () => {
+  it('fills in monthly amounts for the lines Jev put recurring bills on', () => {
     expect(
       amounts([
-        bill({ stream_id: 'rent', amount: 1450, category_detailed: 'RENT_AND_UTILITIES_RENT' }),
+        bill({ stream_id: 'rent', amount: 1450, ...onLine('FIXED_COSTS', 'Rent/mortgage') }),
         bill({
           stream_id: 'phone',
           amount: 80,
-          category_detailed: 'RENT_AND_UTILITIES_TELEPHONE',
+          ...onLine('FIXED_COSTS', 'Phone'),
         }),
         bill({
           stream_id: 'insurance',
           amount: 1200,
           frequency: 'ANNUALLY',
-          category_detailed: 'GENERAL_SERVICES_INSURANCE',
+          ...onLine('FIXED_COSTS', 'Insurance'),
         }),
       ]),
     ).toMatchObject({
@@ -127,14 +140,14 @@ describe('planFromRecurring', () => {
     })
   })
 
-  it('counts a bill from a shared account at the user\'s share', () => {
+  it("counts a bill from a shared account at the user's share", () => {
     expect(
       amounts([
         bill({
           stream_id: 'rent',
           account_id: 'joint',
           amount: 2400,
-          category_detailed: 'RENT_AND_UTILITIES_RENT',
+          ...onLine('FIXED_COSTS', 'Rent/mortgage'),
           share_percent: 50,
         }),
       ]),
@@ -147,30 +160,30 @@ describe('planFromRecurring', () => {
         bill({
           stream_id: 'electric',
           amount: 90.1,
-          category_detailed: 'RENT_AND_UTILITIES_GAS_AND_ELECTRICITY',
+          ...onLine('FIXED_COSTS', 'Utilities'),
         }),
-        bill({ stream_id: 'water', amount: 35.2, category_detailed: 'RENT_AND_UTILITIES_WATER' }),
+        bill({ stream_id: 'water', amount: 35.2, ...onLine('FIXED_COSTS', 'Utilities') }),
         bill({
           stream_id: 'netflix',
           amount: 15.49,
-          category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+          ...onLine('FIXED_COSTS', 'Subscriptions'),
         }),
         bill({
           stream_id: 'spotify',
           amount: 11.99,
-          category_detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO',
+          ...onLine('FIXED_COSTS', 'Subscriptions'),
         }),
       ]),
     ).toMatchObject({ Utilities: 125.3, Subscriptions: 27.48 })
   })
 
-  it('lists each matching bill as a monthly breakdown item', () => {
+  it('lists each bill as a monthly breakdown item', () => {
     const subscriptions = planFromRecurring([
       bill({
         stream_id: 'netflix',
         merchant_name: 'Netflix',
         amount: 15.49,
-        category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+        ...onLine('FIXED_COSTS', 'Subscriptions'),
       }),
       bill({
         stream_id: 'gym',
@@ -178,7 +191,7 @@ describe('planFromRecurring', () => {
         description: 'PLANET FITNESS',
         amount: 120,
         frequency: 'ANNUALLY',
-        category_detailed: 'PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS',
+        ...onLine('FIXED_COSTS', 'Subscriptions'),
       }),
     ]).fixedCosts.find((row) => row.name === 'Subscriptions')
 
@@ -195,26 +208,39 @@ describe('planFromRecurring', () => {
         description: '   ',
         amount: 1450,
         category: 'RENT_AND_UTILITIES',
-        category_detailed: 'RENT_AND_UTILITIES_RENT',
+        ...onLine('FIXED_COSTS', 'Rent/mortgage'),
       }),
     ]).fixedCosts.find((row) => row.name === 'Rent/mortgage')
 
     expect(rent?.items).toEqual([{ name: 'Rent & utilities', amount: 1450, streamId: 'stream' }])
   })
 
-  it('does not add rows for bills that match no line, or for credit card payments', () => {
+  it('leaves out bills on no line, and pay', () => {
     const plan = planFromRecurring([
       bill({ stream_id: 'doordash', amount: 40, category_detailed: 'FOOD_AND_DRINK_RESTAURANT' }),
-      bill({
-        stream_id: 'card',
-        amount: 900,
-        category_detailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
-      }),
       bill({ stream_id: 'unknown', amount: 20, category_detailed: null }),
-      stream({ amount: -2400 }),
+      stream({ amount: -2400, ...onLine('FIXED_COSTS', 'Rent/mortgage') }),
     ])
 
     expect(plan).toEqual(defaultPlan())
+  })
+
+  it('adds a line the spreadsheet does not have, such as one from a saved plan', () => {
+    const plan = planFromRecurring([
+      bill({
+        stream_id: 'trip',
+        merchant_name: 'Japan fund',
+        amount: 300,
+        ...onLine('SAVINGS', 'Japan trip'),
+      }),
+    ])
+
+    expect(plan.savings.at(-1)).toEqual({
+      name: 'Japan trip',
+      amount: null,
+      fromPaycheck: false,
+      items: [{ name: 'Japan fund', amount: 300, streamId: 'trip' }],
+    })
   })
 
   it('puts investment and savings transfers in their buckets', () => {
@@ -225,14 +251,14 @@ describe('planFromRecurring', () => {
         amount: 250,
         frequency: 'BIWEEKLY',
         category: 'TRANSFER_OUT',
-        category_detailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+        ...onLine('INVESTMENTS', 'Other investments'),
       }),
       bill({
         stream_id: 'hysa',
         merchant_name: 'Ally',
         amount: 200,
         category: 'TRANSFER_OUT',
-        category_detailed: 'TRANSFER_OUT_SAVINGS',
+        ...onLine('SAVINGS', 'Emergency fund'),
       }),
     ])
 
@@ -243,5 +269,30 @@ describe('planFromRecurring', () => {
       { name: 'Ally', amount: 200, streamId: 'hysa' },
     ])
     expect(plan.fixedCosts.every((row) => row.items.length === 0)).toBe(true)
+  })
+})
+
+describe('unplacedBills', () => {
+  it('keeps bills on no line for the user to place, but not card payments or pay', () => {
+    const rent = stream({
+      stream_id: 'rent',
+      is_inflow: false,
+      amount: 1554.91,
+      category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
+    })
+    const netflix = stream({
+      stream_id: 'netflix',
+      is_inflow: false,
+      amount: 15.49,
+      ...onLine('FIXED_COSTS', 'Subscriptions'),
+    })
+    const card = stream({
+      stream_id: 'card',
+      is_inflow: false,
+      amount: 900,
+      category_detailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
+    })
+
+    expect(unplacedBills([rent, netflix, card, stream({ amount: -2400 })])).toEqual([rent])
   })
 })

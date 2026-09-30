@@ -38,6 +38,8 @@ const paycheck: RecurringStream = {
   category: 'INCOME',
   category_detailed: 'INCOME_WAGES',
   share_percent: 100,
+  plan_bucket: null,
+  plan_line: null,
 }
 
 const rent: RecurringStream = {
@@ -54,6 +56,8 @@ const rent: RecurringStream = {
   category: 'RENT_AND_UTILITIES',
   category_detailed: 'RENT_AND_UTILITIES_RENT',
   share_percent: 100,
+  plan_bucket: 'FIXED_COSTS',
+  plan_line: 'Rent/mortgage',
 }
 
 function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}) {
@@ -104,7 +108,76 @@ const savedPlan: SavedPlan = {
   },
 }
 
+// Rent Plaid labels home improvement, before Jev has put it on a line.
+const sterlingRent: RecurringStream = {
+  ...rent,
+  stream_id: 'sterling',
+  merchant_name: 'Sterling Group',
+  description: 'STERLING GROUP WEB PMTS',
+  amount: 1554.91,
+  category: 'HOME_IMPROVEMENT',
+  category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
+  plan_bucket: null,
+  plan_line: null,
+}
+
 describe('spending plan setup', () => {
+  it('fills in a bill on the line Jev put it on, whatever Plaid calls it', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      paycheck,
+      { ...sterlingRent, plan_bucket: 'FIXED_COSTS', plan_line: 'Rent/mortgage' },
+    ])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1554.91')
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+  })
+
+  it('lists bills on no line and adds one to the line the user picks', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const list = wrapper.get('[aria-labelledby="unplaced-heading"]')
+    expect(list.text()).toContain('Sterling Group')
+    expect(list.text()).toContain('$1,554.91/mo')
+    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
+
+    const select = wrapper.get('[aria-label="Line for Sterling Group"]')
+    const rentRow = select.findAll('option').find((option) => option.text() === 'Rent/mortgage')
+    await select.setValue(rentRow!.attributes('value'))
+    await wrapper.get('[aria-label="Add Sterling Group"]').trigger('click')
+
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1554.91')
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+  })
+
+  it('asks for another line when the one picked for a bill is removed', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const select = wrapper.get('[aria-label="Line for Sterling Group"]')
+    const utilities = select.findAll('option').find((option) => option.text() === 'Utilities')
+    await select.setValue(utilities!.attributes('value'))
+    await wrapper.get('[aria-label="Remove Utilities"]').trigger('click')
+
+    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
+    expect((select.element as HTMLSelectElement).value).toBe('')
+  })
+
+  it('lets the user skip a bill that belongs on no line', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Skip Sterling Group"]').trigger('click')
+
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').element).toHaveProperty('value', '')
+  })
+
   it('estimates from every tracked account and links to choosing them', async () => {
     const wrapper = mountSetup()
     await flushPromises()
@@ -123,7 +196,7 @@ describe('spending plan setup', () => {
     expect(wrapper.text()).toContain('32%')
   })
 
-  it('counts a shared account\'s rent at the user\'s share', async () => {
+  it("counts a shared account's rent at the user's share", async () => {
     vi.mocked(getRecurringTransactions).mockResolvedValue([
       paycheck,
       { ...rent, account_id: 'joint', amount: 2400, share_percent: 50 },
@@ -219,6 +292,8 @@ describe('spending plan setup', () => {
         amount: 15.49,
         category: 'ENTERTAINMENT',
         category_detailed: 'ENTERTAINMENT_TV_AND_MOVIES',
+        plan_bucket: 'FIXED_COSTS',
+        plan_line: 'Subscriptions',
       },
       {
         ...rent,
@@ -227,6 +302,8 @@ describe('spending plan setup', () => {
         amount: 11.99,
         category: 'ENTERTAINMENT',
         category_detailed: 'ENTERTAINMENT_MUSIC_AND_AUDIO',
+        plan_bucket: 'FIXED_COSTS',
+        plan_line: 'Subscriptions',
       },
     ])
     const wrapper = mountSetup()
@@ -311,6 +388,8 @@ describe('spending plan setup', () => {
         amount: 520,
         category: 'TRANSFER_OUT',
         category_detailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+        plan_bucket: 'INVESTMENTS',
+        plan_line: 'Other investments',
       },
       {
         ...rent,
@@ -319,6 +398,8 @@ describe('spending plan setup', () => {
         amount: 260,
         category: 'TRANSFER_OUT',
         category_detailed: 'TRANSFER_OUT_SAVINGS',
+        plan_bucket: 'SAVINGS',
+        plan_line: 'Emergency fund',
       },
     ])
     const wrapper = mountSetup()
@@ -535,5 +616,4 @@ describe('spending plan setup', () => {
       { name: 'Netflix', amount: 15.49, stream_id: 'netflix' },
     ])
   })
-
 })

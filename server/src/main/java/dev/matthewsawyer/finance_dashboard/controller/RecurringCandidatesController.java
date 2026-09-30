@@ -3,6 +3,7 @@ package dev.matthewsawyer.finance_dashboard.controller;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
+import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidate;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
@@ -106,6 +107,8 @@ public class RecurringCandidatesController {
             @JsonProperty("category_detailed") String categoryDetailed,
             @JsonProperty("share_percent") int sharePercent,
             @JsonProperty("probability") BigDecimal probability,
+            @JsonProperty("plan_bucket") SpendingPlanBucket planBucket,
+            @JsonProperty("plan_line") String planLine,
             @JsonProperty("status") RecurringCandidate.Status status
     ) {
         static CandidateResponse from(RecurringCandidate candidate) {
@@ -126,6 +129,8 @@ public class RecurringCandidatesController {
                     candidate.categoryDetailed(),
                     candidate.sharePercent(),
                     candidate.probability(),
+                    candidate.planBucket(),
+                    candidate.planLine(),
                     candidate.status());
         }
     }

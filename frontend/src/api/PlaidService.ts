@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import type { SpendingPlanBucket } from './SpendingPlanService'
 
 export interface PlaidAccount {
   account_id: string
@@ -70,21 +71,27 @@ export interface RecurringStream {
   category_detailed: string | null
   /** The user's share of the account's money, 1–100; amount is the whole stream's. */
   share_percent: number
+  /**
+   * The spending plan line Jev put this payee's bills under. Null for pay, for bills that fit no
+   * line, and until the payee is judged.
+   */
+  plan_bucket: SpendingPlanBucket | null
+  plan_line: string | null
 }
 
 /** Whether the user has answered a recurring candidate yet, and how. */
 export type RecurringCandidateStatus = 'SUGGESTED' | 'CONFIRMED' | 'DISMISSED'
 
 /**
- * A merchant Jev thinks the user pays (a bill) or is paid by (a paycheck) regularly, which Plaid
- * hasn't detected as a recurring stream. Shaped like a stream, from its latest likely charge, so
- * a confirmed one can be listed and planned like Plaid's; its stream_id is made up.
+ * A payee Jev thinks the user pays (a bill) or is paid by (a paycheck) regularly, which Plaid
+ * hasn't detected as a recurring stream. Shaped like a stream, from its latest charge, so a
+ * confirmed one can be listed and planned like Plaid's; its stream_id is made up.
  */
 export interface RecurringCandidate extends RecurringStream {
   kind: 'BILL' | 'PAYCHECK'
   /** What the user's answer is stored under. */
   merchant_key: string
-  /** How likely Jev thinks the likeliest charge is to repeat, 0–1. */
+  /** How likely Jev thinks the payments are regular, 0–1. */
   probability: number
   status: RecurringCandidateStatus
 }

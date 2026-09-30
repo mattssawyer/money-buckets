@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -17,7 +18,7 @@ import java.util.Set;
  * in parallel. See <a href="https://docs.typesafe.ai/api">the API reference</a>.
  */
 @Component
-class TypeSafeClient {
+public class TypeSafeClient {
 
     private static final String MODEL = "jev-latest";
 
@@ -45,7 +46,7 @@ class TypeSafeClient {
     }
 
     /** False when no API key is set, as in local setups that haven't added one yet. */
-    boolean isConfigured() {
+    public boolean isConfigured() {
         return configured;
     }
 
@@ -53,7 +54,7 @@ class TypeSafeClient {
      * Returns an answer for every question, keyed like {@code questions}. Retries rate limiting
      * and overload with backoff; any other failure, or a missing answer, is thrown.
      */
-    Answers ask(Object state, Map<String, Map<String, Object>> questions) {
+    public Answers ask(Object state, Map<String, Map<String, Object>> questions) {
         Map<String, Object> body = Map.of(
                 "model", MODEL,
                 "state", state,
@@ -92,31 +93,40 @@ class TypeSafeClient {
     }
 
     /** One question's answer: {@code choice} for a Choice, {@code noul} (0–1, how likely yes) for a Noul. */
-    record Answer(
+    public record Answer(
             @JsonProperty("choice") String choice,
             @JsonProperty("confidence") Double confidence,
             @JsonProperty("noul") Double noul
     ) {
-        static Answer choice(String choice) {
+        public static Answer choice(String choice) {
             return new Answer(choice, 1.0, null);
         }
 
-        static Answer noul(double probability) {
+        public static Answer noul(double probability) {
             return new Answer(null, null, probability);
         }
     }
 
-    record Answers(Map<String, Answer> byQuestion) {
+    public record Answers(Map<String, Answer> byQuestion) {
 
         /** The chosen option of a Choice question. */
-        String choice(String questionId) {
+        public String choice(String questionId) {
             return byQuestion.get(questionId).choice();
         }
 
         /** How likely the answer to a Noul question is yes, from 0 to 1. */
-        double noul(String questionId) {
+        public double noul(String questionId) {
             return byQuestion.get(questionId).noul();
         }
+    }
+
+    /** A map that keeps its keys in order, since question text and option order are what the model reads. */
+    public static Map<String, Object> ordered(Object... keysAndValues) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            map.put((String) keysAndValues[i], keysAndValues[i + 1]);
+        }
+        return map;
     }
 
     private record SystemOneResponse(@JsonProperty("answers") Map<String, Answer> answers) {
