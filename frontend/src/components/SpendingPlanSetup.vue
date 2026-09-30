@@ -215,6 +215,10 @@ function addLine(bucket: BucketId) {
 function removeLine(bucket: BucketId, id: string) {
   plan.value[bucket] = plan.value[bucket].filter((row) => row.id !== id)
   expandedRows.value.delete(id)
+  // A bill waiting to go on the removed line has to be pointed at another one.
+  for (const [streamId, rowId] of Object.entries(placeInto.value)) {
+    if (rowId === id) delete placeInto.value[streamId]
+  }
 }
 
 function toggleBreakdown(id: string) {

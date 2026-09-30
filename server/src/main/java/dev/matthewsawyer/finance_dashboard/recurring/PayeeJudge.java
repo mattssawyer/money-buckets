@@ -180,10 +180,14 @@ class PayeeJudge {
         }
     }
 
-    /** Everything Jev is shown, hashed, so a payee is asked again only when that changes. */
+    /**
+     * Everything Jev is shown, hashed, so a payee is asked again only when that changes. Every map
+     * in it keeps its order: Map.of's changes between JVM runs, which would re-ask every payee on
+     * each restart.
+     */
     private String fingerprint(Object state, Map<String, Map<String, Object>> questions) {
         try {
-            byte[] shown = objectMapper.writeValueAsBytes(Map.of("state", state, "questions", questions));
+            byte[] shown = objectMapper.writeValueAsBytes(ordered("state", state, "questions", questions));
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(shown));
         } catch (JacksonException | NoSuchAlgorithmException e) {
             throw new IllegalStateException("Couldn't fingerprint a payee's question", e);

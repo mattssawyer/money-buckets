@@ -153,6 +153,20 @@ describe('spending plan setup', () => {
     expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
   })
 
+  it('asks for another line when the one picked for a bill is removed', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const select = wrapper.get('[aria-label="Line for Sterling Group"]')
+    const utilities = select.findAll('option').find((option) => option.text() === 'Utilities')
+    await select.setValue(utilities!.attributes('value'))
+    await wrapper.get('[aria-label="Remove Utilities"]').trigger('click')
+
+    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
+    expect((select.element as HTMLSelectElement).value).toBe('')
+  })
+
   it('lets the user skip a bill that belongs on no line', async () => {
     vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
     const wrapper = mountSetup()
