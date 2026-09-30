@@ -260,7 +260,40 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Start with an account.')
-    expect(getAccounts).not.toHaveBeenCalled()
+  })
+
+  it('asks for accounts and every card at once instead of one after another', async () => {
+    vi.mocked(getLinkedItemIds).mockReturnValue(new Promise(() => {}))
+    vi.mocked(getAccounts).mockReturnValue(new Promise(() => {}))
+    mountHome()
+    await flushPromises()
+
+    expect(getAccounts).toHaveBeenCalledOnce()
+    expect(getTransactions).toHaveBeenCalledOnce()
+    expect(getSpendingByBucket).toHaveBeenCalledOnce()
+    expect(getRecurringTransactions).toHaveBeenCalledOnce()
+  })
+
+  it('loads the remembered account alongside the account list', async () => {
+    localStorage.setItem('abacus.selectedAccountId', 'savings')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+    mountHome()
+    await flushPromises()
+
+    expect(getTransactions).toHaveBeenCalledTimes(1)
+    expect(getTransactions).toHaveBeenCalledWith(25, 'savings')
+  })
+
+  it('loads again for all accounts when the remembered one is no longer tracked', async () => {
+    localStorage.setItem('abacus.selectedAccountId', 'closed-account')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
+    expect(wrapper.get('.transaction-name').text()).toBe('Coffee Shop')
   })
 
   it('restores a saved connection and displays its current balance', async () => {
@@ -377,15 +410,14 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
-    expect(getAccounts).toHaveBeenCalledOnce()
     expect(wrapper.text()).not.toContain('Start with an account.')
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
   })
 
   it('keeps a newly saved connection when balances fail and retries without relinking', async () => {
-    vi.mocked(getAccounts).mockRejectedValueOnce(new Error('Plaid unavailable'))
     const wrapper = mountHome()
     await flushPromises()
+    vi.mocked(getAccounts).mockRejectedValueOnce(new Error('Plaid unavailable'))
     await button(wrapper, 'Add an account').trigger('click')
     await flushPromises()
     linkOptions.onSuccess('public-token', {})
