@@ -7,7 +7,7 @@ import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import { getTransactionPage, type PlaidTransaction } from '../api/PlaidService'
 import {
-  BUCKET_STYLES,
+  bucketStyle,
   categoryLabel,
   formatTransactionAmount,
   transactionLabel,
@@ -66,10 +66,6 @@ function formatDate(date: string) {
     day: 'numeric',
     year: 'numeric',
   }).format(new Date(`${date}T00:00:00`))
-}
-
-function bucketStyle(transaction: PlaidTransaction) {
-  return BUCKET_STYLES[transaction.bucket ?? 'UNSORTED']
 }
 </script>
 
