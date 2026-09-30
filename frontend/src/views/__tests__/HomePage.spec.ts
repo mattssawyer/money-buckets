@@ -260,7 +260,40 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Start with an account.')
-    expect(getAccounts).not.toHaveBeenCalled()
+  })
+
+  it('asks for accounts and every card at once instead of one after another', async () => {
+    vi.mocked(getLinkedItemIds).mockReturnValue(new Promise(() => {}))
+    vi.mocked(getAccounts).mockReturnValue(new Promise(() => {}))
+    mountHome()
+    await flushPromises()
+
+    expect(getAccounts).toHaveBeenCalledOnce()
+    expect(getTransactions).toHaveBeenCalledOnce()
+    expect(getSpendingByBucket).toHaveBeenCalledOnce()
+    expect(getRecurringTransactions).toHaveBeenCalledOnce()
+  })
+
+  it('loads the remembered account alongside the account list', async () => {
+    localStorage.setItem('abacus.selectedAccountId', 'savings')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+    mountHome()
+    await flushPromises()
+
+    expect(getTransactions).toHaveBeenCalledTimes(1)
+    expect(getTransactions).toHaveBeenCalledWith(25, 'savings')
+  })
+
+  it('loads again for all accounts when the remembered one is no longer tracked', async () => {
+    localStorage.setItem('abacus.selectedAccountId', 'closed-account')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
+    expect(wrapper.get('.transaction-name').text()).toBe('Coffee Shop')
   })
 
   it('restores a saved connection and displays its current balance', async () => {
@@ -377,15 +410,14 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
-    expect(getAccounts).toHaveBeenCalledOnce()
     expect(wrapper.text()).not.toContain('Start with an account.')
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
   })
 
   it('keeps a newly saved connection when balances fail and retries without relinking', async () => {
-    vi.mocked(getAccounts).mockRejectedValueOnce(new Error('Plaid unavailable'))
     const wrapper = mountHome()
     await flushPromises()
+    vi.mocked(getAccounts).mockRejectedValueOnce(new Error('Plaid unavailable'))
     await button(wrapper, 'Add an account').trigger('click')
     await flushPromises()
     linkOptions.onSuccess('public-token', {})
@@ -735,9 +767,7 @@ describe('homepage spending breakdown', () => {
     await flushPromises()
 
     const prompt = wrapper.get('.spending-plan-prompt')
-    expect(prompt.text()).toBe(
-      'Create your spending plan to set a target for each bucket.',
-    )
+    expect(prompt.text()).toBe('Create your spending plan to set a target for each bucket.')
     expect(prompt.get('a').attributes('href')).toBe('/spending-plan')
   })
 
@@ -826,6 +856,45 @@ describe('homepage account selector', () => {
 
     expect(wrapper.get('.balance-amount').text()).toBe('$9,650.50')
     expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
+  })
+
+  it('keeps the latest answer when switching away and back outruns an older request', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    let finishFirst!: (value: PlaidTransaction[]) => void
+    vi.mocked(getTransactions)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...coffee, merchant_name: 'Newest' }])
+    const select = wrapper.get('[aria-label="Account"]')
+    await select.setValue('savings')
+    await select.setValue('')
+    await select.setValue('savings')
+    await flushPromises()
+    finishFirst([{ ...coffee, merchant_name: 'Oldest' }])
+    await flushPromises()
+
+    expect(wrapper.get('.transaction-name').text()).toBe('Newest')
+  })
+
+  it('loads the cards again when retrying the accounts changes what is shown', async () => {
+    localStorage.setItem('abacus.selectedAccountId', 'closed-account')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts)
+      .mockRejectedValueOnce(new Error('Server unavailable'))
+      .mockResolvedValue([checking, savings])
+    const wrapper = mountHome()
+    await flushPromises()
+    expect(getTransactions).toHaveBeenLastCalledWith(25, 'closed-account')
+
+    await button(wrapper, 'Try again').trigger('click')
+    await flushPromises()
+
+    expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
+    expect(wrapper.get('.balance-amount').text()).toBe('$9,650.50')
   })
 
   it('restores the last selected account on reload', async () => {

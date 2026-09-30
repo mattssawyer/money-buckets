@@ -184,6 +184,10 @@ const spendingChartOptions: ChartOptions<'doughnut'> = {
 }
 let handler: ReturnType<Window['Plaid']['create']> | undefined
 let disposed = false
+// Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
+const startTransactions = latestRequest()
+const startSpending = latestRequest()
+const startRecurring = latestRequest()
 
 onMounted(loadConnections)
 onUnmounted(() => {
@@ -260,18 +264,25 @@ function formatRecurringAmount(stream: RecurringStream) {
   }).format(-stream.amount)
 }
 
+/**
+ * Asks for everything at once, for the account remembered from last time, rather than waiting
+ * on the account list first. The dashboard shows once the connections and accounts are known;
+ * each card fills in as its data arrives.
+ */
 async function loadConnections() {
   initialLoading.value = true
   connectionError.value = ''
+  const requested = selectedAccountId.value
+  const savedItemIds = getLinkedItemIds()
+  void loadCards()
+  // The plan check only decides whether to show a nudge, so the dashboard doesn't wait on it.
+  void loadSpendingPlan()
   try {
-    const savedItemIds = await getLinkedItemIds()
+    const [linked] = await Promise.all([savedItemIds, loadAccountList()])
     if (disposed) return
-    itemIds.value = savedItemIds
-    await loadAccounts()
-    if (disposed) return
-    // The plan check only decides whether to show a nudge, so the dashboard doesn't wait on it.
-    void loadSpendingPlan()
-    await Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
+    itemIds.value = linked
+    // The remembered account may be gone or no longer tracked; load what's shown instead.
+    if (selectedAccountId.value !== requested) void loadCards()
   } catch {
     if (!disposed)
       connectionError.value = 'We couldn’t load your connected accounts. Please try again.'
@@ -280,20 +291,37 @@ async function loadConnections() {
   }
 }
 
-async function loadAccounts() {
-  if (!itemIds.value.length) return
+function loadCards() {
+  return Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
+}
+
+/** Tries loading the account list again, and the cards too if that changes what's shown. */
+async function retryAccounts() {
+  const shown = selectedAccountId.value
   await loadAccountList()
+  if (!disposed && selectedAccountId.value !== shown) void loadCards()
+}
+
+/**
+ * Numbers a loader's requests; the check each start returns is true only while its request is
+ * the latest and the page is still open.
+ */
+function latestRequest() {
+  let latest = 0
+  return () => {
+    const request = ++latest
+    return () => !disposed && request === latest
+  }
 }
 
 function onAccountChange(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
   if (!selectAccount(target.value || undefined)) return
-  void Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
+  void loadCards()
 }
 
 async function loadSpendingPlan() {
-  if (!itemIds.value.length) return
   try {
     const plan = await getSpendingPlan()
     if (!disposed) hasSpendingPlan.value = plan !== null
@@ -303,21 +331,21 @@ async function loadSpendingPlan() {
 }
 
 async function loadSpending() {
-  if (!itemIds.value.length) return
   clearTimeout(unsortedRecheck)
   unsortedRechecks = 0
   loadingSpending.value = true
   spendingError.value = ''
+  const accountId = selectedAccountId.value
+  const current = startSpending()
   try {
-    const accountId = selectedAccountId.value
     const summary = await getSpendingByBucket(accountId)
-    if (disposed) return
+    if (!current()) return
     spending.value = summary
     recheckUnsorted(accountId)
   } catch {
-    if (!disposed) spendingError.value = 'We couldn’t load your spending breakdown.'
+    if (current()) spendingError.value = 'We couldn’t load your spending breakdown.'
   } finally {
-    if (!disposed) loadingSpending.value = false
+    if (current()) loadingSpending.value = false
   }
 }
 
@@ -340,38 +368,39 @@ function recheckUnsorted(accountId: string | undefined) {
 }
 
 async function loadTransactions() {
-  if (!itemIds.value.length) return
   loadingTransactions.value = true
   transactionsError.value = ''
+  const current = startTransactions()
   try {
     const recent = await getTransactions(RECENT_TRANSACTION_COUNT, selectedAccountId.value)
-    if (!disposed) transactions.value = recent
+    if (current()) transactions.value = recent
   } catch {
-    if (!disposed) transactionsError.value = 'We couldn’t load your recent transactions.'
+    if (current()) transactionsError.value = 'We couldn’t load your recent transactions.'
   } finally {
-    if (!disposed) loadingTransactions.value = false
+    if (current()) loadingTransactions.value = false
   }
 }
 
 async function loadRecurring() {
-  if (!itemIds.value.length) return
   loadingRecurring.value = true
   recurringError.value = ''
   recurringSyncFailed.value = false
   answerError.value = ''
+  const accountId = selectedAccountId.value
+  const current = startRecurring()
   try {
     // Candidates are only guesses, so Plaid's streams still show when they can't be loaded.
     const [streams, found] = await Promise.all([
-      getRecurringTransactions(selectedAccountId.value, RECURRING_STREAM_COUNT),
-      getRecurringCandidates(selectedAccountId.value).catch(() => []),
+      getRecurringTransactions(accountId, RECURRING_STREAM_COUNT),
+      getRecurringCandidates(accountId).catch(() => []),
     ])
-    if (disposed) return
+    if (!current()) return
     recurring.value = streams.slice(0, RECURRING_STREAM_COUNT)
     candidates.value = found
   } catch {
-    if (!disposed) recurringError.value = 'We couldn’t load your recurring transactions.'
+    if (current()) recurringError.value = 'We couldn’t load your recurring transactions.'
   } finally {
-    if (!disposed) loadingRecurring.value = false
+    if (current()) loadingRecurring.value = false
   }
 }
 
@@ -430,11 +459,10 @@ async function finishLink(publicToken: string) {
     pendingPublicToken.value = undefined
     sameInstitution.value = same_institution
     if (!itemIds.value.includes(itemId)) itemIds.value.push(itemId)
-    await loadAccounts()
+    await loadAccountList()
     if (disposed) return
-    // The plan check only decides whether to show a nudge, so the dashboard doesn't wait on it.
     void loadSpendingPlan()
-    await Promise.all([loadTransactions(), loadSpending(), loadRecurring()])
+    await loadCards()
   } catch {
     if (!disposed) linkError.value = 'Your account connection could not be saved. Please try again.'
   } finally {
@@ -602,7 +630,7 @@ async function openPlaidLink() {
                 label="Try again"
                 severity="secondary"
                 class="retry-button"
-                @click="loadAccounts"
+                @click="retryAccounts"
               />
             </div>
 

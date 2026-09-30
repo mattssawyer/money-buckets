@@ -13,7 +13,8 @@ const ALL_TRACKED = 'all'
  */
 export function useSelectedAccount() {
   const accounts = ref<PlaidAccount[]>([])
-  const selectedAccountId = ref<string>()
+  // Starts from the remembered choice, so data for it can load alongside the account list.
+  const selectedAccountId = ref<string | undefined>(recall())
   const loading = ref(false)
   const failed = ref(false)
   let disposed = false
