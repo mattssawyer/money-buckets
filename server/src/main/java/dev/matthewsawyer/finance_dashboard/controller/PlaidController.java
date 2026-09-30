@@ -2,14 +2,17 @@ package dev.matthewsawyer.finance_dashboard.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
+import dev.matthewsawyer.finance_dashboard.model.PayeeCorrection;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -73,6 +76,7 @@ public class PlaidController {
     private final TrackedAccounts trackedAccounts;
     private final Spending spending;
     private final RecurringPayees recurringPayees;
+    private final PayeeLookup payeeLookup;
     private final UserService userService;
 
     public PlaidController(
@@ -84,6 +88,7 @@ public class PlaidController {
             TrackedAccounts trackedAccounts,
             Spending spending,
             RecurringPayees recurringPayees,
+            PayeeLookup payeeLookup,
             UserService userService
     ) {
         this.itemLinking = itemLinking;
@@ -94,6 +99,7 @@ public class PlaidController {
         this.trackedAccounts = trackedAccounts;
         this.spending = spending;
         this.recurringPayees = recurringPayees;
+        this.payeeLookup = payeeLookup;
         this.userService = userService;
     }
 
@@ -223,11 +229,12 @@ public class PlaidController {
         }
         Page<PlaidTransaction> found = transactionRepository
                 .findRecent(user.getId(), shares.keySet(), PageRequest.of(page, limit));
+        PayeeLookup.Payees payees = payeeLookup.forUser(user.getId());
 
         return new TransactionsResponse(
                 found.stream()
                         .map(transaction -> TransactionResponse.from(
-                                transaction, shares.get(transaction.getAccountId())))
+                                transaction, shares.get(transaction.getAccountId()), payees))
                         .toList(),
                 found.getTotalElements());
     }
@@ -327,13 +334,24 @@ public class PlaidController {
             @JsonProperty("merchant_name") String merchantName,
             @JsonProperty("logo_url") String logoUrl,
             @JsonProperty("pending") boolean pending,
+            /** The Plaid primary category to show: the user's correction for the payee, else Plaid's. */
             @JsonProperty("category") String category,
             /** Null until sorting reaches the transaction. */
             @JsonProperty("bucket") Bucket bucket,
             /** The user's share of the account's money, in percent; the amount is the whole transaction's. */
-            @JsonProperty("share_percent") int sharePercent
+            @JsonProperty("share_percent") int sharePercent,
+            /** Who was paid or paid the user, as corrections and recurring answers are stored; may be null. */
+            @JsonProperty("payee_key") String payeeKey,
+            @JsonProperty("payee_kind") RecurringKind payeeKind,
+            /** Whether the user set the payee's bucket, or its category, themselves. */
+            @JsonProperty("bucket_corrected") boolean bucketCorrected,
+            @JsonProperty("category_corrected") boolean categoryCorrected,
+            /** Whether the payee repeats, as far as Plaid, the user or Jev have said; null when nobody has. */
+            @JsonProperty("recurring") PayeeLookup.Recurring recurring
     ) {
-        static TransactionResponse from(PlaidTransaction transaction, int sharePercent) {
+        static TransactionResponse from(PlaidTransaction transaction, int sharePercent, PayeeLookup.Payees payees) {
+            RecurringMerchant payee = RecurringMerchant.of(transaction);
+            PayeeCorrection correction = payees.correction(transaction);
             return new TransactionResponse(
                     transaction.getTransactionId(),
                     transaction.getAccountId(),
@@ -344,9 +362,14 @@ public class PlaidController {
                     transaction.getMerchantName(),
                     transaction.getLogoUrl(),
                     transaction.isPending(),
-                    transaction.getPersonalFinanceCategoryPrimary(),
+                    payees.category(transaction),
                     transaction.getBucket(),
-                    sharePercent
+                    sharePercent,
+                    payee == null ? null : payee.key(),
+                    payee == null ? null : payee.kind(),
+                    correction != null && correction.getBucket() != null,
+                    correction != null && correction.getCategory() != null,
+                    payees.recurring(transaction)
             );
         }
     }
@@ -360,14 +383,14 @@ public class PlaidController {
         LocalDate start = LocalDate.now().withDayOfMonth(1);
         LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
 
+        PayeeLookup.Payees payees = payeeLookup.forUser(user.getId());
         // Newest first from the query, and kept in that order within each category.
         Map<String, Map<String, List<Spending.Spent>>> byBucketAndCategory = new HashMap<>();
         for (Spending.Spent spent : spending.between(user.getId(), start, end, blankToNull(accountId))) {
             PlaidTransaction transaction = spent.transaction();
             String bucket = transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
             // Plaid always assigns a category, but the column is nullable.
-            String category = Objects.requireNonNullElse(
-                    transaction.getPersonalFinanceCategoryPrimary(), "UNCATEGORIZED");
+            String category = Objects.requireNonNullElse(payees.category(transaction), "UNCATEGORIZED");
             byBucketAndCategory
                     .computeIfAbsent(bucket, key -> new HashMap<>())
                     .computeIfAbsent(category, key -> new ArrayList<>())
@@ -376,7 +399,7 @@ public class PlaidController {
 
         List<BucketSpend> buckets = BUCKET_ORDER.stream()
                 .filter(byBucketAndCategory::containsKey)
-                .map(bucket -> BucketSpend.of(bucket, byBucketAndCategory.get(bucket)))
+                .map(bucket -> BucketSpend.of(bucket, byBucketAndCategory.get(bucket), payees))
                 .filter(bucket -> !bucket.categories().isEmpty())
                 .toList();
         BigDecimal total = buckets.stream()
@@ -400,9 +423,10 @@ public class PlaidController {
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("categories") List<CategorySpend> categories
     ) {
-        static BucketSpend of(String bucket, Map<String, List<Spending.Spent>> transactionsByCategory) {
+        static BucketSpend of(
+                String bucket, Map<String, List<Spending.Spent>> transactionsByCategory, PayeeLookup.Payees payees) {
             List<CategorySpend> largestFirst = transactionsByCategory.entrySet().stream()
-                    .map(entry -> CategorySpend.of(entry.getKey(), entry.getValue()))
+                    .map(entry -> CategorySpend.of(entry.getKey(), entry.getValue(), payees))
                     // Refunds can net a category to zero or below, which a pie chart cannot show.
                     .filter(category -> category.amount().signum() > 0)
                     .sorted(Comparator.comparing(CategorySpend::amount).reversed())
@@ -421,12 +445,12 @@ public class PlaidController {
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("transactions") List<TransactionResponse> transactions
     ) {
-        static CategorySpend of(String category, List<Spending.Spent> spent) {
+        static CategorySpend of(String category, List<Spending.Spent> spent, PayeeLookup.Payees payees) {
             BigDecimal amount = spent.stream()
                     .map(Spending.Spent::amount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             return new CategorySpend(category, amount, spent.stream()
-                    .map(each -> TransactionResponse.from(each.transaction(), each.sharePercent()))
+                    .map(each -> TransactionResponse.from(each.transaction(), each.sharePercent(), payees))
                     .toList());
         }
     }

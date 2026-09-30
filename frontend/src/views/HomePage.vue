@@ -10,6 +10,7 @@ import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import TransactionEditor from '../components/TransactionEditor.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
 import {
   createLinkToken,
@@ -73,6 +74,9 @@ const spendingError = ref('')
 const itemIds = ref<string[]>([])
 const transactions = ref<PlaidTransaction[]>([])
 const allTransactionsVisible = ref(false)
+// The transaction whose payee the user is correcting or saying repeats.
+const editing = ref<PlaidTransaction>()
+const editorVisible = ref(false)
 const recurring = ref<RecurringStream[]>([])
 const candidates = ref<RecurringCandidate[]>([])
 const showDismissed = ref(false)
@@ -195,6 +199,11 @@ onUnmounted(() => {
   clearTimeout(unsortedRecheck)
   handler?.destroy()
 })
+
+function edit(transaction: PlaidTransaction) {
+  editing.value = transaction
+  editorVisible.value = true
+}
 
 function isOpen(row: { key: string; startsOpen: boolean }) {
   return row.startsOpen !== toggledRows.value.has(row.key)
@@ -677,40 +686,43 @@ async function openPlaidLink() {
               </p>
 
               <ul v-else class="transactions-list" tabindex="0">
-                <li
-                  v-for="transaction in transactions"
-                  :key="transaction.transaction_id"
-                  class="transaction-row"
-                >
-                  <img
-                    v-if="transaction.logo_url"
-                    class="transaction-logo"
-                    :src="transaction.logo_url"
-                    alt=""
-                  />
-                  <span
-                    v-else
-                    class="transaction-logo transaction-logo-fallback"
-                    aria-hidden="true"
+                <li v-for="transaction in transactions" :key="transaction.transaction_id">
+                  <button
+                    type="button"
+                    class="transaction-row transaction-button"
+                    aria-haspopup="dialog"
+                    @click="edit(transaction)"
                   >
-                    {{ transactionLabel(transaction).charAt(0) }}
-                  </span>
-                  <span class="transaction-details">
-                    <span class="transaction-name">{{ transactionLabel(transaction) }}</span>
-                    <span class="transaction-meta">
-                      {{ formatTransactionDate(transaction.date) }}
-                      <template v-if="transaction.pending"> · Pending</template>
-                      <template v-if="transaction.share_percent < 100">
-                        · Shared, yours {{ transaction.share_percent }}%
-                      </template>
+                    <img
+                      v-if="transaction.logo_url"
+                      class="transaction-logo"
+                      :src="transaction.logo_url"
+                      alt=""
+                    />
+                    <span
+                      v-else
+                      class="transaction-logo transaction-logo-fallback"
+                      aria-hidden="true"
+                    >
+                      {{ transactionLabel(transaction).charAt(0) }}
                     </span>
-                  </span>
-                  <span
-                    class="transaction-amount"
-                    :class="{ 'transaction-amount-inflow': transaction.amount < 0 }"
-                  >
-                    {{ formatTransactionAmount(transaction) }}
-                  </span>
+                    <span class="transaction-details">
+                      <span class="transaction-name">{{ transactionLabel(transaction) }}</span>
+                      <span class="transaction-meta">
+                        {{ formatTransactionDate(transaction.date) }}
+                        <template v-if="transaction.pending"> · Pending</template>
+                        <template v-if="transaction.share_percent < 100">
+                          · Shared, yours {{ transaction.share_percent }}%
+                        </template>
+                      </span>
+                    </span>
+                    <span
+                      class="transaction-amount"
+                      :class="{ 'transaction-amount-inflow': transaction.amount < 0 }"
+                    >
+                      {{ formatTransactionAmount(transaction) }}
+                    </span>
+                  </button>
                 </li>
               </ul>
             </section>
@@ -1017,17 +1029,23 @@ async function openPlaidLink() {
                             <li
                               v-for="transaction in category.transactions"
                               :key="transaction.transaction_id"
-                              class="spending-transaction-row"
                             >
-                              <span class="spending-transaction-name">
-                                {{ transactionLabel(transaction) }}
-                              </span>
-                              <span class="spending-transaction-date">
-                                {{ spendingDate(transaction) }}
-                              </span>
-                              <span class="spending-legend-amount">
-                                {{ formatBalance(yourAmount(transaction)) }}
-                              </span>
+                              <button
+                                type="button"
+                                class="spending-transaction-row transaction-button"
+                                aria-haspopup="dialog"
+                                @click="edit(transaction)"
+                              >
+                                <span class="spending-transaction-name">
+                                  {{ transactionLabel(transaction) }}
+                                </span>
+                                <span class="spending-transaction-date">
+                                  {{ spendingDate(transaction) }}
+                                </span>
+                                <span class="spending-legend-amount">
+                                  {{ formatBalance(yourAmount(transaction)) }}
+                                </span>
+                              </button>
                             </li>
                           </ul>
                         </div>
@@ -1078,6 +1096,12 @@ async function openPlaidLink() {
       v-model:visible="allTransactionsVisible"
       :account-id="selectedAccountId"
       :account-label="selectedAccountLabel"
+      @changed="loadCards"
+    />
+    <TransactionEditor
+      v-model:visible="editorVisible"
+      :transaction="editing"
+      @changed="loadCards"
     />
   </div>
 </template>
@@ -1584,6 +1608,40 @@ h1 {
 }
 
 .transaction-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 2.375rem;
+  height: 1px;
+  background: var(--app-divider);
+}
+
+/* A transaction opens its editor, so it's a button that still looks like a list row. */
+.transaction-button {
+  width: 100%;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--app-radius-chip);
+}
+
+.transaction-button:hover .transaction-name,
+.transaction-button:hover .spending-transaction-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.transaction-button:focus-visible {
+  outline: 2px solid var(--app-text);
+  outline-offset: 2px;
+}
+
+.transactions-list > li:not(:last-child) > .transaction-button::after {
   content: '';
   position: absolute;
   right: 0;

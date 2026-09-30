@@ -2,11 +2,13 @@ package dev.matthewsawyer.finance_dashboard.controller;
 
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
+import dev.matthewsawyer.finance_dashboard.model.PayeeCorrection;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
@@ -58,6 +60,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -83,6 +86,9 @@ class PlaidControllerTests {
     private RecurringPayees recurringPayees;
 
     @Mock
+    private PayeeLookup payeeLookup;
+
+    @Mock
     private UserService userService;
 
     private PlaidController controller;
@@ -101,8 +107,10 @@ class PlaidControllerTests {
                 trackedAccounts,
                 new Spending(transactionRepository, trackedAccounts),
                 recurringPayees,
+                payeeLookup,
                 userService
         );
+        lenient().when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of()));
         jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("clerk-user")
@@ -296,6 +304,29 @@ class PlaidControllerTests {
         assertEquals(51, response.total());
         assertEquals("txn-51", response.transactions().get(0).transactionId());
         assertNull(response.transactions().get(0).bucket());
+    }
+
+    @Test
+    void showsTheCategoryTheUserChoseForAPayee() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100));
+        PlaidTransaction rent = spent("rent", "1554.91", "HOME_IMPROVEMENT", Bucket.FIXED_COSTS)
+                .merchantName("Sterling Group");
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
+                .thenReturn(List.of(rent));
+        PayeeCorrection correction = new PayeeCorrection(USER_ID, "sterling group");
+        correction.correct(Bucket.FIXED_COSTS, "RENT_AND_UTILITIES", Instant.now());
+        when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of("sterling group", correction)));
+
+        PlaidController.CategorySpend category =
+                controller.getSpendingByBucket(jwt, null).buckets().get(0).categories().get(0);
+
+        assertEquals("RENT_AND_UTILITIES", category.category());
+        PlaidController.TransactionResponse shown = category.transactions().get(0);
+        assertEquals("RENT_AND_UTILITIES", shown.category());
+        assertEquals("sterling group", shown.payeeKey());
+        assertTrue(shown.bucketCorrected());
+        assertTrue(shown.categoryCorrected());
     }
 
     @Test
@@ -723,5 +754,9 @@ class PlaidControllerTests {
                 null
         );
         return account;
+    }
+
+    private static PayeeLookup.Payees payees(Map<String, PayeeCorrection> corrections) {
+        return new PayeeLookup.Payees(corrections, Map.of(), Map.of(), Set.of());
     }
 }

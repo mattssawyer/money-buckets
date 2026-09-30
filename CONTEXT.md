@@ -90,6 +90,10 @@ _Avoid_: Row, entry
 One of the amounts a line can be split into, such as each insurance policy under "Insurance". It may come from a recurring stream. When a line has breakdown items, its amount is their sum.
 _Avoid_: Item on its own (clashes with Plaid item), sub-line
 
+**Correction**:
+The user's own bucket and/or category for a payee's spending, set by clicking any of its transactions. It covers the payee's charges now and later: sorting uses the corrected bucket instead of asking Jev, and the corrected category is shown in place of Plaid's. Going back to automatic hands the charges back to sorting.
+_Avoid_: Override, rule, recategorization
+
 **Placing a bill**:
 Putting a recurring bill on a plan line as a breakdown item during plan setup, on the line Jev chose for its payee. The user places or skips bills Jev put on no line.
 _Avoid_: Mapping, assigning

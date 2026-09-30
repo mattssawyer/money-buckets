@@ -20,6 +20,11 @@ const coffee: PlaidTransaction = {
   category: 'FOOD_AND_DRINK',
   bucket: 'GUILT_FREE',
   share_percent: 100,
+  payee_key: 'coffee shop',
+  payee_kind: 'BILL',
+  bucket_corrected: false,
+  category_corrected: false,
+  recurring: null,
 }
 
 function mountDialog(props: { visible: boolean; accountId?: string; accountLabel?: string }) {

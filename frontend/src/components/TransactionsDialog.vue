@@ -5,6 +5,7 @@ import Column from 'primevue/column'
 import DataTable, { type DataTablePageEvent } from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
+import TransactionEditor from './TransactionEditor.vue'
 import { getTransactionPage, type PlaidTransaction } from '../api/PlaidService'
 import {
   BUCKET_STYLES,
@@ -21,12 +22,29 @@ const props = defineProps<{
   /** Shown under the title so it's clear which account the table covers. */
   accountLabel?: string
 }>()
+const emit = defineEmits<{
+  /** A payee was corrected or answered, so other views of it should load again. */
+  changed: []
+}>()
 
 const transactions = ref<PlaidTransaction[]>([])
 const total = ref(0)
 const first = ref(0)
 const loading = ref(false)
 const error = ref('')
+const editing = ref<PlaidTransaction>()
+const editorVisible = ref(false)
+
+function edit(transaction: PlaidTransaction) {
+  editing.value = transaction
+  editorVisible.value = true
+}
+
+function onEdited() {
+  void loadPage(first.value / PAGE_SIZE)
+  emit('changed')
+}
+
 // Only the newest request may fill the table, in case pages or accounts change mid-flight.
 let latestRequest = 0
 
@@ -139,7 +157,14 @@ function bucketStyle(transaction: PlaidTransaction) {
             <span v-else class="logo logo-fallback" aria-hidden="true">
               {{ transactionLabel(data).charAt(0) }}
             </span>
-            <span class="name">{{ transactionLabel(data) }}</span>
+            <button
+              type="button"
+              class="name name-button"
+              aria-haspopup="dialog"
+              @click="edit(data)"
+            >
+              {{ transactionLabel(data) }}
+            </button>
             <span v-if="data.pending" class="pending">Pending</span>
           </span>
         </template>
@@ -172,6 +197,7 @@ function bucketStyle(transaction: PlaidTransaction) {
         </template>
       </Column>
     </DataTable>
+    <TransactionEditor v-model:visible="editorVisible" :transaction="editing" @changed="onEdited" />
   </Dialog>
 </template>
 
@@ -259,6 +285,30 @@ function bucketStyle(transaction: PlaidTransaction) {
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The name opens the transaction's editor. */
+.name-button {
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.name-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.name-button:focus-visible {
+  outline: 2px solid var(--app-text);
+  outline-offset: 2px;
+  border-radius: var(--app-radius-chip);
 }
 
 .pending {

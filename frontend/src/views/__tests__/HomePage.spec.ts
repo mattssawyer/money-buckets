@@ -14,6 +14,7 @@ import {
   getRecurringTransactions,
   getRecurringCandidates,
   answerRecurringCandidate,
+  correctPayee,
   undoRecurringAnswer,
   removeItem,
   syncRecurringTransactions,
@@ -43,6 +44,8 @@ vi.mock('../../api/PlaidService', () => ({
   undoRecurringAnswer: vi.fn<(candidate: RecurringCandidate) => Promise<void>>(),
   syncRecurringTransactions: vi.fn<() => Promise<void>>(),
   removeItem: vi.fn(),
+  correctPayee: vi.fn(),
+  undoPayeeCorrection: vi.fn(),
 }))
 const clerk = vi.hoisted(() => ({
   user: null as {
@@ -97,6 +100,11 @@ const coffee: PlaidTransaction = {
   category: 'FOOD_AND_DRINK',
   bucket: 'GUILT_FREE',
   share_percent: 100,
+  payee_key: 'coffee shop',
+  payee_kind: 'BILL',
+  bucket_corrected: false,
+  category_corrected: false,
+  recurring: null,
 }
 
 const spending: SpendingByBucket = {
@@ -201,6 +209,7 @@ function mountHome() {
     global: {
       plugins: [[PrimeVue, { unstyled: true }]],
       stubs: {
+        teleport: true,
         AppSidebar: true,
         Chart: ChartStub,
         RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
@@ -577,6 +586,28 @@ describe('homepage recent transactions', () => {
     await flushPromises()
 
     expect(wrapper.findAll('button').some((element) => element.text() === 'View all')).toBe(false)
+  })
+})
+
+describe('homepage transaction editing', () => {
+  it('opens the editor from a recent transaction and reloads the cards after a change', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    await wrapper.get('.transactions-card .transaction-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(
+      'Applies to every charge from Coffee Shop, including future ones.',
+    )
+
+    vi.mocked(getTransactions).mockClear()
+    await wrapper.get('[aria-label="Bucket"]').setValue('FIXED_COSTS')
+    await button(wrapper, 'Save').trigger('click')
+    await flushPromises()
+
+    expect(correctPayee).toHaveBeenCalledWith('coffee shop', 'FIXED_COSTS', null)
+    expect(getTransactions).toHaveBeenCalledOnce()
   })
 })
 
