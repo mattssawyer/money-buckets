@@ -14,6 +14,7 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
+import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.repository.RecurringPayeeRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.sorting.TypeSafeClient;
@@ -65,6 +66,7 @@ class RecurringPayeesTests {
     @Autowired private PlaidAccountRepository accounts;
     @Autowired private PlaidRecurringStreamRepository streams;
     @Autowired private RecurringPayeeRepository payees;
+    @Autowired private RecurringAnswerRepository answers;
     @Autowired private SpendingPlanService planService;
     @Autowired private TrackedAccounts trackedAccounts;
     @Autowired private EntityManager entityManager;
@@ -77,7 +79,7 @@ class RecurringPayeesTests {
 
     @BeforeEach
     void setUp() {
-        recurringPayees = new RecurringPayees(transactions, streams, payees, planService, trackedAccounts,
+        recurringPayees = new RecurringPayees(transactions, streams, payees, answers, planService, trackedAccounts,
                 new PayeeJudge(typeSafe, new ObjectMapper()), Runnable::run, Clock.systemDefaultZone());
         when(typeSafe.isConfigured()).thenReturn(true);
         doAnswer(invocation -> answers(invocation.getArgument(0), invocation.getArgument(1)))

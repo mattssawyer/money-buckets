@@ -185,6 +185,7 @@ const rent: RecurringStream = {
   amount: 1450,
   iso_currency_code: 'USD',
   frequency: 'MONTHLY',
+  frequency_set: false,
   next_date: '2026-10-01',
   last_date: '2026-09-01',
   is_inflow: false,
@@ -193,6 +194,9 @@ const rent: RecurringStream = {
   share_percent: 100,
   plan_bucket: null,
   plan_line: null,
+  kind: null,
+  merchant_key: null,
+  status: 'DETECTED',
 }
 
 let linkOptions: Parameters<Window['Plaid']['create']>[0]
@@ -588,7 +592,9 @@ describe('homepage recent transactions', () => {
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(wrapper.findAll('button').some((element) => element.text() === 'View all')).toBe(false)
+    // The recurring card has a "View all" of its own.
+    const card = wrapper.get('.transactions-card')
+    expect(card.findAll('button').some((element) => element.text() === 'View all')).toBe(false)
   })
 })
 
@@ -980,6 +986,33 @@ describe('homepage account selector', () => {
   })
 })
 
+describe('homepage all recurring', () => {
+  it('opens every recurring transaction from the recurring card', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    const viewAll = wrapper
+      .get('.recurring-card')
+      .findAll('button')
+      .find((element) => element.text() === 'View all')
+    await viewAll?.trigger('click')
+    await flushPromises()
+
+    expect(getRecurringTransactions).toHaveBeenLastCalledWith(undefined, 50, true)
+  })
+
+  it('stays within reach when nothing is listed, so a dismissed stream can be brought back', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringTransactions).mockResolvedValue([])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    const card = wrapper.get('.recurring-card')
+    expect(card.findAll('button').some((element) => element.text() === 'View all')).toBe(true)
+  })
+})
+
 describe('homepage recurring candidates', () => {
   const netflix: RecurringCandidate = {
     stream_id: 'candidate-netflix',
@@ -991,6 +1024,7 @@ describe('homepage recurring candidates', () => {
     amount: 15.49,
     iso_currency_code: 'USD',
     frequency: 'MONTHLY',
+    frequency_set: false,
     next_date: '2026-10-19',
     last_date: '2026-09-19',
     is_inflow: false,

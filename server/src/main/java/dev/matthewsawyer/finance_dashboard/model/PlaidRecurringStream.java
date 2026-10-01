@@ -156,6 +156,34 @@ public class PlaidRecurringStream {
         return isoCurrencyCode;
     }
 
+    /**
+     * Whether the payments have stopped: the next one is a whole cycle overdue, as with a
+     * cancelled subscription or a bill from an account the user moved away from. Plaid can take
+     * a while to stop reporting such a stream. A schedule Plaid can't name is never called stopped.
+     *
+     * @param usersFrequency how often the user says the payee is paid, or null to go by Plaid's.
+     *     Plaid's next date follows Plaid's own schedule, so the user's is counted from the last
+     *     payment instead: a quarterly bill Plaid calls monthly isn't stopped two months in.
+     */
+    public boolean hasStopped(LocalDate today, RecurringFrequency usersFrequency) {
+        RecurringFrequency cycle = usersFrequency != null ? usersFrequency : plaidsFrequency();
+        if (cycle == null) {
+            return false;
+        }
+        LocalDate fromLast = lastDate == null ? null : cycle.next(lastDate);
+        LocalDate next = usersFrequency != null && fromLast != null ? fromLast
+                : nextDate != null ? nextDate : fromLast;
+        return next != null && cycle.next(next).isBefore(today);
+    }
+
+    private RecurringFrequency plaidsFrequency() {
+        try {
+            return RecurringFrequency.valueOf(frequency);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return null;
+        }
+    }
+
     public String getFrequency() {
         return frequency;
     }

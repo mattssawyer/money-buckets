@@ -11,6 +11,7 @@ import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
+import RecurringDialog from '../components/RecurringDialog.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
 import {
   createLinkToken,
@@ -34,6 +35,7 @@ import {
   BUCKET_STYLES,
   categoryLabel,
   formatTransactionAmount,
+  frequencyLabel,
   recurringLabel,
   transactionLabel,
   yourAmount,
@@ -55,17 +57,6 @@ const RECURRING_STREAM_COUNT = 20
 const UNSORTED_RECHECK_MS = 4000
 const UNSORTED_RECHECK_LIMIT = 15
 
-const FREQUENCY_LABELS: Record<string, string> = {
-  WEEKLY: 'Weekly',
-  BIWEEKLY: 'Every 2 weeks',
-  SEMI_MONTHLY: 'Twice a month',
-  MONTHLY: 'Monthly',
-  QUARTERLY: 'Every 3 months',
-  SEMI_ANNUALLY: 'Twice a year',
-  ANNUALLY: 'Yearly',
-  UNKNOWN: 'Recurring',
-}
-
 const linking = ref(false)
 const linkError = ref('')
 const initialLoading = ref(true)
@@ -82,6 +73,7 @@ const spendingError = ref('')
 const itemIds = ref<string[]>([])
 const transactions = ref<PlaidTransaction[]>([])
 const allTransactionsVisible = ref(false)
+const allRecurringVisible = ref(false)
 // The transaction whose payee the user is correcting or saying repeats.
 const editing = ref<PlaidTransaction>()
 const editorVisible = ref(false)
@@ -259,17 +251,6 @@ function formatWholeDollars(amount: number) {
 function formatTransactionDate(date: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(
     new Date(`${date}T00:00:00`),
-  )
-}
-
-function frequencyLabel(frequency: string) {
-  return (
-    FREQUENCY_LABELS[frequency] ??
-    frequency
-      .toLowerCase()
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
   )
 }
 
@@ -777,6 +758,15 @@ async function openPlaidLink() {
               <div class="card-heading">
                 <h2 id="recurring-heading" class="card-label">Recurring</h2>
                 <Button
+                  label="View all"
+                  severity="secondary"
+                  size="small"
+                  text
+                  class="view-all-button recurring-see-all"
+                  aria-haspopup="dialog"
+                  @click="allRecurringVisible = true"
+                />
+                <Button
                   :label="syncingRecurring ? 'Syncing…' : 'Sync'"
                   severity="secondary"
                   size="small"
@@ -1178,6 +1168,12 @@ async function openPlaidLink() {
     </div>
     <TransactionsDialog
       v-model:visible="allTransactionsVisible"
+      :account-id="selectedAccountId"
+      :account-label="selectedAccountLabel"
+      @changed="loadCards"
+    />
+    <RecurringDialog
+      v-model:visible="allRecurringVisible"
       :account-id="selectedAccountId"
       :account-label="selectedAccountLabel"
       @changed="loadCards"
@@ -1593,6 +1589,12 @@ li.spending-legend-row {
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 1.75rem;
+}
+
+/* Sits beside Sync at the end of the heading rather than in the middle of it. */
+.recurring-see-all {
+  margin-right: 0;
+  margin-left: auto;
 }
 
 .view-all-button {

@@ -77,6 +77,34 @@ export function formatTransactionAmount(transaction: PlaidTransaction) {
   }).format(-transaction.amount)
 }
 
+const FREQUENCY_LABELS: Record<string, string> = {
+  WEEKLY: 'Weekly',
+  BIWEEKLY: 'Every 2 weeks',
+  SEMI_MONTHLY: 'Twice a month',
+  MONTHLY: 'Monthly',
+  QUARTERLY: 'Every 3 months',
+  SEMI_ANNUALLY: 'Twice a year',
+  ANNUALLY: 'Yearly',
+  UNKNOWN: 'Recurring',
+}
+
+/** The frequencies a user can pick for a payee, most frequent first. */
+export const FREQUENCIES = Object.keys(FREQUENCY_LABELS).filter(
+  (frequency) => frequency !== 'UNKNOWN',
+)
+
+// Plaid can add frequencies, so fall back to a readable form of whatever it sends.
+export function frequencyLabel(frequency: string) {
+  return (
+    FREQUENCY_LABELS[frequency] ??
+    frequency
+      .toLowerCase()
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  )
+}
+
 /** A recurring stream's display name, falling back to its category when Plaid sent a blank name. */
 export function recurringLabel(stream: RecurringStream) {
   return (

@@ -21,6 +21,8 @@ public record RecurringCandidate(
         BigDecimal amount,
         String isoCurrencyCode,
         RecurringFrequency frequency,
+        /** Whether the user set the frequency themselves. */
+        boolean frequencySet,
         LocalDate nextDate,
         LocalDate lastDate,
         String category,

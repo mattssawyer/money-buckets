@@ -47,7 +47,7 @@ Everything the user owns across their linked accounts minus everything they owe 
 _Avoid_: Portfolio value, total balance
 
 **Recurring stream**:
-A payment or deposit Plaid has detected repeating on an account, such as a bill or a paycheck.
+A payment or deposit Plaid has detected repeating on an account, such as a bill or a paycheck. The user can say its payee doesn't repeat, which hides it, or set how often it's paid themselves.
 _Avoid_: Recurring transaction, subscription
 
 **Payee**:
@@ -57,6 +57,10 @@ _Avoid_: Merchant (Plaid's field, which a payee falls back from), vendor
 **Recurring candidate**:
 A payee Jev judges the user likely pays or is paid by regularly, in tracked accounts, when Plaid hasn't detected it as a recurring stream. It's only a guess until the user confirms it; a confirmed candidate counts like a recurring stream, and a rejected one is never suggested again. When Plaid later detects the same payee, the recurring stream takes its place.
 _Avoid_: Suggested stream, suspected subscription, Jev stream
+
+**Stopped**:
+A recurring stream or candidate whose next payment is a whole cycle overdue: a cancelled subscription, or a bill from an account the user moved away from. It no longer counts as recurring and isn't suggested. One late payment doesn't stop it.
+_Avoid_: Inactive (Plaid's word for its own streams), stale
 
 ### Keeping data current
 

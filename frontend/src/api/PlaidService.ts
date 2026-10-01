@@ -88,7 +88,9 @@ export interface RecurringStream {
   description: string | null
   amount: number
   iso_currency_code: string | null
+  /** The user's own frequency for the payee if they set one, else Plaid's or the charge dates'. */
   frequency: string
+  frequency_set: boolean
   next_date: string | null
   last_date: string | null
   is_inflow: boolean
@@ -103,10 +105,17 @@ export interface RecurringStream {
    */
   plan_bucket: SpendingPlanBucket | null
   plan_line: string | null
+  /** Who is paid, as the user's answers are stored; null when Plaid named nobody. */
+  kind: RecurringKind | null
+  merchant_key: string | null
+  status: RecurringStatus
 }
 
 /** Whether the user has answered a recurring candidate yet, and how. */
 export type RecurringCandidateStatus = 'SUGGESTED' | 'CONFIRMED' | 'DISMISSED'
+
+/** DETECTED: one of Plaid's streams, which the user can still say doesn't repeat (DISMISSED). */
+export type RecurringStatus = 'DETECTED' | RecurringCandidateStatus
 
 /**
  * A payee Jev thinks the user pays (a bill) or is paid by (a paycheck) regularly, which Plaid
@@ -270,9 +279,11 @@ export async function syncRecurringTransactions(): Promise<void> {
   await apiClient.post('/plaid/transactions/recurring/sync')
 }
 
+/** Plaid's streams, without the payees the user said don't repeat unless `dismissed` asks for them. */
 export async function getRecurringTransactions(
   accountId?: string,
   limit?: number,
+  dismissed = false,
 ): Promise<RecurringStream[]> {
   const { data } = await apiClient.get<{ streams: RecurringStream[] }>(
     '/plaid/transactions/recurring',
@@ -280,6 +291,7 @@ export async function getRecurringTransactions(
       params: {
         ...(accountId ? { account_id: accountId } : {}),
         ...(limit != null ? { limit } : {}),
+        ...(dismissed ? { dismissed: true } : {}),
       },
     },
   )
@@ -297,15 +309,20 @@ export async function getRecurringCandidates(accountId?: string): Promise<Recurr
   return data.candidates
 }
 
-/** Stores the user's yes or no for a candidate's merchant, covering its later charges too. */
+/**
+ * Stores the user's yes or no for a payee, covering its later charges too. With a yes they can
+ * also say how often it's paid; without a frequency that's left to Plaid or the charge dates.
+ */
 export async function answerRecurringCandidate(
   candidate: PayeeRef,
   confirmed: boolean,
+  frequency: string | null = null,
 ): Promise<void> {
   await apiClient.put('/plaid/transactions/recurring/candidates/answer', {
     kind: candidate.kind,
     merchant_key: candidate.merchant_key,
     confirmed,
+    frequency,
   })
 }
 

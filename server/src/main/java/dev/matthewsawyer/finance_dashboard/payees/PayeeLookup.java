@@ -107,12 +107,16 @@ public class PayeeLookup {
             if (payee == null) {
                 return null;
             }
+            // The user's word wins, even over Plaid: they can say a payee it detects doesn't repeat.
+            Boolean answer = answers.get(payee);
+            if (Boolean.FALSE.equals(answer)) {
+                return Recurring.DISMISSED;
+            }
             if (detected.contains(payee)) {
                 return Recurring.DETECTED;
             }
-            Boolean answer = answers.get(payee);
             if (answer != null) {
-                return answer ? Recurring.CONFIRMED : Recurring.DISMISSED;
+                return Recurring.CONFIRMED;
             }
             RecurringPayee judgment = judged.get(payee);
             BigDecimal probability = judgment == null ? null : judgment.getProbability();

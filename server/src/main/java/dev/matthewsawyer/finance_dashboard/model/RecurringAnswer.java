@@ -39,6 +39,11 @@ public class RecurringAnswer {
     @Column(name = "confirmed", nullable = false)
     private boolean confirmed;
 
+    /** How often the user says it's paid; null leaves the schedule to Plaid or the charge dates. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "frequency", length = 32)
+    private RecurringFrequency frequency;
+
     @Column(name = "answered_at", nullable = false)
     private Instant answeredAt;
 
@@ -52,7 +57,13 @@ public class RecurringAnswer {
     }
 
     public void answer(boolean confirmed, Instant answeredAt) {
+        answer(confirmed, null, answeredAt);
+    }
+
+    public void answer(boolean confirmed, RecurringFrequency frequency, Instant answeredAt) {
         this.confirmed = confirmed;
+        // A payee that doesn't repeat has no schedule to keep.
+        this.frequency = confirmed ? frequency : null;
         this.answeredAt = answeredAt;
     }
 
@@ -66,5 +77,13 @@ public class RecurringAnswer {
 
     public boolean isConfirmed() {
         return confirmed;
+    }
+
+    public RecurringFrequency getFrequency() {
+        return frequency;
+    }
+
+    public RecurringMerchant payee() {
+        return new RecurringMerchant(kind, merchantKey);
     }
 }

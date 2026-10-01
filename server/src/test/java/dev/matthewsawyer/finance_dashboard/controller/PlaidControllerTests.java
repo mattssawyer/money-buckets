@@ -4,6 +4,7 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PayeeCorrection;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
+import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
@@ -37,6 +38,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
+import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -68,6 +73,7 @@ import static org.mockito.Mockito.when;
 class PlaidControllerTests {
 
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 24);
     @Mock
     private PlaidItemLinking itemLinking;
 
@@ -85,6 +91,9 @@ class PlaidControllerTests {
 
     @Mock
     private RecurringPayees recurringPayees;
+
+    @Mock
+    private RecurringCandidates recurringCandidates;
 
     @Mock
     private PayeeLookup payeeLookup;
@@ -109,7 +118,9 @@ class PlaidControllerTests {
                 new Spending(transactionRepository, trackedAccounts),
                 recurringPayees,
                 payeeLookup,
-                userService
+                recurringCandidates,
+                userService,
+                Clock.fixed(TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
         );
         lenient().when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of()));
         jwt = Jwt.withTokenValue("token")
@@ -551,7 +562,7 @@ class PlaidControllerTests {
         when(recurringPayees.judged(USER_ID)).thenReturn(Map.of(landlord.payee(), landlord));
 
         List<PlaidController.RecurringStreamResponse> streams =
-                controller.getRecurringTransactions(jwt, null, null).get("streams");
+                controller.getRecurringTransactions(jwt, null, null, false).get("streams");
 
         assertEquals(List.of("pay", "rent", "later"), streams.stream()
                 .map(PlaidController.RecurringStreamResponse::streamId)
@@ -567,6 +578,45 @@ class PlaidControllerTests {
     }
 
     @Test
+    void leavesOutStreamsWhosePaymentsStoppedAndPayeesTheUserDismissed() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100));
+        when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(List.of(
+                storedStream("water", "checking", "Auburn Water", new BigDecimal("31.19"), "MONTHLY",
+                        TODAY.minusMonths(1).minusDays(1), false),
+                storedStream("power", "checking", "Alabama Power", new BigDecimal("155.59"), "MONTHLY",
+                        TODAY.minusDays(7), false),
+                storedStream("youtube", "checking", "YouTube", new BigDecimal("13.99"), "MONTHLY",
+                        TODAY.plusDays(3), false),
+                // Plaid calls rent monthly and long overdue; by the user's quarterly it's only due.
+                storedStream("rent", "checking", "Landlord", new BigDecimal("1450.0"), "MONTHLY",
+                        TODAY.minusMonths(2), false).lastDate(TODAY.minusMonths(3))));
+        RecurringAnswer notYouTube = new RecurringAnswer(USER_ID, RecurringKind.BILL, "youtube");
+        notYouTube.answer(false, Instant.now());
+        RecurringAnswer quarterlyRent = new RecurringAnswer(USER_ID, RecurringKind.BILL, "landlord");
+        quarterlyRent.answer(true, RecurringFrequency.QUARTERLY, Instant.now());
+        when(recurringCandidates.answers(USER_ID)).thenReturn(Map.of(
+                notYouTube.payee(), notYouTube, quarterlyRent.payee(), quarterlyRent));
+
+        List<PlaidController.RecurringStreamResponse> shown =
+                controller.getRecurringTransactions(jwt, null, null, false).get("streams");
+        List<PlaidController.RecurringStreamResponse> withDismissed =
+                controller.getRecurringTransactions(jwt, null, null, true).get("streams");
+
+        // Water is a whole month overdue; power is only late.
+        assertEquals(List.of("rent", "power"),
+                shown.stream().map(PlaidController.RecurringStreamResponse::streamId).toList());
+        assertEquals("QUARTERLY", shown.get(0).frequency());
+        assertTrue(shown.get(0).frequencySet());
+        assertEquals("MONTHLY", shown.get(1).frequency());
+        assertEquals("alabama power", shown.get(1).merchantKey());
+        assertEquals(RecurringKind.BILL, shown.get(1).kind());
+        assertEquals(List.of("rent", "power", "youtube"),
+                withDismissed.stream().map(PlaidController.RecurringStreamResponse::streamId).toList());
+        assertEquals(PlaidController.RecurringStreamResponse.Status.DISMISSED, withDismissed.get(2).status());
+    }
+
+    @Test
     void filtersStoredRecurringStreamsToTheRequestedAccount() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         when(accountRepository.findByAccountIdAndUserId("account-1", USER_ID))
@@ -574,7 +624,7 @@ class PlaidControllerTests {
         when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("account-1")))
                 .thenReturn(List.of());
 
-        controller.getRecurringTransactions(jwt, "account-1", null);
+        controller.getRecurringTransactions(jwt, "account-1", null, false);
 
         verify(recurringStreamRepository).findAllByUserIdAndAccountIdIn(USER_ID, Set.of("account-1"));
     }
@@ -583,7 +633,7 @@ class PlaidControllerTests {
     void returnsNoRecurringStreamsWhenNoAccountIsTracked() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
 
-        assertEquals(Map.of("streams", List.of()), controller.getRecurringTransactions(jwt, null, null));
+        assertEquals(Map.of("streams", List.of()), controller.getRecurringTransactions(jwt, null, null, false));
         verifyNoInteractions(recurringStreamRepository);
     }
 
@@ -604,9 +654,9 @@ class PlaidControllerTests {
         track(account("checking", 100));
         when(recurringStreamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(stored);
 
-        assertEquals(8, controller.getRecurringTransactions(jwt, null, null).get("streams").size());
-        assertEquals(12, controller.getRecurringTransactions(jwt, null, 50).get("streams").size());
-        assertEquals(1, controller.getRecurringTransactions(jwt, null, 1).get("streams").size());
+        assertEquals(8, controller.getRecurringTransactions(jwt, null, null, false).get("streams").size());
+        assertEquals(12, controller.getRecurringTransactions(jwt, null, 50, false).get("streams").size());
+        assertEquals(1, controller.getRecurringTransactions(jwt, null, 1, false).get("streams").size());
     }
 
     private static PlaidRecurringStream storedStream(
