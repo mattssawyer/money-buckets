@@ -166,7 +166,7 @@ function amount(value: number) {
       </div>
       <p class="explorer-hint">
         What you spend in a month on average, by the plan line each payee belongs on, to help you
-        choose each amount. Pick lines, categories or payees to add them up.
+        choose each amount. Pick lines or payees to add them up.
       </p>
     </header>
 
@@ -208,8 +208,8 @@ function amount(value: number) {
         <input
           type="search"
           :value="query"
-          placeholder="Search lines, categories or payees"
-          aria-label="Search lines, categories or payees"
+          placeholder="Search lines or payees"
+          aria-label="Search lines or payees"
           autocomplete="off"
           @input="onQueryInput"
         />
@@ -438,8 +438,10 @@ h2 {
   outline: none;
 }
 
+/* One column that can't grow past the panel, so a long name is cut short instead of pushing amounts out of view. */
 .group {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.15rem;
 }
 

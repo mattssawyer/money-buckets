@@ -92,8 +92,18 @@ export interface SelectionHistory {
 const BUCKET_ORDER: Bucket[] = ['FIXED_COSTS', 'INVESTMENTS', 'SAVINGS', 'GUILT_FREE', 'UNSORTED']
 
 /**
+ * Buckets listed as one total. Guilt-free spending is what's left after the plan's lines, so
+ * what it went on doesn't help choose an amount; neither does spending that isn't sorted yet.
+ */
+const UNDIVIDED: Partial<Record<Bucket, string>> = {
+  GUILT_FREE: 'All guilt-free spending',
+  UNSORTED: 'Everything not sorted yet',
+}
+
+/**
  * Spending in every bucket, regrouped by plan line and payee with monthly averages. Spending at
- * payees on no line, which is all of guilt-free spending, is listed by Plaid category instead.
+ * payees on no line is listed by Plaid category instead, so costs the plan has no line for yet
+ * can be found.
  */
 export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
   const transactions = spending.buckets.flatMap((bucket) =>
@@ -119,17 +129,22 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
     for (const transaction of bucket.categories.flatMap((category) => category.transactions)) {
       const primary = transaction.category ?? 'UNCATEGORIZED'
       const detailed = transaction.category_detailed
-      const line = transaction.plan_line
-      const category = line
-        ? `${bucket.bucket}/line/${line}`
-        : `${bucket.bucket}/category/${primary}/${detailed ?? ''}`
+      const whole = UNDIVIDED[bucket.bucket]
+      const line = whole ? null : transaction.plan_line
+      const category = whole
+        ? `${bucket.bucket}/all`
+        : line
+          ? `${bucket.bucket}/line/${line}`
+          : `${bucket.bucket}/category/${primary}/${detailed ?? ''}`
       const payee = transactionLabel(transaction)
       const amount = yourAmount(transaction)
       entries.push({ category, payee, month: months.indexOf(transaction.date.slice(0, 7)), amount })
 
       const found = categories.get(category) ?? {
         label:
-          line ?? (detailed ? detailedCategoryLabel(primary, detailed) : categoryLabel(primary)),
+          whole ??
+          line ??
+          (detailed ? detailedCategoryLabel(primary, detailed) : categoryLabel(primary)),
         onLine: line != null,
         payees: new Map<string, number>(),
       }

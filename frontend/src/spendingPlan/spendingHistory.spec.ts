@@ -92,7 +92,7 @@ describe('spending history', () => {
     })
   })
 
-  it('lists each bucket in plan order: its lines, then spending on no line by category', () => {
+  it('lists fixed costs by line, then by category for spending on no line; guilt-free as one total', () => {
     expect(history.months).toEqual(['2026-07', '2026-08', '2026-09'])
     expect(history.groups.map((group) => [group.label, group.average])).toEqual([
       ['Fixed costs', 390],
@@ -108,10 +108,7 @@ describe('spending history', () => {
         ['Clothes', true, 50],
         ['Public transit', false, 130],
       ],
-      [
-        ['Restaurant', false, 20],
-        ['Groceries', false, 10],
-      ],
+      [['All guilt-free spending', false, 30]],
     ])
   })
 
@@ -187,10 +184,7 @@ describe('spending history', () => {
   it('adds up picked lines and payees without counting a payee twice', () => {
     const picked = selectionHistory(history, {
       categories: new Set(['FIXED_COSTS/line/Groceries']),
-      payees: new Set([
-        'FIXED_COSTS/line/Groceries|Whole Foods',
-        'GUILT_FREE/category/FOOD_AND_DRINK/FOOD_AND_DRINK_RESTAURANT|Dig Inn',
-      ]),
+      payees: new Set(['FIXED_COSTS/line/Groceries|Whole Foods', 'GUILT_FREE/all|Dig Inn']),
     })
 
     expect(picked).toEqual({ average: 230, byMonth: [300, 240, 150] })
@@ -198,7 +192,7 @@ describe('spending history', () => {
 
   it('searches lines and categories by name and otherwise by payee', () => {
     const groceries = searchHistory(history.groups, 'grocer')
-    expect(groceries.map((group) => group.label)).toEqual(['Fixed costs', 'Guilt-free spending'])
+    expect(groceries.map((group) => group.label)).toEqual(['Fixed costs'])
     expect(groceries[0]?.categories).toHaveLength(1)
     expect(groceries[0]?.categories[0]?.payees).toHaveLength(2)
 
@@ -206,7 +200,7 @@ describe('spending history', () => {
     expect(byPayee).toHaveLength(1)
     expect(byPayee[0]?.categories[0]?.payees.map((payee) => payee.name)).toEqual(['Trader Joe’s'])
 
-    expect(searchHistory(history.groups, 'guilt')[0]?.categories).toHaveLength(2)
+    expect(searchHistory(history.groups, 'guilt')[0]?.categories[0]?.payees).toHaveLength(2)
     expect(searchHistory(history.groups, 'nothing like this')).toEqual([])
   })
 

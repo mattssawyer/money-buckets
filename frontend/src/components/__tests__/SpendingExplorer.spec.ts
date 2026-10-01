@@ -135,11 +135,11 @@ describe('spending explorer', () => {
     expect(
       fixedCosts?.findAll('.part-heading, .categories > li > .pick-row').map((row) => row.text()),
     ).toEqual(['Groceries$210', 'On no line', 'Medical pharmacies and supplements$20'])
-    // Guilt-free spending has no lines, so its categories need no heading.
+    // Guilt-free spending is what's left after the plan's lines, so it's one total.
     expect(guiltFree?.get('h3').text()).toBe('Guilt-free spending$20')
     expect(
       guiltFree?.findAll('.part-heading, .categories > li > .pick-row').map((row) => row.text()),
-    ).toEqual(['Restaurant$20'])
+    ).toEqual(['All guilt-free spending$20'])
   })
 
   it('adds up the categories you pick', async () => {
@@ -151,7 +151,7 @@ describe('spending explorer', () => {
     expect(wrapper.get('.summary-title').text()).toBe('Groceries')
     expect(wrapper.get('.summary-average').text()).toBe('$210 a month on average')
 
-    await checkbox(wrapper, 'Restaurant').setValue(true)
+    await checkbox(wrapper, 'All guilt-free spending').setValue(true)
     expect(wrapper.get('.summary-average').text()).toBe('$230 a month on average')
 
     await wrapper.get('.summary button').trigger('click')
