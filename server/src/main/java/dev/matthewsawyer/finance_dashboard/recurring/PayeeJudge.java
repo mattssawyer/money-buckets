@@ -86,8 +86,11 @@ class PayeeJudge {
                     + "payment to a company that is not clearly something else is usually rent paid to a "
                     + "landlord or property manager.");
 
-    private static final String NO_LINE_CRITERION = "Not a bill, investment or saving: money moved between the "
-            + "user's own checking accounts, credit card payments, payments to friends or family, or shopping.";
+    // Everyday spending gets a line too when one names it, since plan setup shows what the user
+    // spends on each line: a grocery store goes on Groceries without being a bill.
+    private static final String NO_LINE_CRITERION = "Fits none of the lines: money moved between the user's own "
+            + "checking accounts, credit card payments, payments to friends or family, or spending no line "
+            + "names, such as eating out or general shopping.";
 
     // What each bucket holds, so lines with bare names still say what goes in them.
     private static final Map<SpendingPlanBucket, String> BUCKET_WORDS = Map.of(

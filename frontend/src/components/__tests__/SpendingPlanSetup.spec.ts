@@ -65,7 +65,11 @@ function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}
     props,
     global: {
       plugins: [[PrimeVue, { unstyled: true }]],
-      stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
+      stubs: {
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+        // It loads spending of its own; SpendingExplorer.spec.ts covers it.
+        SpendingExplorer: true,
+      },
     },
     attachTo: document.body,
   })
@@ -588,6 +592,20 @@ describe('spending plan setup', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Saving replaces your current plan.')
+  })
+
+  it('shows your spending beside the plan, or in its place where there’s no room for both', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'SpendingExplorer' }).exists()).toBe(true)
+    const toggle = wrapper.get('button.spending-toggle')
+    expect(toggle.text()).toBe('See your spending')
+
+    await toggle.trigger('click')
+
+    expect(wrapper.get('.plan-setup').classes()).toContain('showing-spending')
+    expect(toggle.text()).toBe('Back to your plan')
   })
 
   it('edits a saved plan without recurring estimates', async () => {

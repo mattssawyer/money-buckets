@@ -340,8 +340,12 @@ public class PlaidController {
             @JsonProperty("pending") boolean pending,
             /** The Plaid primary category to show: the user's correction for the payee, else Plaid's. */
             @JsonProperty("category") String category,
+            /** Plaid's detailed category within it; null when the user corrected the category. */
+            @JsonProperty("category_detailed") String categoryDetailed,
             /** Null until sorting reaches the transaction. */
             @JsonProperty("bucket") Bucket bucket,
+            /** The plan line Jev put the payee on, within the transaction's bucket; null when it's on none. */
+            @JsonProperty("plan_line") String planLine,
             /** The user's share of the account's money, in percent; the amount is the whole transaction's. */
             @JsonProperty("share_percent") int sharePercent,
             /** Who was paid or paid the user, as corrections and recurring answers are stored; may be null. */
@@ -356,6 +360,7 @@ public class PlaidController {
         static TransactionResponse from(PlaidTransaction transaction, int sharePercent, PayeeLookup.Payees payees) {
             RecurringMerchant payee = RecurringMerchant.of(transaction);
             PayeeCorrection correction = payees.correction(transaction);
+            RecurringPayee line = payees.line(transaction);
             return new TransactionResponse(
                     transaction.getTransactionId(),
                     transaction.getAccountId(),
@@ -367,7 +372,10 @@ public class PlaidController {
                     transaction.getLogoUrl(),
                     transaction.isPending(),
                     payees.category(transaction),
+                    correction != null && correction.getCategory() != null
+                            ? null : transaction.getPersonalFinanceCategoryDetailed(),
                     transaction.getBucket(),
+                    line == null ? null : line.getPlanLine(),
                     sharePercent,
                     payee == null ? null : payee.key(),
                     payee == null ? null : payee.kind(),

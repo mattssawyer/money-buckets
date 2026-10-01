@@ -51,7 +51,7 @@ A payment or deposit Plaid has detected repeating on an account, such as a bill 
 _Avoid_: Recurring transaction, subscription
 
 **Payee**:
-Who the user pays (a bill) or is paid by (a paycheck), identified by the merchant, or the description when Plaid found no merchant. Jev judges each payee from all of its recent charges at once: whether the payments are regular, how often, and which plan line they belong under. A well-known subscription is recognized from one charge; a payee whose name says nothing, like rent paid to a property manager, once the same amount repeats.
+Who the user pays (a bill) or is paid by (a paycheck), identified by the merchant, or the description when Plaid found no merchant. Jev judges each payee from all of its recent charges at once: whether the payments are regular, how often, and which plan line they belong under. Everyday spending gets a line too when one names it, so a grocery store sits on Groceries without being a bill. A well-known subscription is recognized from one charge; a payee whose name says nothing, like rent paid to a property manager, once the same amount repeats.
 _Avoid_: Merchant (Plaid's field, which a payee falls back from), vendor
 
 **Recurring candidate**:
@@ -97,6 +97,10 @@ _Avoid_: Override, rule, recategorization
 **Placing a bill**:
 Putting a recurring bill on a plan line as a breakdown item during plan setup, on the line Jev chose for its payee. The user places or skips bills Jev put on no line.
 _Avoid_: Mapping, assigning
+
+**Spending history**:
+What the user spent in each of the last few whole months, with the average per month: by bucket, then by the plan line Jev put each payee on, then by payee. Spending at payees on no line, which is all of guilt-free spending, is listed by Plaid category. Plan setup shows it beside the plan so the user can look up what they spend on something, such as groceries, and choose the line's amount themselves. It never fills an amount in.
+_Avoid_: Usual spending, suggested amount, budget
 
 **Take-home pay**:
 What lands in the user's account each month after taxes and paycheck deductions.
