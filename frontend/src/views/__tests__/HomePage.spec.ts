@@ -1002,14 +1002,14 @@ describe('homepage all recurring', () => {
     expect(getRecurringTransactions).toHaveBeenLastCalledWith(undefined, 50, true)
   })
 
-  it('offers no full view while nothing recurring has been found', async () => {
+  it('stays within reach when nothing is listed, so a dismissed stream can be brought back', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getRecurringTransactions).mockResolvedValue([])
     const wrapper = mountHome()
     await flushPromises()
 
     const card = wrapper.get('.recurring-card')
-    expect(card.findAll('button').some((element) => element.text() === 'View all')).toBe(false)
+    expect(card.findAll('button').some((element) => element.text() === 'View all')).toBe(true)
   })
 })
 

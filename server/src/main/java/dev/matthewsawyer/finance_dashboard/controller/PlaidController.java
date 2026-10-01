@@ -284,7 +284,10 @@ public class PlaidController {
                 stored.isEmpty() ? Map.of() : recurringCandidates.answers(user.getId());
         LocalDate today = LocalDate.now(clock);
         List<RecurringStreamResponse> streams = stored.stream()
-                .filter(stream -> !stream.hasStopped(today))
+                .filter(stream -> {
+                    RecurringAnswer answer = answers.get(RecurringMerchant.of(stream));
+                    return !stream.hasStopped(today, answer == null ? null : answer.getFrequency());
+                })
                 .map(stream -> {
                     RecurringMerchant payee = RecurringMerchant.of(stream);
                     return RecurringStreamResponse.from(

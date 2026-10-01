@@ -2,10 +2,13 @@ package dev.matthewsawyer.finance_dashboard.recurring;
 
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
+import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
+import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
+import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.repository.RecurringPayeeRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
@@ -49,6 +52,7 @@ public class RecurringPayees {
     private final PlaidTransactionRepository transactionRepository;
     private final PlaidRecurringStreamRepository streamRepository;
     private final RecurringPayeeRepository payeeRepository;
+    private final RecurringAnswerRepository answerRepository;
     private final SpendingPlanService planService;
     private final TrackedAccounts trackedAccounts;
     private final PayeeJudge judge;
@@ -59,6 +63,7 @@ public class RecurringPayees {
             PlaidTransactionRepository transactionRepository,
             PlaidRecurringStreamRepository streamRepository,
             RecurringPayeeRepository payeeRepository,
+            RecurringAnswerRepository answerRepository,
             SpendingPlanService planService,
             TrackedAccounts trackedAccounts,
             PayeeJudge judge,
@@ -68,6 +73,7 @@ public class RecurringPayees {
         this.transactionRepository = transactionRepository;
         this.streamRepository = streamRepository;
         this.payeeRepository = payeeRepository;
+        this.answerRepository = answerRepository;
         this.planService = planService;
         this.trackedAccounts = trackedAccounts;
         this.judge = judge;
@@ -172,14 +178,25 @@ public class RecurringPayees {
     /**
      * Payees Plaid detects as a recurring stream in the given accounts. A stream whose payments
      * have stopped doesn't count, so the payee can be found again from its charges elsewhere,
-     * such as a bill now paid from another account.
+     * such as a bill now paid from another account. Whether they've stopped goes by the frequency
+     * the user set for the payee, if they set one.
      */
     public Set<RecurringMerchant> detectedByPlaid(UUID userId, Collection<String> accountIds) {
+        List<PlaidRecurringStream> streams = streamRepository.findAllByUserIdAndAccountIdIn(userId, accountIds);
+        if (streams.isEmpty()) {
+            return Set.of();
+        }
+        Map<RecurringMerchant, RecurringFrequency> usersFrequency = new HashMap<>();
+        for (RecurringAnswer answer : answerRepository.findAllByUserId(userId)) {
+            if (answer.getFrequency() != null) {
+                usersFrequency.put(answer.payee(), answer.getFrequency());
+            }
+        }
         LocalDate today = LocalDate.now(clock);
         Set<RecurringMerchant> detected = new HashSet<>();
-        for (PlaidRecurringStream stream : streamRepository.findAllByUserIdAndAccountIdIn(userId, accountIds)) {
+        for (PlaidRecurringStream stream : streams) {
             RecurringMerchant payee = RecurringMerchant.of(stream);
-            if (payee != null && !stream.hasStopped(today)) {
+            if (payee != null && !stream.hasStopped(today, usersFrequency.get(payee))) {
                 detected.add(payee);
             }
         }

@@ -758,7 +758,6 @@ async function openPlaidLink() {
               <div class="card-heading">
                 <h2 id="recurring-heading" class="card-label">Recurring</h2>
                 <Button
-                  v-if="recurringList.length || candidates.length"
                   label="View all"
                   severity="secondary"
                   size="small"

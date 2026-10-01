@@ -588,8 +588,9 @@ class PlaidControllerTests {
                         TODAY.minusDays(7), false),
                 storedStream("youtube", "checking", "YouTube", new BigDecimal("13.99"), "MONTHLY",
                         TODAY.plusDays(3), false),
+                // Plaid calls rent monthly and long overdue; by the user's quarterly it's only due.
                 storedStream("rent", "checking", "Landlord", new BigDecimal("1450.0"), "MONTHLY",
-                        TODAY.plusDays(7), false)));
+                        TODAY.minusMonths(2), false).lastDate(TODAY.minusMonths(3))));
         RecurringAnswer notYouTube = new RecurringAnswer(USER_ID, RecurringKind.BILL, "youtube");
         notYouTube.answer(false, Instant.now());
         RecurringAnswer quarterlyRent = new RecurringAnswer(USER_ID, RecurringKind.BILL, "landlord");
@@ -603,16 +604,16 @@ class PlaidControllerTests {
                 controller.getRecurringTransactions(jwt, null, null, true).get("streams");
 
         // Water is a whole month overdue; power is only late.
-        assertEquals(List.of("power", "rent"),
+        assertEquals(List.of("rent", "power"),
                 shown.stream().map(PlaidController.RecurringStreamResponse::streamId).toList());
-        assertEquals("MONTHLY", shown.get(0).frequency());
-        assertEquals("alabama power", shown.get(0).merchantKey());
-        assertEquals(RecurringKind.BILL, shown.get(0).kind());
-        assertEquals("QUARTERLY", shown.get(1).frequency());
-        assertTrue(shown.get(1).frequencySet());
-        assertEquals(List.of("power", "youtube", "rent"),
+        assertEquals("QUARTERLY", shown.get(0).frequency());
+        assertTrue(shown.get(0).frequencySet());
+        assertEquals("MONTHLY", shown.get(1).frequency());
+        assertEquals("alabama power", shown.get(1).merchantKey());
+        assertEquals(RecurringKind.BILL, shown.get(1).kind());
+        assertEquals(List.of("rent", "power", "youtube"),
                 withDismissed.stream().map(PlaidController.RecurringStreamResponse::streamId).toList());
-        assertEquals(PlaidController.RecurringStreamResponse.Status.DISMISSED, withDismissed.get(1).status());
+        assertEquals(PlaidController.RecurringStreamResponse.Status.DISMISSED, withDismissed.get(2).status());
     }
 
     @Test
