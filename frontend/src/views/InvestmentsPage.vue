@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { UserButton } from '@clerk/vue'
-import { Landmark, Plus, TrendingDown, TrendingUp } from '@lucide/vue'
+import { Landmark, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -14,6 +14,7 @@ import {
   exchangePublicToken,
   getAccounts,
   getLinkedItems,
+  updateAccountTracking,
   type PlaidAccount,
   type PlaidItem,
 } from '../api/PlaidService'
@@ -99,7 +100,11 @@ const addNote = ref('')
 // The account the big chart shows instead of net worth, if the user picked one.
 const focusedId = ref<string>()
 const figure = useTemplateRef<HTMLElement>('figure')
+// The account being left out of net worth or added back; one is saved at a time.
+const savingId = ref<string>()
+const leaveOutError = ref('')
 let disposed = false
+let latestHistoryRequest = 0
 
 const netWorth = computed(() => history.value?.net_worth ?? [])
 const netWorthValue = computed(() => latestValue(netWorth.value))
@@ -114,15 +119,14 @@ const accountChanges = computed(() =>
 
 /**
  * A card for every account that makes up net worth, as it counts toward it: a debt below zero,
- * and a shared account at the user's share. Investment accounts the user left out of net worth
- * still get a card, since this is where their balances are followed.
+ * and a shared account at the user's share. Accounts the user left out have no card; they're
+ * listed under the grid to add back.
  */
 const cards = computed(() =>
   (history.value?.accounts ?? []).flatMap((series) => {
     const account = accounts.value.find((candidate) => candidate.account_id === series.account_id)
     const group = account ? GROUP_OF[account.type] : undefined
-    if (!account || !group) return []
-    if (group !== 'investments' && !account.counts_in_net_worth) return []
+    if (!account || !group || !account.counts_in_net_worth) return []
     const points = towardNetWorth(series.points, account, group)
     return [
       {
@@ -144,6 +148,17 @@ const cardGroups = computed(() =>
     ...group,
     cards: cards.value.filter((card) => card.group === group.id),
   })),
+)
+
+/** Accounts of a kind net worth counts that the user chose to leave out of it. */
+const leftOut = computed(() =>
+  accounts.value
+    .filter((account) => GROUP_OF[account.type] && !account.counts_in_net_worth)
+    .map((account) => ({
+      id: account.account_id,
+      name: accountLabel(account),
+      kind: kind(account, GROUP_OF[account.type]!),
+    })),
 )
 
 // An account that's since been dropped or left out of net worth has no card to focus.
@@ -224,20 +239,59 @@ async function load() {
   }
 }
 
-/** Loads the chosen range and ignores results or errors from requests for earlier selections. */
-async function selectRange(next: Range) {
+function selectRange(next: Range) {
   if (next === range.value) return
   range.value = next
+  return reloadHistory()
+}
+
+/**
+ * Loads the chosen range again and ignores results or errors from requests that a newer one has
+ * replaced: for an earlier range, or from before an account was left out or added back.
+ */
+async function reloadHistory() {
+  const request = ++latestHistoryRequest
+  const current = () => !disposed && request === latestHistoryRequest
   historyLoading.value = true
   historyError.value = false
   try {
-    const balances = await getBalanceHistory(rangeStart(next, new Date()))
-    if (!disposed && range.value === next) history.value = balances
+    const balances = await getBalanceHistory(rangeStart(range.value, new Date()))
+    if (current()) history.value = balances
   } catch {
-    if (!disposed && range.value === next) historyError.value = true
+    if (current()) historyError.value = true
   } finally {
-    // A newer range still loading owns these flags.
-    if (!disposed && range.value === next) historyLoading.value = false
+    // A newer request still loading owns these flags.
+    if (current()) historyLoading.value = false
+  }
+}
+
+/**
+ * Leaves an account out of net worth, or adds it back: the same choice as on the Accounts page.
+ * Its card goes or comes back at once, and net worth is worked out again without it.
+ */
+async function countInNetWorth(accountId: string, counts: boolean) {
+  const account = accounts.value.find((candidate) => candidate.account_id === accountId)
+  if (!account || savingId.value) return
+  savingId.value = accountId
+  leaveOutError.value = ''
+  try {
+    const saved = await updateAccountTracking(accountId, {
+      tracks_spending: account.tracks_spending,
+      counts_in_net_worth: counts,
+      share_percent: account.share_percent,
+    })
+    if (disposed) return
+    accounts.value = accounts.value.map((candidate) =>
+      candidate.account_id === accountId ? saved : candidate,
+    )
+    if (focusedId.value === accountId) focusedId.value = undefined
+    void reloadHistory()
+  } catch {
+    if (!disposed) {
+      leaveOutError.value = `We couldn’t ${counts ? 'add' : 'leave out'} ${accountLabel(account)}. Please try again.`
+    }
+  } finally {
+    if (!disposed) savingId.value = undefined
   }
 }
 
@@ -456,6 +510,8 @@ function changeIcon(change: Change) {
           </template>
         </section>
 
+        <Message v-if="leaveOutError" severity="error">{{ leaveOutError }}</Message>
+
         <template v-for="group in cardGroups" :key="group.id">
           <section
             v-if="group.cards.length || group.id === 'investments'"
@@ -477,6 +533,16 @@ function changeIcon(change: Change) {
                 :aria-label="card.name"
                 @click="focus(card.id)"
               >
+                <button
+                  type="button"
+                  class="account-leave-out"
+                  :disabled="savingId !== undefined"
+                  :aria-label="`Leave ${card.name} out of net worth`"
+                  title="Leave out of net worth"
+                  @click.stop="countInNetWorth(card.id, false)"
+                >
+                  <X :size="14" :stroke-width="1.75" aria-hidden="true" />
+                </button>
                 <div class="account-card-heading">
                   <div>
                     <h3>
@@ -529,6 +595,27 @@ function changeIcon(change: Change) {
             </div>
           </section>
         </template>
+
+        <section v-if="leftOut.length" class="left-out" aria-labelledby="left-out-heading">
+          <h2 id="left-out-heading" class="section-heading">Left out of net worth</h2>
+          <ul class="left-out-list">
+            <li v-for="account in leftOut" :key="account.id" class="left-out-row">
+              <span class="left-out-name">
+                {{ account.name }}
+                <span class="left-out-kind">· {{ account.kind }}</span>
+              </span>
+              <Button
+                label="Add back"
+                size="small"
+                severity="secondary"
+                outlined
+                :disabled="savingId !== undefined"
+                :aria-label="`Add ${account.name} back to net worth`"
+                @click="countInNetWorth(account.id, true)"
+              />
+            </li>
+          </ul>
+        </section>
 
         <Message v-if="addNote && !itemsWithoutInvestments.length" severity="secondary">
           {{ addNote }}
@@ -834,6 +921,77 @@ h1 {
     inset 0 0 0 1.5px var(--app-text);
 }
 
+/* Tucked into the corner and shown when the card is pointed at, so the grid stays quiet. */
+.account-card {
+  position: relative;
+}
+
+.account-leave-out {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  color: var(--app-text-subdued);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  cursor: pointer;
+}
+
+.account-card:hover .account-leave-out,
+.account-leave-out:focus-visible {
+  opacity: 1;
+}
+
+.account-leave-out:hover {
+  color: var(--app-text);
+  background: var(--app-inset);
+}
+
+/* Nothing to point with on a touch screen, so it's always there. */
+@media (hover: none) {
+  .account-leave-out {
+    opacity: 1;
+  }
+}
+
+.left-out {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.left-out-list {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+.left-out-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 34rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--app-divider);
+}
+
+.left-out-name {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.left-out-kind {
+  color: var(--app-text-secondary);
+  font-weight: 400;
+}
+
 .account-focus {
   padding: 0;
   color: inherit;
@@ -856,6 +1014,8 @@ h1 {
 }
 
 .account-card-heading {
+  /* Clear of the corner button. */
+  padding-right: 0.75rem;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

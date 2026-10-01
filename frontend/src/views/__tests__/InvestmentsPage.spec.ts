@@ -8,6 +8,7 @@ import {
   exchangePublicToken,
   getAccounts,
   getLinkedItems,
+  updateAccountTracking,
   type PlaidAccount,
 } from '../../api/PlaidService'
 import { getBalanceHistory, type BalanceHistory } from '../../api/InvestmentsService'
@@ -23,6 +24,7 @@ vi.mock('../../api/PlaidService', () => ({
   getAccounts: vi.fn(),
   getLinkedItems: vi.fn(),
   removeItem: vi.fn(),
+  updateAccountTracking: vi.fn(),
 }))
 
 vi.mock('../../api/InvestmentsService', () => ({
@@ -247,6 +249,62 @@ describe('investments page', () => {
     expect(wrapper.get('[aria-label="Visa ••2222"]').text()).toContain('Credit card')
     expect(wrapper.get('[aria-label="Visa ••2222"]').text()).toContain('-$400.00')
     expect(wrapper.find('[aria-label="Old savings ••3333"]').exists()).toBe(false)
+    expect(wrapper.get('.left-out').text()).toContain('Old savings ••3333 · Checking')
+  })
+
+  it('leaves an account out of net worth from its card, and adds it back', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    vi.mocked(updateAccountTracking).mockImplementation(async (_id, tracking) => ({
+      ...ira,
+      ...tracking,
+    }))
+    vi.mocked(getBalanceHistory).mockResolvedValue({
+      ...history,
+      net_worth: [{ date: '2026-09-24', value: 4000 }],
+    })
+    // In focus when it's left out, so the big chart has to let go of it.
+    await wrapper.get('[aria-label="Roth IRA ••4321"]').trigger('click')
+
+    await wrapper
+      .get('button[aria-label="Leave Roth IRA ••4321 out of net worth"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenCalledWith('ira', {
+      tracks_spending: false,
+      counts_in_net_worth: false,
+      share_percent: 100,
+    })
+    expect(wrapper.find('[aria-label="Roth IRA ••4321"]').exists()).toBe(false)
+    expect(wrapper.get('.net-worth h2').text()).toBe('Net worth')
+    expect(wrapper.get('.hero-figure').text()).toBe('$4,000.00')
+    expect(getBalanceHistory).toHaveBeenCalledTimes(2)
+
+    await wrapper.get('button[aria-label="Add Roth IRA ••4321 back to net worth"]').trigger('click')
+    await flushPromises()
+
+    expect(updateAccountTracking).toHaveBeenLastCalledWith('ira', {
+      tracks_spending: false,
+      counts_in_net_worth: true,
+      share_percent: 100,
+    })
+    expect(wrapper.find('[aria-label="Roth IRA ••4321"]').exists()).toBe(true)
+    expect(wrapper.find('.left-out').exists()).toBe(false)
+  })
+
+  it('keeps the card and says so when leaving an account out fails', async () => {
+    vi.mocked(updateAccountTracking).mockRejectedValue(new Error('offline'))
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper
+      .get('button[aria-label="Leave Roth IRA ••4321 out of net worth"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('We couldn’t leave out Roth IRA ••4321. Please try again.')
+    expect(wrapper.find('[aria-label="Roth IRA ••4321"]').exists()).toBe(true)
   })
 
   it('puts an account on the big chart when you pick its card, and goes back to net worth', async () => {
