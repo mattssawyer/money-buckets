@@ -222,12 +222,28 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Groceries amount"]').text()).toBe('600')
   })
 
-  it('leaves a saved plan’s blank lines blank', async () => {
+  it('defaults a saved plan’s blank lines too, and keeps the amounts it was saved with', async () => {
     spendOnGroceries()
-    const wrapper = mountSetup({ saved: savedPlan })
+    const wrapper = mountSetup({
+      saved: {
+        ...savedPlan,
+        plan: {
+          ...savedPlan.plan,
+          fixedCosts: [
+            ...savedPlan.plan.fixedCosts,
+            { name: 'Groceries', amount: null, items: [], fromPaycheck: false },
+          ],
+        },
+      },
+    })
     await flushPromises()
 
-    expect(getSpendingByBucket).not.toHaveBeenCalled()
+    expect(getRecurringTransactions).not.toHaveBeenCalled()
+    expect(wrapper.get('input[aria-label="Groceries amount"]').attributes('placeholder')).toBe(
+      '600',
+    )
+    const rent = wrapper.get<HTMLInputElement>('input[aria-label="Rent/mortgage amount"]')
+    expect(rent.element.value).toBe('1500')
   })
 
   it('fills in a bill on the line Jev put it on, whatever Plaid calls it', async () => {

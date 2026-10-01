@@ -103,7 +103,7 @@ What the user spent in each of the last few whole months, with the average per m
 _Avoid_: Usual spending, suggested amount, budget
 
 **Default amount**:
-What a new plan's line counts as until the user types their own: their average monthly spending on that line over the last three whole months, in whole dollars. Only a line with no breakdown items has one, so a line filled from recurring bills doesn't. Clearing a typed amount brings it back, and saving keeps it as the line's amount. Editing a saved plan offers none.
+What a blank line counts as in plan setup until the user types their own: their average monthly spending on that line over the last three whole months, in whole dollars. Only a line with no breakdown items has one, so a line filled from recurring bills doesn't. Clearing a typed amount brings it back, and saving keeps it as the line's amount.
 _Avoid_: Suggested amount, estimate, autofill
 
 **Take-home pay**:

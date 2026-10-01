@@ -110,7 +110,7 @@ const unplaced = ref<RecurringStream[]>([])
 // The row each unplaced bill will be added to, by stream id.
 const placeInto = ref<Record<string, string>>({})
 
-// What the user spends in a month on each line, by its name, for a new setup's default amounts.
+// What the user spends in a month on each line, by its name, for blank lines' default amounts.
 const lineDefaults = ref(new Map<string, number>())
 
 /** How many whole months of spending a line's default amount is averaged over. */
@@ -138,8 +138,9 @@ if (props.saved) {
 }
 
 onMounted(async () => {
-  if (editing) return
-  await loadEstimates()
+  // A saved plan keeps its own amounts; only its blank lines get defaults.
+  if (editing) await loadDefaults()
+  else await loadEstimates()
 })
 
 async function save() {
@@ -166,12 +167,11 @@ async function save() {
 async function loadEstimates() {
   loadingEstimates.value = true
   try {
-    const [found, candidates, spending] = await Promise.all([
+    const [found, candidates] = await Promise.all([
       getRecurringTransactions(undefined, 50),
       getRecurringCandidates().catch(() => []),
-      getSpendingByBucket(undefined, historyRange(DEFAULT_MONTHS)).catch(() => null),
+      loadDefaults(),
     ])
-    lineDefaults.value = spending ? lineAverages(spendingHistory(spending)) : new Map()
     unansweredCandidates.value = candidates.filter(
       (candidate) => candidate.status === 'SUGGESTED',
     ).length
@@ -188,6 +188,16 @@ async function loadEstimates() {
   }
 }
 
+/** What the user usually spends on each line; without it, blank lines simply stay blank. */
+async function loadDefaults() {
+  try {
+    const spending = await getSpendingByBucket(undefined, historyRange(DEFAULT_MONTHS))
+    lineDefaults.value = lineAverages(spendingHistory(spending))
+  } catch {
+    lineDefaults.value = new Map()
+  }
+}
+
 function setPlan(draft: PlanDraft) {
   plan.value = {
     fixedCosts: draft.fixedCosts.map(toRow),
@@ -199,10 +209,10 @@ function setPlan(draft: PlanDraft) {
 
 /**
  * What a blank line counts as: the user's average monthly spending on it. A line broken down
- * into items is their sum instead, and a saved plan keeps its own amounts.
+ * into items is their sum instead.
  */
 function defaultAmount(row: PlanRow): number | null {
-  if (editing || row.items.length > 0) return null
+  if (row.items.length > 0) return null
   return lineDefaults.value.get(row.name) ?? null
 }
 
