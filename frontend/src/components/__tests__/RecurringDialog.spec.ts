@@ -87,11 +87,21 @@ function mountDialog(props: { visible: boolean; accountId?: string; accountLabel
 }
 
 function rowTexts(wrapper: ReturnType<typeof mountDialog>) {
-  return wrapper.findAll('tbody tr').map((row) => row.findAll('td').map((cell) => cell.text()))
+  return wrapper.findAll('li.row').map((row) => row.text())
+}
+
+function tabs(wrapper: ReturnType<typeof mountDialog>) {
+  return wrapper.findAll('[role="tab"]').map((tab) => tab.text())
+}
+
+async function showTab(wrapper: ReturnType<typeof mountDialog>, label: string) {
+  const tab = wrapper.findAll('[role="tab"]').find((element) => element.text().startsWith(label))
+  if (!tab) throw new Error(`No ${label} tab`)
+  await tab.trigger('click')
 }
 
 async function open(wrapper: ReturnType<typeof mountDialog>, name: string) {
-  const button = wrapper.findAll('button.name-button').find((element) => element.text() === name)
+  const button = wrapper.findAll('button.name').find((element) => element.text() === name)
   if (!button) throw new Error(`No row for ${name}`)
   await button.trigger('click')
 }
@@ -109,7 +119,7 @@ beforeEach(() => {
 })
 
 describe('recurring dialog', () => {
-  it('waits until it is opened, then lists every stream and candidate, dismissed ones too', async () => {
+  it('waits until it is opened, then loads every stream and candidate, dismissed ones too', async () => {
     const wrapper = mountDialog({ visible: false, accountId: 'checking' })
     await flushPromises()
     expect(getRecurringTransactions).not.toHaveBeenCalled()
@@ -119,32 +129,183 @@ describe('recurring dialog', () => {
 
     expect(getRecurringTransactions).toHaveBeenCalledWith('checking', 50, true)
     expect(getRecurringCandidates).toHaveBeenCalledWith('checking')
-    expect(rowTexts(wrapper)).toEqual([
-      ['AAlabama Power', 'Monthly', 'Next Oct 17', 'Recurring', '-$155.59'],
-      ['SSterling Group', 'Every 3 months', 'Next Dec 29', 'Confirmed by you', '-$1,554.91'],
-      ['CCursor', 'Monthly', 'Last Sep 1', 'Possibly recurring', '-$20.00'],
-      ['YYouTube', '', '', 'Not recurring', '-$13.99'],
-    ])
-    expect(wrapper.text()).toContain('Checking ••1234 · 2 recurring')
+    expect(wrapper.text()).toContain('Checking ••1234')
   })
 
-  it('lets you say a payee Plaid detects doesn’t repeat', async () => {
+  it('keeps what’s recurring, what might be, and what you ruled out in separate lists', async () => {
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
 
-    await open(wrapper, 'Alabama Power')
-    await button(wrapper, 'It doesn’t repeat').trigger('click')
+    expect(tabs(wrapper)).toEqual(['Recurring 2', 'Possibly recurring 1', 'Not recurring 1'])
+    expect(rowTexts(wrapper)).toEqual([
+      'AAlabama PowerMonthly · Next Oct 17-$155.59Not recurring',
+      'SSterling GroupEvery 3 months · Next Dec 29 · Confirmed by you-$1,554.91Not recurring',
+    ])
+
+    await showTab(wrapper, 'Possibly recurring')
+    expect(rowTexts(wrapper)).toEqual(['CCursorMonthly? · Last Sep 1-$20.00YesNo'])
+
+    await showTab(wrapper, 'Not recurring')
+    expect(rowTexts(wrapper)).toEqual(['YYouTubeLast Sep 17-$13.99Undo'])
+  })
+
+  it('moves a row to its new list in one click, then catches up without a loading state', async () => {
+    const wrapper = mountDialog({ visible: true })
     await flushPromises()
 
-    expect(answerRecurringCandidate).toHaveBeenCalledWith(
+    let saveAnswer: () => void = () => {}
+    vi.mocked(answerRecurringCandidate).mockReturnValueOnce(
+      new Promise((resolve) => (saveAnswer = resolve)),
+    )
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+
+    // The row has moved before the save is even answered.
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      youtube,
+      { ...power, status: 'DISMISSED' },
+    ])
+    saveAnswer()
+    await flushPromises()
+
+    expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
       { kind: 'BILL', merchant_key: 'alabama power' },
       false,
     )
     expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
+  })
+
+  it('keeps an answer when a load asked before it arrives after it', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+
+    // Saving in the editor starts a quiet load; it's still on its way when the answer is given.
+    let finishLoad: (streams: RecurringStream[]) => void = () => {}
+    await open(wrapper, 'Sterling Group')
+    await wrapper.get('select[aria-label="Frequency"]').setValue('MONTHLY')
+    vi.mocked(getRecurringTransactions).mockReturnValueOnce(
+      new Promise((resolve) => (finishLoad = resolve)),
+    )
+    await button(wrapper, 'Save').trigger('click')
+    await flushPromises()
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      youtube,
+      { ...power, status: 'DISMISSED' },
+    ])
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+    finishLoad([youtube, power])
+    await flushPromises()
+
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
+  })
+
+  it('catches up once the last of several answers settles, even when that one failed', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    let savePower: () => void = () => {}
+    let failRent: (error: Error) => void = () => {}
+    vi.mocked(answerRecurringCandidate)
+      .mockReturnValueOnce(new Promise((resolve) => (savePower = resolve)))
+      .mockReturnValueOnce(new Promise((_, reject) => (failRent = reject)))
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await wrapper.get('button[aria-label="Sterling Group doesn’t repeat"]').trigger('click')
+    savePower()
+    await flushPromises()
+    // Rent's answer is still being saved, so a load now would show its row as it was.
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+
+    failRent(new Error('offline'))
+    await flushPromises()
+
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('We couldn’t save your answer for Sterling Group.')
+  })
+
+  it('passes on an answer that’s saved after the dialog has closed', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    let saveAnswer: () => void = () => {}
+    vi.mocked(answerRecurringCandidate).mockReturnValueOnce(
+      new Promise((resolve) => (saveAnswer = resolve)),
+    )
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await wrapper.setProps({ visible: false })
+    expect(wrapper.emitted('changed')).toBeUndefined()
+
+    saveAnswer()
+    await flushPromises()
+
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts a row back where it came from when you undo ruling it out', async () => {
+    vi.mocked(getRecurringCandidates).mockResolvedValue([{ ...cursor, status: 'DISMISSED' }])
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    await showTab(wrapper, 'Not recurring')
+
+    // Saves stay unanswered here, so this is where the rows go before the server is heard from.
+    vi.mocked(undoRecurringAnswer).mockReturnValue(new Promise(() => {}))
+
+    // One of Plaid's streams is recurring again; one of Jev's guesses is a guess again.
+    await wrapper.get('button[aria-label="Undo dismissing YouTube"]').trigger('click')
+    await wrapper.get('button[aria-label="Undo dismissing Cursor"]').trigger('click')
+    await flushPromises()
+
+    expect(undoRecurringAnswer).toHaveBeenCalledWith({ kind: 'BILL', merchant_key: 'youtube' })
+    expect(undoRecurringAnswer).toHaveBeenCalledWith({ kind: 'BILL', merchant_key: 'cursor' })
+    expect(tabs(wrapper)).toEqual(['Recurring 2', 'Possibly recurring 1', 'Not recurring 0'])
+  })
+
+  it('tells what’s behind it to load again once, when it closes, and only if something changed', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    await wrapper.setProps({ visible: false })
+    expect(wrapper.emitted('changed')).toBeUndefined()
+
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('changed')).toBeUndefined()
+
+    await wrapper.setProps({ visible: false })
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
-  it('lets you change how often a payee is paid', async () => {
+  it('puts the row back and says so when an answer can’t be saved, and offers none without a payee', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      power,
+      { ...power, stream_id: 'unnamed', merchant_name: 'Mystery', kind: null, merchant_key: null },
+    ])
+    vi.mocked(answerRecurringCandidate).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+
+    expect(wrapper.find('button[aria-label="Mystery doesn’t repeat"]').exists()).toBe(false)
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(
+      'We couldn’t save your answer for Alabama Power. Please try again.',
+    )
+    expect(tabs(wrapper)[0]).toBe('Recurring 3')
+    await wrapper.setProps({ visible: false })
+    expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('lets you change how often a payee is paid, then catches up without a loading state', async () => {
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
 
@@ -153,6 +314,10 @@ describe('recurring dialog', () => {
     expect(save.attributes('disabled')).toBeDefined()
 
     await wrapper.get('select[aria-label="Frequency"]').setValue('MONTHLY')
+    vi.mocked(getRecurringCandidates).mockResolvedValue([
+      cursor,
+      { ...rent, frequency: 'MONTHLY', frequency_set: true, next_date: '2026-10-29' },
+    ])
     await save.trigger('click')
     await flushPromises()
 
@@ -161,6 +326,8 @@ describe('recurring dialog', () => {
       true,
       'MONTHLY',
     )
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(rowTexts(wrapper)[1]).toContain('Monthly · Next Oct 29 · Confirmed by you')
   })
 
   it('hands a frequency you set back to automatic', async () => {
@@ -189,26 +356,7 @@ describe('recurring dialog', () => {
     )
   })
 
-  it('answers a possible one and undoes a dismissal', async () => {
-    const wrapper = mountDialog({ visible: true })
-    await flushPromises()
-
-    await open(wrapper, 'Cursor')
-    await button(wrapper, 'This repeats').trigger('click')
-    await flushPromises()
-    expect(answerRecurringCandidate).toHaveBeenCalledWith(
-      { kind: 'BILL', merchant_key: 'cursor' },
-      true,
-    )
-
-    await open(wrapper, 'YouTube')
-    expect(wrapper.find('select[aria-label="Frequency"]').exists()).toBe(false)
-    await button(wrapper, 'Undo').trigger('click')
-    await flushPromises()
-    expect(undoRecurringAnswer).toHaveBeenCalledWith({ kind: 'BILL', merchant_key: 'youtube' })
-  })
-
-  it('keeps the editor open and says so when saving fails', async () => {
+  it('keeps the editor open and says so when saving there fails', async () => {
     vi.mocked(answerRecurringCandidate).mockRejectedValueOnce(new Error('offline'))
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
@@ -218,14 +366,13 @@ describe('recurring dialog', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('We couldn’t save that. Please try again.')
-    expect(wrapper.emitted('changed')).toBeUndefined()
   })
 
   it('still lists Plaid’s streams when candidates can’t be loaded, and offers a retry when streams can’t', async () => {
     vi.mocked(getRecurringCandidates).mockRejectedValue(new Error('offline'))
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
-    expect(rowTexts(wrapper)).toHaveLength(2)
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 0', 'Not recurring 1'])
 
     vi.mocked(getRecurringTransactions).mockRejectedValueOnce(new Error('offline'))
     await wrapper.setProps({ accountId: 'savings' })
@@ -234,6 +381,6 @@ describe('recurring dialog', () => {
 
     await button(wrapper, 'Try again').trigger('click')
     await flushPromises()
-    expect(rowTexts(wrapper)).toHaveLength(2)
+    expect(tabs(wrapper)[0]).toBe('Recurring 1')
   })
 })
