@@ -9,6 +9,7 @@ import {
   type PlaidTransaction,
   type RecurringCandidate,
   type RecurringStream,
+  type SpendingByBucket,
 } from '../../api/PlaidService'
 
 import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
@@ -159,29 +160,31 @@ function groceries(amount: number, date: string): PlaidTransaction {
 }
 
 /** Three months of groceries averaging $600 a month. */
+const groceriesSpending: SpendingByBucket = {
+  start: '2026-07-01',
+  end: '2026-09-30',
+  total: 1800,
+  buckets: [
+    {
+      bucket: 'FIXED_COSTS',
+      amount: 1800,
+      categories: [
+        {
+          category: 'FOOD_AND_DRINK',
+          amount: 1800,
+          transactions: [
+            groceries(650, '2026-07-04'),
+            groceries(550, '2026-08-11'),
+            groceries(600, '2026-09-20'),
+          ],
+        },
+      ],
+    },
+  ],
+}
+
 function spendOnGroceries() {
-  vi.mocked(getSpendingByBucket).mockResolvedValue({
-    start: '2026-07-01',
-    end: '2026-09-30',
-    total: 1800,
-    buckets: [
-      {
-        bucket: 'FIXED_COSTS',
-        amount: 1800,
-        categories: [
-          {
-            category: 'FOOD_AND_DRINK',
-            amount: 1800,
-            transactions: [
-              groceries(650, '2026-07-04'),
-              groceries(550, '2026-08-11'),
-              groceries(600, '2026-09-20'),
-            ],
-          },
-        ],
-      },
-    ],
-  })
+  vi.mocked(getSpendingByBucket).mockResolvedValue(groceriesSpending)
 }
 
 describe('spending plan setup', () => {
@@ -220,6 +223,56 @@ describe('spending plan setup', () => {
     await addItem?.trigger('click')
 
     expect(wrapper.get('[aria-label="Groceries amount"]').text()).toBe('600')
+  })
+
+  it('waits for a saved plan’s defaults before saving or breaking a line down', async () => {
+    let answer: (spending: SpendingByBucket) => void = () => {}
+    vi.mocked(getSpendingByBucket).mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const wrapper = mountSetup({
+      saved: {
+        ...savedPlan,
+        plan: {
+          ...savedPlan.plan,
+          fixedCosts: [{ name: 'Groceries', amount: null, items: [], fromPaycheck: false }],
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Show Groceries breakdown"]').trigger('click')
+    const addItem = () =>
+      wrapper
+        .get('[aria-label="Groceries breakdown"]')
+        .findAll('button')
+        .find((button) => button.text() === 'Add an item')
+    expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(addItem()?.attributes('disabled')).toBeDefined()
+
+    // Clicking early neither saves nor adds a blank item.
+    await saveButton(wrapper).trigger('click')
+    await addItem()?.trigger('click')
+    expect(saveSpendingPlan).not.toHaveBeenCalled()
+    expect(wrapper.find('input[aria-label="Item amount"]').exists()).toBe(false)
+
+    answer(groceriesSpending)
+    await flushPromises()
+
+    expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
+    await addItem()?.trigger('click')
+    expect(wrapper.get('[aria-label="Groceries amount"]').text()).toBe('600')
+
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    const saved = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
+    expect(saved?.lines.find((line) => line.name === 'Groceries')?.items[0]?.amount).toBe(600)
+  })
+
+  it('lets a saved plan be saved when its defaults can’t be loaded', async () => {
+    vi.mocked(getSpendingByBucket).mockRejectedValue(new Error('offline'))
+    const wrapper = mountSetup({ saved: savedPlan })
+    await flushPromises()
+
+    expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 
   it('defaults a saved plan’s blank lines too, and keeps the amounts it was saved with', async () => {

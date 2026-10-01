@@ -95,6 +95,9 @@ const BUCKETS: Bucket[] = [
 
 const editing = props.saved != null
 const loadingEstimates = ref(!editing)
+// A saved plan shows at once, but saving it or breaking a line down waits for the defaults: a
+// blank line would otherwise be saved, or carried into its first item, as nothing.
+const loadingDefaults = ref(editing)
 const takeHome = ref<number | null>(null)
 const bufferPercent = ref<number | null>(DEFAULT_BUFFER_PERCENT)
 const plan = ref<PlanRows>({ fixedCosts: [], investments: [], savings: [] })
@@ -139,8 +142,12 @@ if (props.saved) {
 
 onMounted(async () => {
   // A saved plan keeps its own amounts; only its blank lines get defaults.
-  if (editing) await loadDefaults()
-  else await loadEstimates()
+  if (!editing) return loadEstimates()
+  try {
+    await loadDefaults()
+  } finally {
+    loadingDefaults.value = false
+  }
 })
 
 async function save() {
@@ -578,7 +585,12 @@ function amountValue(amount: number | null) {
                     />
                   </div>
                 </div>
-                <button type="button" class="add-cost add-item" @click="addItem(row)">
+                <button
+                  type="button"
+                  class="add-cost add-item"
+                  :disabled="loadingDefaults"
+                  @click="addItem(row)"
+                >
                   <Plus :size="13" :stroke-width="1.75" aria-hidden="true" />
                   Add an item
                 </button>
@@ -680,7 +692,7 @@ function amountValue(amount: number | null) {
       <Button
         label="Save plan"
         :loading="saving"
-        :disabled="loadingEstimates || saving"
+        :disabled="loadingEstimates || loadingDefaults || saving"
         @click="save"
       />
     </footer>
@@ -1128,8 +1140,13 @@ h2 {
   cursor: pointer;
 }
 
-.add-cost:hover {
+.add-cost:hover:not(:disabled) {
   color: var(--app-text);
+}
+
+.add-cost:disabled {
+  color: var(--app-text-subdued);
+  cursor: default;
 }
 
 .buffer-row {
