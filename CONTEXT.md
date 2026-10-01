@@ -99,8 +99,12 @@ Putting a recurring bill on a plan line as a breakdown item during plan setup, o
 _Avoid_: Mapping, assigning
 
 **Spending history**:
-What the user spent in each of the last few whole months, with the average per month: by bucket, then by the plan line Jev put each payee on, then by payee. Spending at payees on no line, which is all of guilt-free spending, is listed by Plaid category. Plan setup shows it beside the plan so the user can look up what they spend on something, such as groceries, and choose the line's amount themselves. It never fills an amount in.
+What the user spent in each of the last few whole months, with the average per month: by bucket, then by the plan line Jev put each payee on, then by payee. Spending at payees on no line, which is all of guilt-free spending, is listed by Plaid category. Plan setup shows it beside the plan so the user can see what's behind each line's amount.
 _Avoid_: Usual spending, suggested amount, budget
+
+**Default amount**:
+What a new plan's line counts as until the user types their own: their average monthly spending on that line over the last three whole months, in whole dollars. Only a line with no breakdown items has one, so a line filled from recurring bills doesn't. Clearing a typed amount brings it back, and saving keeps it as the line's amount. Editing a saved plan offers none.
+_Avoid_: Suggested amount, estimate, autofill
 
 **Take-home pay**:
 What lands in the user's account each month after taxes and paycheck deductions.

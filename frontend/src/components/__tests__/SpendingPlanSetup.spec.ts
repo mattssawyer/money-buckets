@@ -5,6 +5,8 @@ import SpendingPlanSetup from '../SpendingPlanSetup.vue'
 import {
   getRecurringCandidates,
   getRecurringTransactions,
+  getSpendingByBucket,
+  type PlaidTransaction,
   type RecurringCandidate,
   type RecurringStream,
 } from '../../api/PlaidService'
@@ -16,6 +18,7 @@ import type { SavedPlan } from '../../spendingPlan/savedPlan'
 vi.mock('../../api/PlaidService', () => ({
   getRecurringTransactions: vi.fn(),
   getRecurringCandidates: vi.fn<(accountId?: string) => Promise<RecurringCandidate[]>>(),
+  getSpendingByBucket: vi.fn(),
 }))
 
 vi.mock('../../api/SpendingPlanService', () => ({
@@ -81,6 +84,12 @@ beforeEach(() => {
   document.body.innerHTML = ''
   vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
   vi.mocked(getRecurringCandidates).mockResolvedValue([])
+  vi.mocked(getSpendingByBucket).mockResolvedValue({
+    start: '2026-07-01',
+    end: '2026-09-30',
+    total: 0,
+    buckets: [],
+  })
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
@@ -125,7 +134,102 @@ const sterlingRent: RecurringStream = {
   plan_line: null,
 }
 
+function groceries(amount: number, date: string): PlaidTransaction {
+  return {
+    transaction_id: `groceries-${date}`,
+    account_id: 'checking',
+    amount,
+    iso_currency_code: 'USD',
+    date,
+    name: 'WHOLE FOODS',
+    merchant_name: 'Whole Foods',
+    logo_url: null,
+    pending: false,
+    category: 'FOOD_AND_DRINK',
+    category_detailed: 'FOOD_AND_DRINK_GROCERIES',
+    bucket: 'FIXED_COSTS',
+    plan_line: 'Groceries',
+    share_percent: 100,
+    payee_key: 'whole foods',
+    payee_kind: 'BILL',
+    bucket_corrected: false,
+    category_corrected: false,
+    recurring: null,
+  }
+}
+
+/** Three months of groceries averaging $600 a month. */
+function spendOnGroceries() {
+  vi.mocked(getSpendingByBucket).mockResolvedValue({
+    start: '2026-07-01',
+    end: '2026-09-30',
+    total: 1800,
+    buckets: [
+      {
+        bucket: 'FIXED_COSTS',
+        amount: 1800,
+        categories: [
+          {
+            category: 'FOOD_AND_DRINK',
+            amount: 1800,
+            transactions: [
+              groceries(650, '2026-07-04'),
+              groceries(550, '2026-08-11'),
+              groceries(600, '2026-09-20'),
+            ],
+          },
+        ],
+      },
+    ],
+  })
+}
+
 describe('spending plan setup', () => {
+  it('defaults a line with no recurring bill to what you usually spend on it', async () => {
+    spendOnGroceries()
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const amount = wrapper.get<HTMLInputElement>('input[aria-label="Groceries amount"]')
+    expect(amount.element.value).toBe('')
+    expect(amount.attributes('placeholder')).toBe('600')
+    // 1,450 rent + 600 groceries, plus the 15% buffer.
+    expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,357.50')
+
+    await amount.setValue('500')
+    expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,242.50')
+
+    await amount.setValue('')
+    expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,357.50')
+
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    const saved = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
+    expect(saved?.lines.find((line) => line.name === 'Groceries')?.amount).toBe(600)
+    expect(saved?.lines.find((line) => line.name === 'Clothes')?.amount).toBeNull()
+  })
+
+  it('keeps a default amount when you break the line down', async () => {
+    spendOnGroceries()
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Show Groceries breakdown"]').trigger('click')
+    const breakdown = wrapper.get('[aria-label="Groceries breakdown"]')
+    const addItem = breakdown.findAll('button').find((button) => button.text() === 'Add an item')
+    await addItem?.trigger('click')
+
+    expect(wrapper.get('[aria-label="Groceries amount"]').text()).toBe('600')
+  })
+
+  it('leaves a saved plan’s blank lines blank', async () => {
+    spendOnGroceries()
+    const wrapper = mountSetup({ saved: savedPlan })
+    await flushPromises()
+
+    expect(getSpendingByBucket).not.toHaveBeenCalled()
+  })
+
   it('fills in a bill on the line Jev put it on, whatever Plaid calls it', async () => {
     vi.mocked(getRecurringTransactions).mockResolvedValue([
       paycheck,
@@ -190,7 +294,7 @@ describe('spending plan setup', () => {
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
     expect(wrapper.get('.autofill-note').text()).toBe(
-      'Amounts found in your tracked accounts’ recurring transactions are filled in for you. Choose accounts',
+      'Amounts are filled in from your tracked accounts’ recurring transactions and what you usually spend. Choose accounts',
     )
     expect(wrapper.get('.autofill-note a').attributes('href')).toBe('/accounts')
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
