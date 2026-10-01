@@ -206,6 +206,29 @@ describe('recurring dialog', () => {
     expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
   })
 
+  it('catches up once the last of several answers settles, even when that one failed', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    let savePower: () => void = () => {}
+    let failRent: (error: Error) => void = () => {}
+    vi.mocked(answerRecurringCandidate)
+      .mockReturnValueOnce(new Promise((resolve) => (savePower = resolve)))
+      .mockReturnValueOnce(new Promise((_, reject) => (failRent = reject)))
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await wrapper.get('button[aria-label="Sterling Group doesn’t repeat"]').trigger('click')
+    savePower()
+    await flushPromises()
+    // Rent's answer is still being saved, so a load now would show its row as it was.
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+
+    failRent(new Error('offline'))
+    await flushPromises()
+
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('We couldn’t save your answer for Sterling Group.')
+  })
+
   it('passes on an answer that’s saved after the dialog has closed', async () => {
     const wrapper = mountDialog({ visible: true })
     await flushPromises()

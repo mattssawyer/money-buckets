@@ -62,6 +62,8 @@ const answerError = ref('')
 // Whether anything was answered, so what's behind the dialog loads again once it closes rather
 // than after every click.
 let changed = false
+// Whether an answer was saved that the list hasn't caught up with the server on yet.
+let needsCatchUp = false
 
 // Only the newest request may fill the list, in case the account changes mid-flight or an
 // answer is given while a load is on its way.
@@ -113,15 +115,21 @@ async function answer(stream: RecurringStream, repeats: boolean | null) {
   } finally {
     answering.value.delete(stream.stream_id)
   }
-  if (!saved) return
-  if (!visible.value) {
+  if (saved && !visible.value) {
     // Closed before the answer was saved, so closing couldn't pass the change on.
     emit('changed')
     return
   }
-  changed = true
-  // While another answer is being saved, a load would show its row as it was.
-  if (answering.value.size === 0) void load(true)
+  if (saved) {
+    changed = true
+    needsCatchUp = true
+  }
+  // While another answer is being saved, a load would show its row as it was. The last one to
+  // settle catches up for all of them, even if it failed itself.
+  if (needsCatchUp && answering.value.size === 0 && visible.value) {
+    needsCatchUp = false
+    void load(true)
+  }
 }
 
 /**
@@ -146,6 +154,7 @@ watch(
   ([open]) => {
     if (open) {
       tab.value = 'recurring'
+      needsCatchUp = false
       void load()
     } else if (changed) {
       changed = false
