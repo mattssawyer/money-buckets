@@ -94,16 +94,44 @@ class RecurringCandidatesTests {
 
     @Test
     void readsThePayeesScheduleFromItsChargeDates() {
-        charge("spotify-1", "Spotify", "11.99", TODAY.minusDays(35));
-        charge("spotify-2", "Spotify", "11.99", TODAY.minusDays(28));
-        charge("spotify-3", "Spotify", "11.99", TODAY.minusDays(21));
+        charge("spotify-1", "Spotify", "11.99", TODAY.minusDays(24));
+        charge("spotify-2", "Spotify", "11.99", TODAY.minusDays(17));
+        charge("spotify-3", "Spotify", "11.99", TODAY.minusDays(10));
         judgeBill("spotify", 0.9, RecurringFrequency.MONTHLY);
 
         RecurringCandidate spotify = candidates.find(userId, null).get(0);
 
         assertEquals(RecurringFrequency.WEEKLY, spotify.frequency());
-        assertEquals(TODAY.minusDays(21), spotify.lastDate());
-        assertNull(spotify.nextDate(), "the next charge was due a week ago");
+        assertEquals(TODAY.minusDays(10), spotify.lastDate());
+        assertNull(spotify.nextDate(), "the next charge was due three days ago");
+    }
+
+    @Test
+    void dropsAPayeeWhosePaymentsHaveStopped() {
+        charge("hulu-1", "Hulu", "17.99", TODAY.minusMonths(5));
+        charge("hulu-2", "Hulu", "17.99", TODAY.minusMonths(4));
+        judgeBill("hulu", 0.96, RecurringFrequency.MONTHLY);
+        charge("gym", "Equinox", "210", TODAY.minusMonths(3));
+        candidates.answer(userId, RecurringKind.BILL, "equinox", true);
+        // A month late is still a bill; an annual one is given a year's grace.
+        charge("late", "Netflix", "15.49", TODAY.minusMonths(2).plusDays(1));
+        judgeBill("netflix", 0.93, RecurringFrequency.MONTHLY);
+        charge("yearly", "Costco", "65", TODAY.minusMonths(14));
+        judgeBill("costco", 0.8, RecurringFrequency.ANNUALLY);
+
+        List<String> found = candidates.find(userId, null).stream().map(RecurringCandidate::merchantKey).toList();
+
+        assertEquals(List.of("netflix", "costco"), found);
+    }
+
+    @Test
+    void readsAMonthlyBillAsMonthlyWhenAPaymentIsMissing() {
+        charge("rent-1", "Sterling Group", "1554.91", TODAY.minusDays(125));
+        charge("rent-2", "Sterling Group", "1554.91", TODAY.minusDays(95));
+        charge("rent-3", "Sterling Group", "1554.91", TODAY.minusDays(3));
+        judgeBill("sterling group", 0.9, RecurringFrequency.MONTHLY);
+
+        assertEquals(RecurringFrequency.MONTHLY, candidates.find(userId, null).get(0).frequency());
     }
 
     @Test

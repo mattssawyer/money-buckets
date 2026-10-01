@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -115,7 +116,7 @@ public class RecurringCandidates {
 
     /**
      * One candidate per payee Jev judges likely to be regular, or the user confirmed, left out
-     * while Plaid detects it. Its amount, schedule, account and categories come from the
+     * while Plaid detects it and once its payments have stopped. Its amount, schedule, account and categories come from the
      * payee's usual charges. Soonest expected first.
      *
      * @param chargesByPayee each payee's charges, newest first
@@ -147,6 +148,11 @@ public class RecurringCandidates {
                     usual.stream().map(PlaidTransaction::getTransactionDate).toList(),
                     payee == null ? null : payee.getUsualFrequency());
             LocalDate next = frequency.next(latest.getTransactionDate());
+            // A whole cycle overdue, the payments have stopped: a cancelled subscription, or a bill
+            // from an account the user has moved away from. One late payment doesn't drop it.
+            if (frequency.next(next).isBefore(today)) {
+                return;
+            }
 
             candidates.add(new RecurringCandidate(
                     key.kind(),
@@ -193,8 +199,10 @@ public class RecurringCandidates {
     }
 
     /**
-     * How often charges on these dates repeat, from the typical gap between them. With one
-     * charge, or charges too close together to show a schedule, Jev's guess is used.
+     * How often charges on these dates repeat, from the shortest gap between them: a bill's
+     * schedule is its shortest regular interval, and a longer gap is a payment that was missed or
+     * made some other way, not a slower schedule. With one charge, or charges too close together
+     * to show a schedule, Jev's guess is used.
      */
     static RecurringFrequency frequency(List<LocalDate> dates, RecurringFrequency jevsGuess) {
         RecurringFrequency fallback = jevsGuess == null ? RecurringFrequency.MONTHLY : jevsGuess;
@@ -204,23 +212,28 @@ public class RecurringCandidates {
         }
         List<Long> gaps = new ArrayList<>();
         for (int i = 1; i < days.size(); i++) {
-            gaps.add(ChronoUnit.DAYS.between(days.get(i - 1), days.get(i)));
+            long gap = ChronoUnit.DAYS.between(days.get(i - 1), days.get(i));
+            if (gap >= MIN_SCHEDULE_DAYS) {
+                gaps.add(gap);
+            }
         }
-        long median = gaps.stream().sorted().toList().get(gaps.size() / 2);
-
-        if (median < MIN_SCHEDULE_DAYS) {
+        if (gaps.isEmpty()) {
             return fallback;
-        } else if (median <= 10) {
+        }
+        long shortest = Collections.min(gaps);
+
+        if (shortest <= 10) {
             return RecurringFrequency.WEEKLY;
-        } else if (median <= 17) {
-            // Every other week lands the same weekday each time; the 1st and 15th don't.
-            return gaps.stream().allMatch(gap -> gap == 14)
+        } else if (shortest <= 17) {
+            // Every other week lands the same weekday each time, even after a missed one; the 1st
+            // and 15th don't.
+            return gaps.stream().allMatch(gap -> gap % 14 == 0)
                     ? RecurringFrequency.BIWEEKLY : RecurringFrequency.SEMI_MONTHLY;
-        } else if (median <= 45) {
+        } else if (shortest <= 45) {
             return RecurringFrequency.MONTHLY;
-        } else if (median <= 135) {
+        } else if (shortest <= 135) {
             return RecurringFrequency.QUARTERLY;
-        } else if (median <= 270) {
+        } else if (shortest <= 270) {
             return RecurringFrequency.SEMI_ANNUALLY;
         }
         return RecurringFrequency.ANNUALLY;
