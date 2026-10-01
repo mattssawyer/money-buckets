@@ -18,7 +18,20 @@ const props = defineProps<{
 const GRID = '#f0f0f0'
 const TICK = '#9e9e9e'
 const MARKER = '#cfcfcf'
-const CROSSHAIR = '#9e9e9e'
+// The crosshair's grey, as r, g, b: it fades in and out with the tooltip.
+const CROSSHAIR = '158, 158, 158'
+const FONT = 'Geist Variable'
+// How long the tooltip, crosshair and hovered point take to move to another day.
+const HOVER_MS = 140
+
+/**
+ * What's drawn. With a single day of history the line runs flat across the chart at that day's
+ * value, so there's a graph from day one; the made-up left end has no date and no tooltip.
+ */
+const series = computed<{ date: string | null; value: number }[]>(() => {
+  const only = props.points.length === 1 ? props.points[0] : undefined
+  return only ? [{ date: null, value: only.value }, only] : props.points
+})
 
 const spansYears = computed(() => {
   const first = props.points[0]?.date
@@ -37,11 +50,11 @@ const changesByDate = computed(() => {
 })
 
 const chartData = computed(() => ({
-  labels: props.points.map((point) => point.date),
+  labels: series.value.map((point) => point.date ?? ''),
   datasets: [
     {
       label: props.label,
-      data: props.points.map((point) => point.value),
+      data: series.value.map((point) => point.value),
       borderColor: props.color,
       backgroundColor: `${props.color}1a`,
       borderWidth: 2,
@@ -61,7 +74,10 @@ const chartData = computed(() => ({
 const chartOptions = computed<ChartOptions<'line'>>(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  animation: false,
+  // The line itself appears at once. Turning animation off outright would also stop the tooltip
+  // and the hovered point from moving smoothly between days, which is what the next two set.
+  animation: { duration: 0 },
+  transitions: { active: { animation: { duration: HOVER_MS, easing: 'easeOutQuart' } } },
   interaction: { mode: 'index', intersect: false },
   layout: { padding: { top: 8 } },
   scales: {
@@ -74,7 +90,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
         autoSkip: true,
         maxTicksLimit: 6,
         callback(_value, index) {
-          const date = props.points[index]?.date
+          const date = series.value[index]?.date
           return date ? formatDay(date, spansYears.value) : ''
         },
       },
@@ -94,16 +110,29 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
     tooltip: {
       displayColors: false,
       backgroundColor: '#171717',
-      padding: 10,
-      cornerRadius: 8,
+      padding: { top: 8, right: 12, bottom: 9, left: 12 },
+      cornerRadius: 10,
+      // No arrow: the crosshair already says which day, and the box sits clear of the point.
+      caretSize: 0,
+      caretPadding: 14,
+      titleColor: '#a3a3a3',
+      titleFont: { family: FONT, size: 11, weight: 500 },
+      titleMarginBottom: 3,
+      bodyColor: '#ffffff',
+      bodyFont: { family: FONT, size: 14, weight: 600 },
+      footerColor: '#a3a3a3',
+      footerFont: { family: FONT, size: 11, weight: 400 },
+      footerMarginTop: 5,
+      animation: { duration: HOVER_MS, easing: 'easeOutQuart' },
+      filter: (item) => series.value[item.dataIndex]?.date != null,
       callbacks: {
         title: (items) => {
-          const date = props.points[items[0]?.dataIndex ?? 0]?.date
+          const date = series.value[items[0]?.dataIndex ?? 0]?.date
           return date ? formatDay(date, true) : ''
         },
         label: (item) => formatMoney(Number(item.raw)),
-        afterBody: (items) => {
-          const date = props.points[items[0]?.dataIndex ?? 0]?.date
+        footer: (items) => {
+          const date = series.value[items[0]?.dataIndex ?? 0]?.date
           return date ? (changesByDate.value.get(date) ?? []) : []
         },
       },
@@ -111,7 +140,11 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
   },
 }))
 
-/** Hairlines on the days accounts joined or left, and a crosshair at the hovered day. */
+/**
+ * Hairlines on the days accounts joined or left, and a crosshair at the hovered day. The
+ * crosshair follows the tooltip's own position and opacity, so it glides and fades with it
+ * instead of jumping from day to day.
+ */
 const guides: Plugin<'line'> = {
   id: 'balanceGuides',
   afterDatasetsDraw(chart: ChartJs) {
@@ -133,8 +166,10 @@ const guides: Plugin<'line'> = {
       const index = labels.indexOf(date)
       if (index >= 0) line(x.getPixelForValue(index), MARKER)
     }
-    const active = chart.tooltip?.getActiveElements()[0]
-    if (active) line(active.element.x, CROSSHAIR)
+    const tooltip = chart.tooltip
+    if (tooltip && tooltip.opacity > 0) {
+      line(tooltip.caretX, `rgba(${CROSSHAIR}, ${tooltip.opacity})`)
+    }
   },
 }
 

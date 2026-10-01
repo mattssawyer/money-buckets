@@ -93,8 +93,8 @@ class BalanceHistoryTests {
 
         assertEquals(List.of(point(MON, "5000")), rendered(result.netWorth()));
         assertTrue(result.leftOutOfNetWorth().isEmpty());
-        assertEquals(List.of("employer-401k"),
-                result.investmentAccounts().stream().map(AccountSeries::accountId).toList());
+        assertEquals(List.of("checking", "employer-401k"),
+                result.accounts().stream().map(AccountSeries::accountId).toList());
     }
 
     @Test
@@ -112,16 +112,19 @@ class BalanceHistoryTests {
     }
 
     @Test
-    void onlyInvestmentAccountsGetTheirOwnSeries() {
+    void everyAccountGetsItsOwnSeriesOfWholeBalances() {
         account("checking", "depository", "5000");
         account("ira", "investment", "20000");
-        account("old-brokerage", "brokerage", "300");
+        account("joint-card", "credit", "400");
         history.record(ITEM, MON);
+        choose("joint-card", true, 50);
 
         History result = history.forUser(userId, null, MON);
 
-        assertEquals(List.of("ira", "old-brokerage"),
-                result.investmentAccounts().stream().map(AccountSeries::accountId).toList());
+        assertEquals(List.of("checking", "ira", "joint-card"),
+                result.accounts().stream().map(AccountSeries::accountId).toList());
+        // What Plaid reports: not signed as a debt, nor cut to the user's share.
+        assertEquals(List.of(point(MON, "400")), rendered(result.accounts().get(2).points()));
     }
 
     @Test
@@ -173,7 +176,8 @@ class BalanceHistoryTests {
         assertEquals(List.of(
                 point(MON, "25000"), point(TUE, "25000"), point(WED, "5000"), point(THU, "5000")
         ), rendered(result.netWorth()));
-        assertTrue(result.investmentAccounts().isEmpty());
+        assertEquals(List.of("checking"),
+                result.accounts().stream().map(AccountSeries::accountId).toList());
         assertEquals(List.of(new AccountDropped(WED, "ira", "ira")), result.accountsDropped());
     }
 
@@ -192,7 +196,7 @@ class BalanceHistoryTests {
                 point(MON, "25000"), point(TUE, "5000"), point(WED, "5000"), point(THU, "25000")
         ), rendered(result.netWorth()));
         assertEquals(List.of(point(MON, "20000"), point(THU, "20000")),
-                rendered(onlyAccount(result).points()));
+                rendered(result.accounts().get(1).points()));
         assertEquals(List.of(new AccountDropped(TUE, "ira", "ira")), result.accountsDropped());
         assertEquals(List.of(new AccountAdded(THU, "ira", "ira")), result.accountsAdded());
     }
@@ -268,7 +272,7 @@ class BalanceHistoryTests {
     }
 
     private static AccountSeries onlyAccount(History result) {
-        assertEquals(1, result.investmentAccounts().size());
-        return result.investmentAccounts().get(0);
+        assertEquals(1, result.accounts().size());
+        return result.accounts().get(0);
     }
 }

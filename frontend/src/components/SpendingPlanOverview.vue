@@ -307,7 +307,7 @@ h2 {
 }
 
 .legend-over {
-  color: var(--app-danger);
+  color: var(--app-over-target);
 }
 
 .bucket-grid {

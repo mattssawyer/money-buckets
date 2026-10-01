@@ -36,8 +36,8 @@ public class InvestmentsController {
 
     /**
      * Daily net worth from {@code from} (or the first counted snapshot) through today, inclusive.
-     * Each current investment account's series starts at its first snapshot or {@code from},
-     * whichever is later, and omits days when it was dropped.
+     * Each current account's series starts at its first snapshot or {@code from}, whichever is
+     * later, and omits days when it was dropped.
      *
      * @throws ResponseStatusException with HTTP 400 when {@code from} is after today
      */
@@ -65,7 +65,7 @@ public class InvestmentsController {
         static HistoryResponse from(History history) {
             return new HistoryResponse(
                     points(history.netWorth()),
-                    history.investmentAccounts().stream()
+                    history.accounts().stream()
                             .map(series -> new AccountSeriesResponse(series.accountId(), points(series.points())))
                             .toList(),
                     history.accountsAdded().stream()

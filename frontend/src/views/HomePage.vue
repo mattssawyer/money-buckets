@@ -965,8 +965,9 @@ async function openPlaidLink() {
                 </option>
               </select>
             </div>
+            <!-- Only the first load has nothing to show; later ones keep what's there until they land. -->
             <div
-              v-if="loadingSpending"
+              v-if="loadingSpending && !spending"
               class="spending-chart"
               role="status"
               aria-label="Loading your spending breakdown"
@@ -984,7 +985,7 @@ async function openPlaidLink() {
               />
             </div>
 
-            <div v-else class="spending-body">
+            <div v-else class="spending-body" :class="{ 'spending-refreshing': loadingSpending }">
               <p v-if="hasSpendingPlan === false" class="spending-plan-prompt">
                 <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
                 to set a target for each bucket.
@@ -1307,6 +1308,12 @@ h1 {
   justify-content: flex-start;
   gap: 1.25rem;
   min-height: 0;
+}
+
+/* Dimmed while another period or account loads, rather than giving way to a placeholder. */
+.spending-refreshing {
+  opacity: 0.55;
+  transition: opacity 120ms ease;
 }
 
 .spending-chart {

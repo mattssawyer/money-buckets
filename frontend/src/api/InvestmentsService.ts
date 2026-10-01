@@ -15,7 +15,11 @@ export interface AccountChange {
 export interface BalanceHistory {
   /** One point per day, from the first balance snapshot (or the range start) through today. */
   net_worth: BalancePoint[]
-  /** One series per investment account that hasn't been dropped. */
+  /**
+   * One series per account that hasn't been dropped, bank accounts and debts included. Values are
+   * whole balances as Plaid reports them: a debt is positive, and a shared account isn't cut to
+   * the user's share.
+   */
   accounts: { account_id: string; points: BalancePoint[] }[]
   accounts_added: AccountChange[]
   accounts_dropped: AccountChange[]

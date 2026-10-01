@@ -886,6 +886,27 @@ describe('homepage spending breakdown', () => {
     expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, periodRange('LAST_90_DAYS'))
   })
 
+  it('keeps the card’s contents in place, dimmed, while another period loads', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    const wrapper = mountHome()
+    await flushPromises()
+    let finish: (summary: SpendingByBucket) => void = () => {}
+    vi.mocked(getSpendingByBucket).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
+
+    await wrapper.get('[aria-label="Spending period"]').setValue('LAST_90_DAYS')
+    await flushPromises()
+
+    const card = wrapper.get('.spending-card')
+    expect(card.find('[aria-label="Loading your spending breakdown"]').exists()).toBe(false)
+    expect(card.get('.spending-body').classes()).toContain('spending-refreshing')
+    expect(card.find('.spending-legend').exists()).toBe(true)
+
+    finish(spending)
+    await flushPromises()
+
+    expect(card.get('.spending-body').classes()).not.toContain('spending-refreshing')
+  })
+
   it('keeps the rest of the dashboard working when the breakdown fails', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getSpendingByBucket).mockRejectedValueOnce(new Error('Server unavailable'))
