@@ -30,6 +30,7 @@ const rent: PlaidTransaction = {
   logo_url: null,
   pending: false,
   category: 'HOME_IMPROVEMENT',
+  category_detailed: 'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE',
   bucket: 'GUILT_FREE',
   share_percent: 50,
   payee_key: 'sterling group',

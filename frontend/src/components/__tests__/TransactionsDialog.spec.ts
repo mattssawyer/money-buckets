@@ -18,6 +18,7 @@ const coffee: PlaidTransaction = {
   logo_url: null,
   pending: true,
   category: 'FOOD_AND_DRINK',
+  category_detailed: 'FOOD_AND_DRINK_COFFEE',
   bucket: 'GUILT_FREE',
   share_percent: 100,
   payee_key: 'coffee shop',

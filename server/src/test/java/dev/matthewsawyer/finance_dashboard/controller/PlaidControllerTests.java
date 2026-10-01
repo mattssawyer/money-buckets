@@ -284,6 +284,7 @@ class PlaidControllerTests {
         assertEquals("Coffee Shop", result.get(0).merchantName());
         assertEquals(LocalDate.of(2026, 9, 1), result.get(0).date());
         assertEquals("FOOD_AND_DRINK", result.get(0).category());
+        assertEquals("FOOD_AND_DRINK_COFFEE", result.get(0).categoryDetailed());
         assertEquals(Bucket.GUILT_FREE, result.get(0).bucket());
     }
 
@@ -311,7 +312,8 @@ class PlaidControllerTests {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
         track(account("checking", 100));
         PlaidTransaction rent = spent("rent", "1554.91", "HOME_IMPROVEMENT", Bucket.FIXED_COSTS)
-                .merchantName("Sterling Group");
+                .merchantName("Sterling Group")
+                .personalFinanceCategory("HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
         when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of(rent));
         PayeeCorrection correction = new PayeeCorrection(USER_ID, "sterling group");
@@ -324,6 +326,7 @@ class PlaidControllerTests {
         assertEquals("RENT_AND_UTILITIES", category.category());
         PlaidController.TransactionResponse shown = category.transactions().get(0);
         assertEquals("RENT_AND_UTILITIES", shown.category());
+        assertNull(shown.categoryDetailed(), "Plaid's detailed category belongs to the category it replaced");
         assertEquals("sterling group", shown.payeeKey());
         assertTrue(shown.bucketCorrected());
         assertTrue(shown.categoryCorrected());

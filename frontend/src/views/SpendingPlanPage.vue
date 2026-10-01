@@ -109,7 +109,7 @@ function onSaved(plan: SavedPlan) {
       block-scroll
       :header="dialogHeader"
       :draggable="false"
-      :style="{ width: 'min(56rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
+      :style="{ width: 'min(76rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
       :breakpoints="{ '640px': 'calc(100vw - 1.5rem)' }"
       :pt="{
         content: { style: { display: 'flex', flex: '1', minHeight: '0', padding: '0' } },

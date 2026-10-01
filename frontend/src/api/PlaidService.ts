@@ -43,6 +43,8 @@ export interface PlaidTransaction {
   logo_url: string | null
   pending: boolean
   category: string | null
+  /** Plaid's detailed category within it, e.g. FOOD_AND_DRINK_GROCERIES; null once corrected. */
+  category_detailed: string | null
   /** Null until sorting reaches it. NOT_COUNTED is money moved between own accounts. */
   bucket: SpendingBucket | null
   /** The user's share of the account's money, 1–100; amount is the whole transaction's. */

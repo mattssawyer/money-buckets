@@ -340,6 +340,8 @@ public class PlaidController {
             @JsonProperty("pending") boolean pending,
             /** The Plaid primary category to show: the user's correction for the payee, else Plaid's. */
             @JsonProperty("category") String category,
+            /** Plaid's detailed category within it; null when the user corrected the category. */
+            @JsonProperty("category_detailed") String categoryDetailed,
             /** Null until sorting reaches the transaction. */
             @JsonProperty("bucket") Bucket bucket,
             /** The user's share of the account's money, in percent; the amount is the whole transaction's. */
@@ -367,6 +369,8 @@ public class PlaidController {
                     transaction.getLogoUrl(),
                     transaction.isPending(),
                     payees.category(transaction),
+                    correction != null && correction.getCategory() != null
+                            ? null : transaction.getPersonalFinanceCategoryDetailed(),
                     transaction.getBucket(),
                     sharePercent,
                     payee == null ? null : payee.key(),

@@ -98,6 +98,10 @@ _Avoid_: Override, rule, recategorization
 Putting a recurring bill on a plan line as a breakdown item during plan setup, on the line Jev chose for its payee. The user places or skips bills Jev put on no line.
 _Avoid_: Mapping, assigning
 
+**Spending history**:
+What the user spent in each of the last few whole months, by category and payee, with the average per month. Plan setup shows it beside the plan so the user can look up what they spend on something, such as groceries, and choose the line's amount themselves. It never fills an amount in.
+_Avoid_: Usual spending, suggested amount, budget
+
 **Take-home pay**:
 What lands in the user's account each month after taxes and paycheck deductions.
 _Avoid_: Income, salary, net pay

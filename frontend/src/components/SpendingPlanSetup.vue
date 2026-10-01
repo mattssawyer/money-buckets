@@ -32,6 +32,7 @@ import {
 } from '../spendingPlan/plan'
 import { fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
 import { withConfirmed } from '../spending/recurring'
+import SpendingExplorer from './SpendingExplorer.vue'
 
 const props = defineProps<{
   /** Edit this saved plan. Without it, the dialog runs a new setup from the tracked accounts' bills. */
@@ -98,6 +99,8 @@ const plan = ref<PlanRows>({ fixedCosts: [], investments: [], savings: [] })
 const expandedRows = ref(new Set<string>())
 const saving = ref(false)
 const saveError = ref('')
+// Where there's no room for the plan and the user's spending side by side, one shows at a time.
+const showSpending = ref(false)
 // Payments Jev thinks repeat that the user hasn't confirmed or dismissed, so they aren't filled in.
 const unansweredCandidates = ref(0)
 // Recurring bills Jev put on no line, or hasn't judged yet, for the user to place or skip.
@@ -299,318 +302,325 @@ function amountValue(amount: number | null) {
 </script>
 
 <template>
-  <div class="plan-setup">
-    <form class="plan-form" aria-label="Spending plan" @submit.prevent>
-      <div v-if="!editing" class="plan-toolbar">
-        <p class="autofill-note">
-          <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-          Amounts found in your tracked accounts’ recurring transactions are filled in for you.
-          <RouterLink to="/accounts">Choose accounts</RouterLink>
-        </p>
-        <p v-if="unansweredCandidates" class="autofill-note">
-          <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-          {{
-            unansweredCandidates === 1
-              ? '1 payment might be recurring.'
-              : `${unansweredCandidates} payments might be recurring.`
-          }}
-          Confirm them on Home to fill them in.
-          <RouterLink to="/">Go to Home</RouterLink>
-        </p>
-      </div>
-
-      <section
-        v-if="!loadingEstimates && unplaced.length"
-        class="unplaced"
-        aria-labelledby="unplaced-heading"
-      >
-        <h2 id="unplaced-heading" class="unplaced-heading">Recurring payments to place</h2>
-        <p class="block-hint">
-          We couldn’t tell which line these belong on. Add each to a line, or skip it.
-        </p>
-        <div v-for="bill in unplaced" :key="bill.stream_id" class="sheet-row unplaced-row">
-          <span class="row-label">{{ recurringLabel(bill) }}</span>
-          <span class="unplaced-amount"
-            >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
-          >
-          <select
-            class="line-select"
-            :aria-label="`Line for ${recurringLabel(bill)}`"
-            :value="placeInto[bill.stream_id] ?? ''"
-            @change="onPlaceIntoChange(bill, $event)"
-          >
-            <option value="" disabled>Choose a line</option>
-            <optgroup v-for="bucket in BUCKETS" :key="bucket.id" :label="bucket.title">
-              <option v-for="row in plan[bucket.id]" :key="row.id" :value="row.id">
-                {{ row.name || bucket.lineNoun }}
-              </option>
-            </optgroup>
-          </select>
-          <button
-            type="button"
-            class="unplaced-action unplaced-add"
-            :disabled="!placeInto[bill.stream_id]"
-            :aria-label="`Add ${recurringLabel(bill)}`"
-            @click="placeBill(bill)"
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            class="unplaced-action"
-            :aria-label="`Skip ${recurringLabel(bill)}`"
-            @click="skipBill(bill)"
-          >
-            Skip
-          </button>
+  <div class="plan-setup" :class="{ 'showing-spending': showSpending }">
+    <div class="plan-body">
+      <form class="plan-form" aria-label="Spending plan" @submit.prevent>
+        <div v-if="!editing" class="plan-toolbar">
+          <p class="autofill-note">
+            <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
+            Amounts found in your tracked accounts’ recurring transactions are filled in for you.
+            <RouterLink to="/accounts">Choose accounts</RouterLink>
+          </p>
+          <p v-if="unansweredCandidates" class="autofill-note">
+            <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
+            {{
+              unansweredCandidates === 1
+                ? '1 payment might be recurring.'
+                : `${unansweredCandidates} payments might be recurring.`
+            }}
+            Confirm them on Home to fill them in.
+            <RouterLink to="/">Go to Home</RouterLink>
+          </p>
         </div>
-      </section>
 
-      <section class="plan-block" aria-labelledby="plan-section-heading-income">
-        <h2 id="plan-section-heading-income">Income</h2>
-        <div v-if="loadingEstimates" class="sheet-row">
-          <Skeleton width="11rem" height="1rem" />
-          <Skeleton width="6.5rem" height="1.5rem" />
-        </div>
-        <template v-else>
-          <div class="sheet-row">
-            <label class="row-label" for="take-home-income">After taxes and deductions</label>
-            <div class="amount-field">
-              <span aria-hidden="true">$</span>
-              <input
-                id="take-home-income"
-                :value="amountValue(takeHome)"
-                inputmode="decimal"
-                autocomplete="off"
-                @input="onTakeHomeInput"
-              />
-            </div>
+        <section
+          v-if="!loadingEstimates && unplaced.length"
+          class="unplaced"
+          aria-labelledby="unplaced-heading"
+        >
+          <h2 id="unplaced-heading" class="unplaced-heading">Recurring payments to place</h2>
+          <p class="block-hint">
+            We couldn’t tell which line these belong on. Add each to a line, or skip it.
+          </p>
+          <div v-for="bill in unplaced" :key="bill.stream_id" class="sheet-row unplaced-row">
+            <span class="row-label">{{ recurringLabel(bill) }}</span>
+            <span class="unplaced-amount"
+              >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
+            >
+            <select
+              class="line-select"
+              :aria-label="`Line for ${recurringLabel(bill)}`"
+              :value="placeInto[bill.stream_id] ?? ''"
+              @change="onPlaceIntoChange(bill, $event)"
+            >
+              <option value="" disabled>Choose a line</option>
+              <optgroup v-for="bucket in BUCKETS" :key="bucket.id" :label="bucket.title">
+                <option v-for="row in plan[bucket.id]" :key="row.id" :value="row.id">
+                  {{ row.name || bucket.lineNoun }}
+                </option>
+              </optgroup>
+            </select>
+            <button
+              type="button"
+              class="unplaced-action unplaced-add"
+              :disabled="!placeInto[bill.stream_id]"
+              :aria-label="`Add ${recurringLabel(bill)}`"
+              @click="placeBill(bill)"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              class="unplaced-action"
+              :aria-label="`Skip ${recurringLabel(bill)}`"
+              @click="skipBill(bill)"
+            >
+              Skip
+            </button>
           </div>
-          <template v-if="evaluation.fromPaycheck > 0">
-            <div class="sheet-row income-addback">
-              <span class="row-label">Investments taken from your paycheck</span>
-              <span class="addback-amount" aria-label="Investments taken from your paycheck">
-                +{{ formatPlanAmount(evaluation.fromPaycheck) }}
-              </span>
-            </div>
-            <div v-if="evaluation.income != null" class="sheet-row total-row">
-              <span class="row-label">Plan income</span>
-              <div class="total-amount" aria-label="Plan income">
-                <span>{{ formatPlanAmount(evaluation.income) }}</span>
-              </div>
-            </div>
-          </template>
-        </template>
-      </section>
+        </section>
 
-      <section
-        v-for="bucket in BUCKETS"
-        :key="bucket.id"
-        class="plan-block"
-        :aria-labelledby="`plan-section-heading-${bucket.id}`"
-      >
-        <div class="block-heading">
-          <h2 :id="`plan-section-heading-${bucket.id}`">{{ bucket.title }}</h2>
-          <p class="block-hint">{{ targetHint(PLAN_TARGETS[bucket.id]) }}</p>
-        </div>
-
-        <template v-if="loadingEstimates">
-          <div v-for="index in 3" :key="index" class="sheet-row">
-            <Skeleton height="1.5rem" />
+        <section class="plan-block" aria-labelledby="plan-section-heading-income">
+          <h2 id="plan-section-heading-income">Income</h2>
+          <div v-if="loadingEstimates" class="sheet-row">
+            <Skeleton width="11rem" height="1rem" />
             <Skeleton width="6.5rem" height="1.5rem" />
           </div>
-        </template>
-        <template v-else>
-          <div v-for="row in plan[bucket.id]" :key="row.id" class="cost-line">
-            <div class="sheet-row" :class="{ 'has-paycheck-toggle': bucket.paycheckOption }">
-              <button
-                type="button"
-                class="row-remove"
-                :aria-label="`Remove ${row.name || bucket.lineNoun.toLowerCase()}`"
-                @click="removeLine(bucket.id, row.id)"
-              >
-                <CircleMinus :size="16" :stroke-width="1.75" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="row-toggle"
-                :class="{ 'row-toggle-open': expandedRows.has(row.id) }"
-                :aria-expanded="expandedRows.has(row.id)"
-                :aria-controls="`breakdown-${row.id}`"
-                :aria-label="`Show ${breakdownLabel(bucket, row)}`"
-                @click="toggleBreakdown(row.id)"
-              >
-                <ChevronRight :size="15" :stroke-width="1.75" aria-hidden="true" />
-              </button>
-              <input
-                class="name-input"
-                :value="row.name"
-                :placeholder="bucket.lineNoun"
-                autocomplete="off"
-                :aria-label="row.name ? `${row.name} name` : `${bucket.lineNoun} name`"
-                @input="onNameInput(row, $event)"
-              />
-              <span v-if="row.items.length" class="item-count">{{ row.items.length }}</span>
-              <div v-if="row.items.length" class="amount-field amount-derived">
-                <span aria-hidden="true">$</span>
-                <span
-                  class="derived-value"
-                  :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
-                >
-                  {{ lineAmount(row) }}
-                </span>
-              </div>
-              <div v-else class="amount-field">
+          <template v-else>
+            <div class="sheet-row">
+              <label class="row-label" for="take-home-income">After taxes and deductions</label>
+              <div class="amount-field">
                 <span aria-hidden="true">$</span>
                 <input
-                  :value="amountValue(row.amount)"
+                  id="take-home-income"
+                  :value="amountValue(takeHome)"
                   inputmode="decimal"
                   autocomplete="off"
-                  :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
-                  @input="onAmountInput(row, $event)"
+                  @input="onTakeHomeInput"
                 />
               </div>
-              <label
-                v-if="bucket.paycheckOption"
-                class="paycheck-toggle"
-                :class="{ 'paycheck-toggle-on': row.fromPaycheck }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="row.fromPaycheck"
-                  :aria-label="`${row.name || bucket.lineNoun}: from paycheck`"
-                  @change="onFromPaycheckChange(row, $event)"
-                />
-                From paycheck
-              </label>
             </div>
+            <template v-if="evaluation.fromPaycheck > 0">
+              <div class="sheet-row income-addback">
+                <span class="row-label">Investments taken from your paycheck</span>
+                <span class="addback-amount" aria-label="Investments taken from your paycheck">
+                  +{{ formatPlanAmount(evaluation.fromPaycheck) }}
+                </span>
+              </div>
+              <div v-if="evaluation.income != null" class="sheet-row total-row">
+                <span class="row-label">Plan income</span>
+                <div class="total-amount" aria-label="Plan income">
+                  <span>{{ formatPlanAmount(evaluation.income) }}</span>
+                </div>
+              </div>
+            </template>
+          </template>
+        </section>
 
-            <div
-              v-if="expandedRows.has(row.id)"
-              :id="`breakdown-${row.id}`"
-              class="breakdown"
-              role="group"
-              :aria-label="breakdownLabel(bucket, row)"
-            >
-              <div v-for="item in row.items" :key="item.id" class="sheet-row item-row">
+        <section
+          v-for="bucket in BUCKETS"
+          :key="bucket.id"
+          class="plan-block"
+          :aria-labelledby="`plan-section-heading-${bucket.id}`"
+        >
+          <div class="block-heading">
+            <h2 :id="`plan-section-heading-${bucket.id}`">{{ bucket.title }}</h2>
+            <p class="block-hint">{{ targetHint(PLAN_TARGETS[bucket.id]) }}</p>
+          </div>
+
+          <template v-if="loadingEstimates">
+            <div v-for="index in 3" :key="index" class="sheet-row">
+              <Skeleton height="1.5rem" />
+              <Skeleton width="6.5rem" height="1.5rem" />
+            </div>
+          </template>
+          <template v-else>
+            <div v-for="row in plan[bucket.id]" :key="row.id" class="cost-line">
+              <div class="sheet-row" :class="{ 'has-paycheck-toggle': bucket.paycheckOption }">
                 <button
                   type="button"
                   class="row-remove"
-                  :aria-label="`Remove ${item.name || 'item'}`"
-                  @click="removeItem(row, item.id)"
+                  :aria-label="`Remove ${row.name || bucket.lineNoun.toLowerCase()}`"
+                  @click="removeLine(bucket.id, row.id)"
                 >
-                  <CircleMinus :size="15" :stroke-width="1.75" aria-hidden="true" />
+                  <CircleMinus :size="16" :stroke-width="1.75" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  class="row-toggle"
+                  :class="{ 'row-toggle-open': expandedRows.has(row.id) }"
+                  :aria-expanded="expandedRows.has(row.id)"
+                  :aria-controls="`breakdown-${row.id}`"
+                  :aria-label="`Show ${breakdownLabel(bucket, row)}`"
+                  @click="toggleBreakdown(row.id)"
+                >
+                  <ChevronRight :size="15" :stroke-width="1.75" aria-hidden="true" />
                 </button>
                 <input
                   class="name-input"
-                  :value="item.name"
-                  placeholder="Item"
+                  :value="row.name"
+                  :placeholder="bucket.lineNoun"
                   autocomplete="off"
-                  :aria-label="item.name ? `${item.name} name` : 'Item name'"
-                  @input="onNameInput(item, $event)"
+                  :aria-label="row.name ? `${row.name} name` : `${bucket.lineNoun} name`"
+                  @input="onNameInput(row, $event)"
                 />
-                <div class="amount-field">
+                <span v-if="row.items.length" class="item-count">{{ row.items.length }}</span>
+                <div v-if="row.items.length" class="amount-field amount-derived">
+                  <span aria-hidden="true">$</span>
+                  <span
+                    class="derived-value"
+                    :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
+                  >
+                    {{ lineAmount(row) }}
+                  </span>
+                </div>
+                <div v-else class="amount-field">
                   <span aria-hidden="true">$</span>
                   <input
-                    :value="amountValue(item.amount)"
+                    :value="amountValue(row.amount)"
                     inputmode="decimal"
                     autocomplete="off"
-                    :aria-label="item.name ? `${item.name} amount` : 'Item amount'"
-                    @input="onAmountInput(item, $event)"
+                    :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
+                    @input="onAmountInput(row, $event)"
                   />
                 </div>
+                <label
+                  v-if="bucket.paycheckOption"
+                  class="paycheck-toggle"
+                  :class="{ 'paycheck-toggle-on': row.fromPaycheck }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="row.fromPaycheck"
+                    :aria-label="`${row.name || bucket.lineNoun}: from paycheck`"
+                    @change="onFromPaycheckChange(row, $event)"
+                  />
+                  From paycheck
+                </label>
               </div>
-              <button type="button" class="add-cost add-item" @click="addItem(row)">
-                <Plus :size="13" :stroke-width="1.75" aria-hidden="true" />
-                Add an item
-              </button>
-            </div>
-          </div>
 
-          <button type="button" class="add-cost add-line" @click="addLine(bucket.id)">
-            <Plus :size="14" :stroke-width="1.75" aria-hidden="true" />
-            {{ bucket.addLabel }}
-          </button>
-
-          <div v-if="bucket.buffer" class="sheet-row buffer-row">
-            <label class="row-label" for="fixed-cost-buffer">
-              Miscellaneous buffer
-              <span class="row-hint">For costs you forgot and prices that rise</span>
-            </label>
-            <div class="percent-field">
-              <input
-                id="fixed-cost-buffer"
-                :value="amountValue(bufferPercent)"
-                inputmode="decimal"
-                autocomplete="off"
-                aria-describedby="fixed-cost-buffer-amount"
-                @input="onBufferInput"
-              />
-              <span aria-hidden="true">%</span>
-            </div>
-            <div class="amount-field amount-derived">
-              <span aria-hidden="true">$</span>
-              <span
-                id="fixed-cost-buffer-amount"
-                class="derived-value"
-                aria-label="Miscellaneous buffer amount"
+              <div
+                v-if="expandedRows.has(row.id)"
+                :id="`breakdown-${row.id}`"
+                class="breakdown"
+                role="group"
+                :aria-label="breakdownLabel(bucket, row)"
               >
-                {{ evaluation.buffer }}
-              </span>
+                <div v-for="item in row.items" :key="item.id" class="sheet-row item-row">
+                  <button
+                    type="button"
+                    class="row-remove"
+                    :aria-label="`Remove ${item.name || 'item'}`"
+                    @click="removeItem(row, item.id)"
+                  >
+                    <CircleMinus :size="15" :stroke-width="1.75" aria-hidden="true" />
+                  </button>
+                  <input
+                    class="name-input"
+                    :value="item.name"
+                    placeholder="Item"
+                    autocomplete="off"
+                    :aria-label="item.name ? `${item.name} name` : 'Item name'"
+                    @input="onNameInput(item, $event)"
+                  />
+                  <div class="amount-field">
+                    <span aria-hidden="true">$</span>
+                    <input
+                      :value="amountValue(item.amount)"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      :aria-label="item.name ? `${item.name} amount` : 'Item amount'"
+                      @input="onAmountInput(item, $event)"
+                    />
+                  </div>
+                </div>
+                <button type="button" class="add-cost add-item" @click="addItem(row)">
+                  <Plus :size="13" :stroke-width="1.75" aria-hidden="true" />
+                  Add an item
+                </button>
+              </div>
             </div>
+
+            <button type="button" class="add-cost add-line" @click="addLine(bucket.id)">
+              <Plus :size="14" :stroke-width="1.75" aria-hidden="true" />
+              {{ bucket.addLabel }}
+            </button>
+
+            <div v-if="bucket.buffer" class="sheet-row buffer-row">
+              <label class="row-label" for="fixed-cost-buffer">
+                Miscellaneous buffer
+                <span class="row-hint">For costs you forgot and prices that rise</span>
+              </label>
+              <div class="percent-field">
+                <input
+                  id="fixed-cost-buffer"
+                  :value="amountValue(bufferPercent)"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  aria-describedby="fixed-cost-buffer-amount"
+                  @input="onBufferInput"
+                />
+                <span aria-hidden="true">%</span>
+              </div>
+              <div class="amount-field amount-derived">
+                <span aria-hidden="true">$</span>
+                <span
+                  id="fixed-cost-buffer-amount"
+                  class="derived-value"
+                  aria-label="Miscellaneous buffer amount"
+                >
+                  {{ evaluation.buffer }}
+                </span>
+              </div>
+            </div>
+
+            <div class="sheet-row total-row">
+              <span class="row-label">Total</span>
+              <div class="total-amount" :aria-label="`${bucket.title} total`">
+                <span>{{ formatPlanAmount(evaluation.buckets[bucket.id].amount) }}</span>
+                <span
+                  v-if="evaluation.buckets[bucket.id].share != null"
+                  class="total-share"
+                  :class="{ 'total-share-over': evaluation.buckets[bucket.id].flagged }"
+                >
+                  {{ evaluation.buckets[bucket.id].share }}%
+                </span>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <section class="plan-block" aria-labelledby="plan-section-heading-guilt-free">
+          <div class="block-heading">
+            <h2 id="plan-section-heading-guilt-free">{{ PLAN_TITLES.guiltFree }}</h2>
+            <p class="block-hint">{{ targetHint(PLAN_TARGETS.guiltFree) }}</p>
           </div>
 
-          <div class="sheet-row total-row">
-            <span class="row-label">Total</span>
-            <div class="total-amount" :aria-label="`${bucket.title} total`">
-              <span>{{ formatPlanAmount(evaluation.buckets[bucket.id].amount) }}</span>
-              <span
-                v-if="evaluation.buckets[bucket.id].share != null"
-                class="total-share"
-                :class="{ 'total-share-over': evaluation.buckets[bucket.id].flagged }"
-              >
-                {{ evaluation.buckets[bucket.id].share }}%
-              </span>
-            </div>
+          <div v-if="loadingEstimates" class="sheet-row">
+            <Skeleton width="11rem" height="1rem" />
+            <Skeleton width="6.5rem" height="1.5rem" />
           </div>
-        </template>
-      </section>
-
-      <section class="plan-block" aria-labelledby="plan-section-heading-guilt-free">
-        <div class="block-heading">
-          <h2 id="plan-section-heading-guilt-free">{{ PLAN_TITLES.guiltFree }}</h2>
-          <p class="block-hint">{{ targetHint(PLAN_TARGETS.guiltFree) }}</p>
-        </div>
-
-        <div v-if="loadingEstimates" class="sheet-row">
-          <Skeleton width="11rem" height="1rem" />
-          <Skeleton width="6.5rem" height="1.5rem" />
-        </div>
-        <p v-else-if="guiltFree.amount == null" class="block-hint guilt-free-empty">
-          Enter your take-home pay to see what’s left to spend.
-        </p>
-        <template v-else>
-          <div class="sheet-row guilt-free-row">
-            <span class="row-label">Left to spend</span>
-            <div
-              class="total-amount"
-              :class="{ 'guilt-free-over': guiltFree.flagged }"
-              aria-label="Guilt-free spending total"
-            >
-              <span>{{ formatPlanAmount(guiltFree.amount) }}</span>
-              <span v-if="guiltFree.share != null" class="total-share">
-                {{ guiltFree.share }}%
-              </span>
-            </div>
-          </div>
-          <p v-if="guiltFree.flagged" class="guilt-free-warning">
-            Your plan is {{ formatPlanAmount(-guiltFree.amount) }} more than your take-home pay.
+          <p v-else-if="guiltFree.amount == null" class="block-hint guilt-free-empty">
+            Enter your take-home pay to see what’s left to spend.
           </p>
-        </template>
-      </section>
-    </form>
+          <template v-else>
+            <div class="sheet-row guilt-free-row">
+              <span class="row-label">Left to spend</span>
+              <div
+                class="total-amount"
+                :class="{ 'guilt-free-over': guiltFree.flagged }"
+                aria-label="Guilt-free spending total"
+              >
+                <span>{{ formatPlanAmount(guiltFree.amount) }}</span>
+                <span v-if="guiltFree.share != null" class="total-share">
+                  {{ guiltFree.share }}%
+                </span>
+              </div>
+            </div>
+            <p v-if="guiltFree.flagged" class="guilt-free-warning">
+              Your plan is {{ formatPlanAmount(-guiltFree.amount) }} more than your take-home pay.
+            </p>
+          </template>
+        </section>
+      </form>
+
+      <SpendingExplorer class="plan-spending" />
+    </div>
 
     <footer class="plan-footer">
+      <button type="button" class="spending-toggle" @click="showSpending = !showSpending">
+        {{ showSpending ? 'Back to your plan' : 'See your spending' }}
+      </button>
       <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
       <p v-else-if="replacing" class="save-note">Saving replaces your current plan.</p>
       <Button
@@ -656,6 +666,34 @@ function amountValue(amount: number | null) {
   color: var(--app-text-secondary);
 }
 
+/* The plan on the left, and the user's spending beside it to choose amounts from. */
+.plan-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-top: 1px solid var(--app-divider);
+}
+
+.plan-spending {
+  flex: none;
+  width: 23rem;
+  border-left: 1px solid var(--app-divider);
+}
+
+.spending-toggle {
+  display: none;
+  margin-right: auto;
+  padding: 0.25rem 0;
+  color: var(--app-text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 .plan-form {
   display: grid;
   --section-gap: 2.25rem;
@@ -668,7 +706,6 @@ function amountValue(amount: number | null) {
   padding: 1.5rem 2.25rem 2rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-top: 1px solid var(--app-divider);
 }
 
 .plan-toolbar {
@@ -1153,6 +1190,32 @@ h2 {
 .guilt-free-warning {
   margin: 0;
   font-size: 0.8125rem;
+}
+
+@media (max-width: 1000px) {
+  .plan-spending {
+    display: none;
+  }
+
+  .showing-spending .plan-form {
+    display: none;
+  }
+
+  .showing-spending .plan-spending {
+    display: flex;
+    flex: 1;
+    width: auto;
+    border-left: 0;
+  }
+
+  .spending-toggle {
+    display: block;
+  }
+
+  .save-error,
+  .save-note {
+    margin: 0;
+  }
 }
 
 @media (max-width: 900px) {

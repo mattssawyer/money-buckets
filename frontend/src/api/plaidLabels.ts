@@ -97,3 +97,13 @@ export function categoryLabel(category: string) {
       .join(' ')
   )
 }
+
+/**
+ * A detailed category as it reads under its primary one: FOOD_AND_DRINK_GROCERIES is
+ * "Groceries" under Food & drink.
+ */
+export function detailedCategoryLabel(primary: string, detailed: string) {
+  const within = detailed.startsWith(`${primary}_`) ? detailed.slice(primary.length + 1) : detailed
+  const words = within.toLowerCase().split('_').join(' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
