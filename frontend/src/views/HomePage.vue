@@ -159,20 +159,39 @@ const spendingLegend = computed(() => {
     })),
   }))
 })
-const spendingChartData = computed(() => ({
-  labels: spendingLegend.value.map((entry) => entry.label),
-  datasets: [
-    {
-      data: spendingLegend.value.map((entry) => entry.amount),
-      backgroundColor: spendingLegend.value.map((entry) => entry.color),
-      hoverBackgroundColor: spendingLegend.value.map((entry) => entry.color),
-      borderColor: '#ffffff',
-      borderWidth: 3,
-      hoverOffset: 0,
-    },
-  ],
+// With nothing spent yet, the card keeps its shape: an empty ring and every bucket at $0.
+const spendingEmpty = computed(() => !spendingLegend.value.length)
+const EMPTY_BUCKETS = (['FIXED_COSTS', 'GUILT_FREE', 'SAVINGS', 'INVESTMENTS'] as const).map(
+  (bucket) => ({ key: bucket, ...BUCKET_STYLES[bucket] }),
+)
+const EMPTY_RING_COLOR = '#ececec'
+const spendingChartData = computed(() => {
+  const slices = spendingEmpty.value
+    ? [{ label: '', amount: 1, color: EMPTY_RING_COLOR }]
+    : spendingLegend.value
+  return {
+    labels: slices.map((entry) => entry.label),
+    datasets: [
+      {
+        data: slices.map((entry) => entry.amount),
+        backgroundColor: slices.map((entry) => entry.color),
+        hoverBackgroundColor: slices.map((entry) => entry.color),
+        borderColor: '#ffffff',
+        borderWidth: spendingEmpty.value ? 0 : 3,
+        hoverOffset: 0,
+      },
+    ],
+  }
+})
+const spendingChartOptions = computed<ChartOptions<'doughnut'>>(() => ({
+  ...SPENDING_CHART_OPTIONS,
+  plugins: {
+    ...SPENDING_CHART_OPTIONS.plugins,
+    // The empty ring is only a placeholder, so there's nothing to point at.
+    tooltip: { ...SPENDING_CHART_OPTIONS.plugins?.tooltip, enabled: !spendingEmpty.value },
+  },
 }))
-const spendingChartOptions: ChartOptions<'doughnut'> = {
+const SPENDING_CHART_OPTIONS: ChartOptions<'doughnut'> = {
   responsive: true,
   maintainAspectRatio: false,
   cutout: '76%',
@@ -935,9 +954,6 @@ async function openPlaidLink() {
 
           <section
             class="panel spending-card"
-            :class="{
-              'spending-card-empty': !loadingSpending && !spendingError && !spendingLegend.length,
-            }"
             role="region"
             aria-labelledby="spending-heading"
             :aria-busy="loadingSpending"
@@ -978,25 +994,6 @@ async function openPlaidLink() {
               />
             </div>
 
-            <div v-else-if="!spendingLegend.length" class="spending-empty">
-              <p>
-                {{
-                  spendingPeriod === 'THIS_MONTH'
-                    ? `No spending in ${spendingPeriodName} yet.`
-                    : `No spending in ${spendingPeriodName}.`
-                }}
-              </p>
-              <Button
-                v-if="spendingPeriod === 'THIS_MONTH'"
-                label="See last month"
-                severity="secondary"
-                size="small"
-                text
-                class="spending-empty-action"
-                @click="choosePeriod('LAST_MONTH')"
-              />
-            </div>
-
             <div v-else class="spending-body">
               <p v-if="hasSpendingPlan === false" class="spending-plan-prompt">
                 <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
@@ -1017,7 +1014,38 @@ async function openPlaidLink() {
                   }}</span>
                 </div>
               </div>
-              <ul class="spending-legend">
+              <ul v-if="spendingEmpty" class="spending-legend">
+                <li v-for="entry in EMPTY_BUCKETS" :key="entry.key" class="spending-legend-row">
+                  <span
+                    class="spending-swatch"
+                    :style="{ backgroundColor: entry.color }"
+                    aria-hidden="true"
+                  />
+                  <span class="spending-legend-label">{{ entry.label }}</span>
+                  <span class="spending-legend-amount spending-legend-zero">{{
+                    formatBalance(0)
+                  }}</span>
+                </li>
+              </ul>
+              <div v-if="spendingEmpty" class="spending-empty">
+                <p>
+                  {{
+                    spendingPeriod === 'THIS_MONTH'
+                      ? `Nothing yet in ${spendingPeriodName}.`
+                      : `No spending in ${spendingPeriodName}.`
+                  }}
+                </p>
+                <Button
+                  v-if="spendingPeriod === 'THIS_MONTH'"
+                  label="See last month"
+                  severity="secondary"
+                  size="small"
+                  text
+                  class="spending-empty-action"
+                  @click="choosePeriod('LAST_MONTH')"
+                />
+              </div>
+              <ul v-else class="spending-legend">
                 <li
                   v-for="entry in spendingLegend"
                   :key="entry.key"
@@ -1493,11 +1521,6 @@ h1 {
   white-space: nowrap;
 }
 
-/* With nothing to chart, the card shrinks to its message instead of filling the column. */
-.spending-card-empty {
-  align-self: start;
-}
-
 .spending-empty {
   display: flex;
   flex-wrap: wrap;
@@ -1505,7 +1528,18 @@ h1 {
   justify-content: space-between;
   gap: 0.25rem 0.75rem;
   color: var(--app-text-secondary);
+  font-size: 0.8125rem;
   line-height: 1.65;
+}
+
+/* The $0 rows aren't buttons; there's nothing to open. */
+li.spending-legend-row {
+  cursor: default;
+}
+
+.spending-legend-zero {
+  color: var(--app-text-secondary);
+  font-weight: 400;
 }
 
 .spending-empty p {

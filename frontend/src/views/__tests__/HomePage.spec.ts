@@ -835,15 +835,21 @@ describe('homepage spending breakdown', () => {
     expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
   })
 
-  it('shrinks to a short note when the month has no spending yet, and offers last month', async () => {
+  it('keeps its shape at zero, with every bucket at $0, and offers last month', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getSpendingByBucket).mockResolvedValueOnce({ ...spending, total: 0, buckets: [] })
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(wrapper.text()).toContain(`No spending in ${periodName('THIS_MONTH')} yet.`)
-    expect(wrapper.find('.chart-stub').exists()).toBe(false)
-    expect(wrapper.get('.spending-card').classes()).toContain('spending-card-empty')
+    expect(wrapper.find('.chart-stub').exists()).toBe(true)
+    expect(wrapper.get('.spending-total-amount').text()).toBe('$0')
+    expect(wrapper.findAll('.spending-legend > li').map((row) => row.text())).toEqual([
+      'Fixed costs$0.00',
+      'Guilt-free spending$0.00',
+      'Savings$0.00',
+      'Investments$0.00',
+    ])
+    expect(wrapper.text()).toContain(`Nothing yet in ${periodName('THIS_MONTH')}.`)
 
     await button(wrapper, 'See last month').trigger('click')
     await flushPromises()
@@ -853,7 +859,7 @@ describe('homepage spending breakdown', () => {
       'value',
       'LAST_MONTH',
     )
-    expect(wrapper.find('.chart-stub').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('See last month')
     expect(localStorage.getItem('moneyBuckets.spendingPeriod')).toBe('LAST_MONTH')
   })
 
