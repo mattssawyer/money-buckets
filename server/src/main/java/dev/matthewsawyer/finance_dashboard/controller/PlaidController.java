@@ -41,6 +41,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -67,6 +68,9 @@ public class PlaidController {
             Bucket.SAVINGS.name(),
             Bucket.INVESTMENTS.name(),
             UNSORTED);
+
+    /** The longest period the spending breakdown covers, about a year. */
+    static final int MAX_SPENDING_DAYS = 366;
 
     private final PlaidItemLinking itemLinking;
     private final PlaidItemRepository plaidItemRepository;
@@ -374,14 +378,28 @@ public class PlaidController {
         }
     }
 
+    /**
+     * Spending between {@code start} and {@code end}, both included. The browser sends them in the
+     * user's time zone, so a month starts at their midnight rather than the server's. Without
+     * them, it's the current calendar month.
+     */
     @GetMapping("/spending/by-bucket")
     public SpendingByBucketResponse getSpendingByBucket(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(name = "account_id", required = false) String accountId
+            @RequestParam(name = "account_id", required = false) String accountId,
+            @RequestParam(name = "start", required = false) LocalDate requestedStart,
+            @RequestParam(name = "end", required = false) LocalDate requestedEnd
     ) {
         User user = userService.getOrCreateUser(jwt);
-        LocalDate start = LocalDate.now().withDayOfMonth(1);
-        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+        if ((requestedStart == null) != (requestedEnd == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "start and end go together");
+        }
+        LocalDate start = requestedStart != null ? requestedStart : LocalDate.now().withDayOfMonth(1);
+        LocalDate end = requestedEnd != null ? requestedEnd : start.withDayOfMonth(start.lengthOfMonth());
+        if (end.isBefore(start) || ChronoUnit.DAYS.between(start, end) > MAX_SPENDING_DAYS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "end must be on or after start, at most " + MAX_SPENDING_DAYS + " days later");
+        }
 
         PayeeLookup.Payees payees = payeeLookup.forUser(user.getId());
         // Newest first from the query, and kept in that order within each category.

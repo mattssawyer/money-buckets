@@ -25,6 +25,7 @@ import {
   type SpendingByBucket,
 } from '../../api/PlaidService'
 import { getSpendingPlan, type SpendingPlanResponse } from '../../api/SpendingPlanService'
+import { periodName, periodRange } from '../../spending/period'
 
 vi.mock('../../api/SpendingPlanService', () => ({
   getSpendingPlan: vi.fn<() => Promise<SpendingPlanResponse | null>>(),
@@ -619,7 +620,10 @@ describe('homepage spending breakdown', () => {
 
     const slices = wrapper.findAll('.chart-stub li').map((slice) => slice.text())
     expect(slices).toEqual(['Fixed costs: 1532.5', 'Guilt-free spending: 12', 'Savings: 300'])
-    expect(wrapper.get('#spending-heading').text()).toContain('September')
+    expect(wrapper.get('[aria-label="Spending period"]').element).toHaveProperty(
+      'value',
+      'THIS_MONTH',
+    )
     const buckets = wrapper.findAll('.spending-legend > li > button').map((row) => row.text())
     expect(buckets).toEqual(['Fixed costs$1,532.50', 'Guilt-free spending$12.00', 'Savings$300.00'])
     expect(wrapper.get('.spending-total-amount').text()).toBe('$1,845')
@@ -831,14 +835,47 @@ describe('homepage spending breakdown', () => {
     expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
   })
 
-  it('shows an empty state instead of a blank chart', async () => {
+  it('keeps its shape at zero, with every bucket at $0, and offers last month', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
-    vi.mocked(getSpendingByBucket).mockResolvedValue({ ...spending, total: 0, buckets: [] })
+    vi.mocked(getSpendingByBucket).mockResolvedValueOnce({ ...spending, total: 0, buckets: [] })
     const wrapper = mountHome()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('No spending recorded this month yet.')
-    expect(wrapper.find('.chart-stub').exists()).toBe(false)
+    expect(wrapper.find('.chart-stub').exists()).toBe(true)
+    expect(wrapper.get('.spending-total-amount').text()).toBe('$0')
+    expect(wrapper.findAll('.spending-legend > li').map((row) => row.text())).toEqual([
+      'Fixed costs$0.00',
+      'Guilt-free spending$0.00',
+      'Savings$0.00',
+      'Investments$0.00',
+    ])
+    expect(wrapper.text()).toContain(`Nothing yet in ${periodName('THIS_MONTH')}.`)
+
+    await button(wrapper, 'See last month').trigger('click')
+    await flushPromises()
+
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, periodRange('LAST_MONTH'))
+    expect(wrapper.get('[aria-label="Spending period"]').element).toHaveProperty(
+      'value',
+      'LAST_MONTH',
+    )
+    expect(wrapper.text()).not.toContain('See last month')
+    expect(localStorage.getItem('moneyBuckets.spendingPeriod')).toBe('LAST_MONTH')
+  })
+
+  it('loads the period the user picks, and starts on it next time', async () => {
+    localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_30_DAYS')
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, periodRange('LAST_30_DAYS'))
+    expect(wrapper.text()).toContain('in the last 30 days')
+
+    await wrapper.get('[aria-label="Spending period"]').setValue('LAST_90_DAYS')
+    await flushPromises()
+
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, periodRange('LAST_90_DAYS'))
   })
 
   it('keeps the rest of the dashboard working when the breakdown fails', async () => {
@@ -871,7 +908,7 @@ describe('homepage account selector', () => {
     expect(wrapper.get('.balance-amount').text()).toBe('$9,650.50')
     expect(wrapper.get('[aria-label="Account"]').element).toHaveProperty('value', '')
     expect(getTransactions).toHaveBeenLastCalledWith(25, undefined)
-    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined)
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, periodRange('THIS_MONTH'))
     expect(getRecurringTransactions).toHaveBeenLastCalledWith(undefined, 20)
 
     await wrapper.get('[aria-label="Account"]').setValue('savings')
@@ -879,7 +916,7 @@ describe('homepage account selector', () => {
 
     expect(wrapper.get('.balance-amount').text()).toBe('$8,400.00')
     expect(getTransactions).toHaveBeenLastCalledWith(25, 'savings')
-    expect(getSpendingByBucket).toHaveBeenLastCalledWith('savings')
+    expect(getSpendingByBucket).toHaveBeenLastCalledWith('savings', periodRange('THIS_MONTH'))
     expect(getRecurringTransactions).toHaveBeenLastCalledWith('savings', 20)
 
     await wrapper.get('[aria-label="Account"]').setValue('')
