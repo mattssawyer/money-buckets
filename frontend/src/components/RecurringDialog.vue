@@ -310,7 +310,7 @@ function formatAmount(stream: RecurringStream) {
                 label="Undo"
                 size="small"
                 severity="secondary"
-                text
+                outlined
                 :aria-label="`Undo dismissing ${recurringLabel(row)}`"
                 @click="answer(row, null)"
               />
@@ -319,7 +319,7 @@ function formatAmount(stream: RecurringStream) {
                 label="Not recurring"
                 size="small"
                 severity="secondary"
-                text
+                outlined
                 :aria-label="`${recurringLabel(row)} doesn’t repeat`"
                 @click="answer(row, false)"
               />
@@ -523,13 +523,17 @@ function formatAmount(stream: RecurringStream) {
   color: var(--app-success);
 }
 
-/* Every list's answers take the same width, so amounts line up down the list. */
+/*
+ * Every list's answers take the same width, so amounts line up down the list. They're outlined
+ * buttons rather than bare text, which read as a status column.
+ */
 .answers {
   display: flex;
   flex: none;
   justify-content: flex-end;
   gap: 0.25rem;
-  min-width: 7rem;
+  min-width: 7.5rem;
+  margin-left: 0.5rem;
 }
 
 @media (max-width: 640px) {
