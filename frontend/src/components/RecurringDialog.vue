@@ -7,8 +7,10 @@ import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import RecurringEditor from './RecurringEditor.vue'
 import {
+  answerRecurringCandidate,
   getRecurringCandidates,
   getRecurringTransactions,
+  undoRecurringAnswer,
   type RecurringStatus,
   type RecurringStream,
 } from '../api/PlaidService'
@@ -56,6 +58,30 @@ function edit(stream: RecurringStream) {
 function onEdited() {
   void load()
   emit('changed')
+}
+
+// The row whose answer is being saved; answers are saved one at a time.
+const answering = ref<string>()
+const answerError = ref('')
+
+/**
+ * Saves whether a row's payee repeats straight from the table, or with null forgets the answer.
+ * Setting how often it's paid is left to the editor.
+ */
+async function answer(stream: RecurringStream, repeats: boolean | null) {
+  if (answering.value || !stream.kind || !stream.merchant_key) return
+  const payee = { kind: stream.kind, merchant_key: stream.merchant_key }
+  answering.value = stream.stream_id
+  answerError.value = ''
+  try {
+    if (repeats === null) await undoRecurringAnswer(payee)
+    else await answerRecurringCandidate(payee, repeats)
+    onEdited()
+  } catch {
+    answerError.value = 'We couldn’t save your answer. Please try again.'
+  } finally {
+    answering.value = undefined
+  }
 }
 
 // Only the newest request may fill the table, in case the account changes mid-flight.
@@ -147,8 +173,12 @@ function formatAmount(stream: RecurringStream) {
       <Button label="Try again" severity="secondary" @click="load" />
     </div>
 
+    <Message v-if="answerError && !error" severity="error" class="answer-error">
+      {{ answerError }}
+    </Message>
+
     <DataTable
-      v-else
+      v-if="!error"
       :value="rows"
       data-key="stream_id"
       :loading="loading"
@@ -211,6 +241,52 @@ function formatAmount(stream: RecurringStream) {
           </span>
         </template>
       </Column>
+
+      <Column header="Recurring?" class="answer-column">
+        <template #body="{ data }: { data: RecurringStream }">
+          <span v-if="data.kind && data.merchant_key" class="answers">
+            <template v-if="data.status === 'SUGGESTED'">
+              <Button
+                label="Yes"
+                size="small"
+                severity="secondary"
+                :disabled="answering !== undefined"
+                :aria-label="`Yes, ${recurringLabel(data)} repeats`"
+                @click="answer(data, true)"
+              />
+              <Button
+                label="No"
+                size="small"
+                severity="secondary"
+                text
+                :disabled="answering !== undefined"
+                :aria-label="`No, ${recurringLabel(data)} doesn’t repeat`"
+                @click="answer(data, false)"
+              />
+            </template>
+            <Button
+              v-else-if="data.status === 'DISMISSED'"
+              label="Undo"
+              size="small"
+              severity="secondary"
+              text
+              :disabled="answering !== undefined"
+              :aria-label="`Undo dismissing ${recurringLabel(data)}`"
+              @click="answer(data, null)"
+            />
+            <Button
+              v-else
+              label="Not recurring"
+              size="small"
+              severity="secondary"
+              text
+              :disabled="answering !== undefined"
+              :aria-label="`${recurringLabel(data)} doesn’t repeat`"
+              @click="answer(data, false)"
+            />
+          </span>
+        </template>
+      </Column>
     </DataTable>
     <RecurringEditor v-model:visible="editorVisible" :stream="editing" @changed="onEdited" />
   </Dialog>
@@ -268,6 +344,19 @@ function formatAmount(stream: RecurringStream) {
 
 .recurring-table :deep(th.amount-column .p-datatable-column-header-content) {
   justify-content: flex-end;
+}
+
+.answer-error {
+  margin-bottom: 0.75rem;
+}
+
+.recurring-table :deep(.answer-column) {
+  white-space: nowrap;
+}
+
+.answers {
+  display: inline-flex;
+  gap: 0.25rem;
 }
 
 .table-empty {

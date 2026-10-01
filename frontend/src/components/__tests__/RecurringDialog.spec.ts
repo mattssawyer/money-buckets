@@ -120,12 +120,71 @@ describe('recurring dialog', () => {
     expect(getRecurringTransactions).toHaveBeenCalledWith('checking', 50, true)
     expect(getRecurringCandidates).toHaveBeenCalledWith('checking')
     expect(rowTexts(wrapper)).toEqual([
-      ['AAlabama Power', 'Monthly', 'Next Oct 17', 'Recurring', '-$155.59'],
-      ['SSterling Group', 'Every 3 months', 'Next Dec 29', 'Confirmed by you', '-$1,554.91'],
-      ['CCursor', 'Monthly', 'Last Sep 1', 'Possibly recurring', '-$20.00'],
-      ['YYouTube', '', '', 'Not recurring', '-$13.99'],
+      ['AAlabama Power', 'Monthly', 'Next Oct 17', 'Recurring', '-$155.59', 'Not recurring'],
+      [
+        'SSterling Group',
+        'Every 3 months',
+        'Next Dec 29',
+        'Confirmed by you',
+        '-$1,554.91',
+        'Not recurring',
+      ],
+      ['CCursor', 'Monthly', 'Last Sep 1', 'Possibly recurring', '-$20.00', 'YesNo'],
+      ['YYouTube', '', '', 'Not recurring', '-$13.99', 'Undo'],
     ])
     expect(wrapper.text()).toContain('Checking ••1234 · 2 recurring')
+  })
+
+  it('answers in one click from the table: not recurring, yes, no and undo', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+    expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
+      { kind: 'BILL', merchant_key: 'alabama power' },
+      false,
+    )
+    // The table loads again, and so does whatever opened it.
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+
+    await wrapper.get('button[aria-label="Yes, Cursor repeats"]').trigger('click')
+    await flushPromises()
+    expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
+      { kind: 'BILL', merchant_key: 'cursor' },
+      true,
+    )
+
+    await wrapper.get('button[aria-label="No, Cursor doesn’t repeat"]').trigger('click')
+    await flushPromises()
+    expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
+      { kind: 'BILL', merchant_key: 'cursor' },
+      false,
+    )
+
+    await wrapper.get('button[aria-label="Undo dismissing YouTube"]').trigger('click')
+    await flushPromises()
+    expect(undoRecurringAnswer).toHaveBeenCalledWith({ kind: 'BILL', merchant_key: 'youtube' })
+    expect(wrapper.emitted('changed')).toHaveLength(4)
+  })
+
+  it('says so when a one-click answer can’t be saved, and offers none without a payee', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      power,
+      { ...power, stream_id: 'unnamed', merchant_name: 'Mystery', kind: null, merchant_key: null },
+    ])
+    vi.mocked(answerRecurringCandidate).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+
+    expect(wrapper.find('button[aria-label="Mystery doesn’t repeat"]').exists()).toBe(false)
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('We couldn’t save your answer. Please try again.')
+    expect(wrapper.emitted('changed')).toBeUndefined()
   })
 
   it('lets you say a payee Plaid detects doesn’t repeat', async () => {
