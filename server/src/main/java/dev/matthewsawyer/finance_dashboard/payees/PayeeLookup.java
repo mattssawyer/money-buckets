@@ -86,6 +86,22 @@ public class PayeeLookup {
                     : transaction.getPersonalFinanceCategoryPrimary();
         }
 
+        /**
+         * The plan line Jev put the transaction's payee on, or null: the payee is on no line, or
+         * the transaction is sorted into another bucket than the line's, as when the user
+         * corrected the payee into guilt-free spending.
+         */
+        public RecurringPayee line(PlaidTransaction transaction) {
+            RecurringMerchant payee = RecurringMerchant.of(transaction);
+            RecurringPayee judgment = payee == null ? null : judged.get(payee);
+            if (judgment == null || judgment.getPlanBucket() == null || judgment.getPlanLine() == null
+                    || transaction.getBucket() == null
+                    || !transaction.getBucket().name().equals(judgment.getPlanBucket().name())) {
+                return null;
+            }
+            return judgment;
+        }
+
         public Recurring recurring(PlaidTransaction transaction) {
             RecurringMerchant payee = RecurringMerchant.of(transaction);
             if (payee == null) {

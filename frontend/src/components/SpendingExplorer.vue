@@ -11,6 +11,7 @@ import {
   searchHistory,
   selectionHistory,
   spendingHistory,
+  type CategoryGroup,
   type CategoryHistory,
   type HistoryMonths,
   type PayeeHistory,
@@ -71,6 +72,19 @@ const coverage = computed(() => {
   if (!first || !last) return ''
   return first === last ? monthLabel(first) : `${monthLabel(first)}–${monthLabel(last)}`
 })
+
+/**
+ * A bucket's plan lines, then its spending on no line by category. The second part is only
+ * headed where there are lines above it; guilt-free spending has none.
+ */
+function parts(group: CategoryGroup) {
+  const lines = group.categories.filter((category) => category.onLine)
+  const others = group.categories.filter((category) => !category.onLine)
+  return [
+    { heading: null, categories: lines },
+    { heading: lines.length ? 'On no line' : null, categories: others },
+  ].filter((part) => part.categories.length > 0)
+}
 
 onMounted(load)
 
@@ -151,8 +165,8 @@ function amount(value: number) {
         </select>
       </div>
       <p class="explorer-hint">
-        What you spend in a month on average, to help you choose each amount. Pick categories or
-        payees to add them up.
+        What you spend in a month on average, by the plan line each payee belongs on, to help you
+        choose each amount. Pick lines, categories or payees to add them up.
       </p>
     </header>
 
@@ -194,8 +208,8 @@ function amount(value: number) {
         <input
           type="search"
           :value="query"
-          placeholder="Search categories or payees"
-          aria-label="Search categories or payees"
+          placeholder="Search lines, categories or payees"
+          aria-label="Search lines, categories or payees"
           autocomplete="off"
           @input="onQueryInput"
         />
@@ -204,46 +218,52 @@ function amount(value: number) {
       <p v-if="groups.length === 0" class="explorer-empty">Nothing matches “{{ query.trim() }}”.</p>
 
       <section v-for="group in groups" :key="group.key" class="group" :aria-label="group.label">
-        <h3 class="group-heading">{{ group.label }}</h3>
-        <ul class="categories">
-          <li v-for="category in group.categories" :key="category.key">
-            <div class="pick-row">
-              <button
-                type="button"
-                class="row-toggle"
-                :class="{ 'row-toggle-open': isOpen(category) }"
-                :aria-expanded="isOpen(category)"
-                :aria-label="`Show ${category.label} payees`"
-                @click="toggleOpen(category)"
-              >
-                <ChevronRight :size="14" :stroke-width="1.75" aria-hidden="true" />
-              </button>
-              <label class="pick">
-                <input
-                  type="checkbox"
-                  :checked="pickedCategories.has(category.key)"
-                  @change="toggleCategory(category)"
-                />
-                <span class="pick-name">{{ category.label }}</span>
-              </label>
-              <span class="pick-amount">{{ amount(category.average) }}</span>
-            </div>
-            <ul v-if="isOpen(category)" class="payees" :aria-label="`${category.label} payees`">
-              <li v-for="payee in category.payees" :key="payee.key" class="pick-row payee-row">
+        <h3 class="group-heading">
+          <span>{{ group.label }}</span>
+          <span v-if="!searching" class="group-amount">{{ amount(group.average) }}</span>
+        </h3>
+        <template v-for="part in parts(group)" :key="part.heading ?? 'lines'">
+          <p v-if="part.heading" class="part-heading">{{ part.heading }}</p>
+          <ul class="categories">
+            <li v-for="category in part.categories" :key="category.key">
+              <div class="pick-row">
+                <button
+                  type="button"
+                  class="row-toggle"
+                  :class="{ 'row-toggle-open': isOpen(category) }"
+                  :aria-expanded="isOpen(category)"
+                  :aria-label="`Show ${category.label} payees`"
+                  @click="toggleOpen(category)"
+                >
+                  <ChevronRight :size="14" :stroke-width="1.75" aria-hidden="true" />
+                </button>
                 <label class="pick">
                   <input
                     type="checkbox"
-                    :checked="pickedCategories.has(category.key) || pickedPayees.has(payee.key)"
-                    :disabled="pickedCategories.has(category.key)"
-                    @change="togglePayee(payee)"
+                    :checked="pickedCategories.has(category.key)"
+                    @change="toggleCategory(category)"
                   />
-                  <span class="pick-name">{{ payee.name }}</span>
+                  <span class="pick-name">{{ category.label }}</span>
                 </label>
-                <span class="pick-amount">{{ amount(payee.average) }}</span>
-              </li>
-            </ul>
-          </li>
-        </ul>
+                <span class="pick-amount">{{ amount(category.average) }}</span>
+              </div>
+              <ul v-if="isOpen(category)" class="payees" :aria-label="`${category.label} payees`">
+                <li v-for="payee in category.payees" :key="payee.key" class="pick-row payee-row">
+                  <label class="pick">
+                    <input
+                      type="checkbox"
+                      :checked="pickedCategories.has(category.key) || pickedPayees.has(payee.key)"
+                      :disabled="pickedCategories.has(category.key)"
+                      @change="togglePayee(payee)"
+                    />
+                    <span class="pick-name">{{ payee.name }}</span>
+                  </label>
+                  <span class="pick-amount">{{ amount(payee.average) }}</span>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </template>
       </section>
     </template>
   </aside>
@@ -424,7 +444,24 @@ h2 {
 }
 
 .group-heading {
-  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0.35rem 0 0.1rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--app-divider);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.group-amount {
+  color: var(--app-text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.part-heading {
+  margin: 0.5rem 0 0;
   color: var(--app-text-subdued);
   font-size: 0.75rem;
   font-weight: 500;

@@ -1,5 +1,6 @@
-import type { SpendingByBucket } from '../api/PlaidService'
+import type { Bucket, SpendingByBucket } from '../api/PlaidService'
 import {
+  BUCKET_STYLES,
   categoryLabel,
   detailedCategoryLabel,
   transactionLabel,
@@ -42,15 +43,21 @@ export interface PayeeHistory {
   average: number
 }
 
+/**
+ * What a bucket's spending is listed by: a plan line, for payees Jev put on one, or a Plaid
+ * category for the spending on no line.
+ */
 export interface CategoryHistory {
   key: string
   label: string
+  /** Whether this is one of the plan's lines rather than a category of spending on no line. */
+  onLine: boolean
   average: number
   /** Largest first. */
   payees: PayeeHistory[]
 }
 
-/** A Plaid primary category and the detailed ones within it, largest first. */
+/** A bucket's spending: its plan lines first, then the categories on no line, each largest first. */
 export interface CategoryGroup {
   key: string
   label: string
@@ -81,7 +88,13 @@ export interface SelectionHistory {
   byMonth: number[]
 }
 
-/** Spending in every bucket, regrouped by category and payee with monthly averages. */
+/** The order buckets are listed in, following the plan, with what isn't sorted yet last. */
+const BUCKET_ORDER: Bucket[] = ['FIXED_COSTS', 'INVESTMENTS', 'SAVINGS', 'GUILT_FREE', 'UNSORTED']
+
+/**
+ * Spending in every bucket, regrouped by plan line and payee with monthly averages. Spending at
+ * payees on no line, which is all of guilt-free spending, is listed by Plaid category instead.
+ */
 export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
   const transactions = spending.buckets.flatMap((bucket) =>
     bucket.categories.flatMap((category) => category.transactions),
@@ -96,23 +109,33 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
   if (transactions.length === 0) return { months: [], groups: [], entries: [] }
 
   const entries: Entry[] = []
-  const groups = new Map<string, Map<string, { label: string; payees: Map<string, number> }>>()
-  for (const transaction of transactions) {
-    const primary = transaction.category ?? 'UNCATEGORIZED'
-    const detailed = transaction.category_detailed
-    const category = `${primary}/${detailed ?? ''}`
-    const payee = transactionLabel(transaction)
-    const amount = yourAmount(transaction)
-    entries.push({ category, payee, month: months.indexOf(transaction.date.slice(0, 7)), amount })
+  const groups = new Map<
+    Bucket,
+    Map<string, { label: string; onLine: boolean; payees: Map<string, number> }>
+  >()
+  for (const bucket of spending.buckets) {
+    const categories = groups.get(bucket.bucket) ?? new Map()
+    groups.set(bucket.bucket, categories)
+    for (const transaction of bucket.categories.flatMap((category) => category.transactions)) {
+      const primary = transaction.category ?? 'UNCATEGORIZED'
+      const detailed = transaction.category_detailed
+      const line = transaction.plan_line
+      const category = line
+        ? `${bucket.bucket}/line/${line}`
+        : `${bucket.bucket}/category/${primary}/${detailed ?? ''}`
+      const payee = transactionLabel(transaction)
+      const amount = yourAmount(transaction)
+      entries.push({ category, payee, month: months.indexOf(transaction.date.slice(0, 7)), amount })
 
-    const categories = groups.get(primary) ?? new Map()
-    groups.set(primary, categories)
-    const found = categories.get(category) ?? {
-      label: detailed ? detailedCategoryLabel(primary, detailed) : categoryLabel(primary),
-      payees: new Map<string, number>(),
+      const found = categories.get(category) ?? {
+        label:
+          line ?? (detailed ? detailedCategoryLabel(primary, detailed) : categoryLabel(primary)),
+        onLine: line != null,
+        payees: new Map<string, number>(),
+      }
+      categories.set(category, found)
+      found.payees.set(payee, (found.payees.get(payee) ?? 0) + amount)
     }
-    categories.set(category, found)
-    found.payees.set(payee, (found.payees.get(payee) ?? 0) + amount)
   }
 
   const perMonth = (total: number) => roundCents(total / months.length)
@@ -123,12 +146,16 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
   return {
     months,
     entries,
-    groups: [...groups]
-      .map(([primary, categories]) => {
+    groups: BUCKET_ORDER.flatMap((bucket) => {
+      const categories = groups.get(bucket)
+      return categories ? [[bucket, categories] as const] : []
+    })
+      .map(([bucket, categories]) => {
         const listed = [...categories]
           .map(([key, category]) => ({
             key,
             label: category.label,
+            onLine: category.onLine,
             average: perMonth(sum([...category.payees.values()])),
             payees: [...category.payees]
               .map(([name, total]) => ({
@@ -140,16 +167,15 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
               .sort(largestFirst),
           }))
           .filter(spent)
-          .sort(largestFirst)
+          .sort((a, b) => Number(b.onLine) - Number(a.onLine) || largestFirst(a, b))
         return {
-          key: primary,
-          label: categoryLabel(primary),
+          key: bucket,
+          label: BUCKET_STYLES[bucket].label,
           average: roundCents(sum(listed.map((category) => category.average))),
           categories: listed,
         }
       })
-      .filter((group) => group.categories.length > 0)
-      .sort(largestFirst),
+      .filter((group) => group.categories.length > 0),
   }
 }
 
@@ -173,7 +199,7 @@ export function selectionHistory(history: SpendingHistory, selection: Selection)
 }
 
 /**
- * The groups with a category or payee matching what the user typed. A category matching by its
+ * The groups with a line, category or payee matching what the user typed. A category matching by its
  * own or its group's name keeps all its payees; otherwise only the payees that match.
  */
 export function searchHistory(groups: CategoryGroup[], query: string): CategoryGroup[] {

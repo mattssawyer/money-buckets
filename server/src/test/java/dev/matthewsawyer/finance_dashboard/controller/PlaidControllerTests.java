@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -305,6 +306,35 @@ class PlaidControllerTests {
         assertEquals(51, response.total());
         assertEquals("txn-51", response.transactions().get(0).transactionId());
         assertNull(response.transactions().get(0).bucket());
+    }
+
+    @Test
+    void showsThePlanLineOfAPayeeWhileItsSpendingIsSortedIntoThatLinesBucket() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100));
+        PlaidTransaction groceries = spent("groceries", "97.54", "FOOD_AND_DRINK", Bucket.FIXED_COSTS)
+                .merchantName("Whole Foods");
+        PlaidTransaction treats = spent("treats", "12.00", "FOOD_AND_DRINK", Bucket.GUILT_FREE)
+                .merchantName("Whole Foods");
+        PlaidTransaction coffee = spent("coffee", "6.45", "FOOD_AND_DRINK", Bucket.FIXED_COSTS)
+                .merchantName("Starbucks");
+        when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
+                .thenReturn(List.of(groceries, treats, coffee));
+        RecurringPayee wholeFoods =
+                new RecurringPayee(USER_ID, new RecurringMerchant(RecurringKind.BILL, "whole foods"));
+        wholeFoods.judged(null, null, SpendingPlanBucket.FIXED_COSTS, "Groceries", "state", Instant.now());
+        when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(
+                Map.of(), Map.of(), Map.of(wholeFoods.payee(), wholeFoods), Set.of()));
+
+        Map<String, String> lineById = new HashMap<>();
+        controller.getSpendingByBucket(jwt, null, null, null).buckets().stream()
+                .flatMap(bucket -> bucket.categories().stream())
+                .flatMap(category -> category.transactions().stream())
+                .forEach(shown -> lineById.put(shown.transactionId(), shown.planLine()));
+
+        assertEquals("Groceries", lineById.get("groceries"));
+        assertNull(lineById.get("treats"), "sorted into guilt-free spending, not the line's bucket");
+        assertNull(lineById.get("coffee"), "Starbucks is on no line");
     }
 
     @Test

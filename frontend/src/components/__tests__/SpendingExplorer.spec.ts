@@ -19,7 +19,8 @@ function spent(
   merchant: string,
   amount: number,
   date: string,
-  detailed: string,
+  line: string | null,
+  detailed = 'FOOD_AND_DRINK_GROCERIES',
 ): PlaidTransaction {
   return {
     transaction_id: id,
@@ -34,6 +35,7 @@ function spent(
     category: 'FOOD_AND_DRINK',
     category_detailed: detailed,
     bucket: 'FIXED_COSTS',
+    plan_line: line,
     share_percent: 100,
     payee_key: merchant.toLowerCase(),
     payee_kind: 'BILL',
@@ -50,16 +52,29 @@ const spending: SpendingByBucket = {
   buckets: [
     {
       bucket: 'FIXED_COSTS',
-      amount: 750,
+      amount: 690,
       categories: [
         {
           category: 'FOOD_AND_DRINK',
-          amount: 750,
+          amount: 690,
           transactions: [
-            spent('wf-1', 'Whole Foods', 300, '2026-07-04', 'FOOD_AND_DRINK_GROCERIES'),
-            spent('wf-2', 'Whole Foods', 240, '2026-08-11', 'FOOD_AND_DRINK_GROCERIES'),
-            spent('tj-1', 'Trader Joe’s', 90, '2026-09-20', 'FOOD_AND_DRINK_GROCERIES'),
-            spent('dig-1', 'Dig Inn', 120, '2026-09-02', 'FOOD_AND_DRINK_RESTAURANT'),
+            spent('wf-1', 'Whole Foods', 300, '2026-07-04', 'Groceries'),
+            spent('wf-2', 'Whole Foods', 240, '2026-08-11', 'Groceries'),
+            spent('tj-1', 'Trader Joe’s', 90, '2026-09-20', 'Groceries'),
+            spent('cvs-1', 'CVS', 60, '2026-09-21', null, 'MEDICAL_PHARMACIES_AND_SUPPLEMENTS'),
+          ],
+        },
+      ],
+    },
+    {
+      bucket: 'GUILT_FREE',
+      amount: 60,
+      categories: [
+        {
+          category: 'FOOD_AND_DRINK',
+          amount: 60,
+          transactions: [
+            spent('dig-1', 'Dig Inn', 60, '2026-09-02', null, 'FOOD_AND_DRINK_RESTAURANT'),
           ],
         },
       ],
@@ -109,10 +124,22 @@ describe('spending explorer', () => {
       'Aug$240',
       'Sep$210',
     ])
-    expect(wrapper.findAll('.categories > li > .pick-row').map((row) => row.text())).toEqual([
-      'Groceries$210',
-      'Restaurant$40',
-    ])
+  })
+
+  it('lists each bucket’s plan lines, then its spending on no line by category', async () => {
+    const wrapper = mountExplorer()
+    await flushPromises()
+
+    const [fixedCosts, guiltFree] = wrapper.findAll('section.group')
+    expect(fixedCosts?.get('h3').text()).toBe('Fixed costs$230')
+    expect(
+      fixedCosts?.findAll('.part-heading, .categories > li > .pick-row').map((row) => row.text()),
+    ).toEqual(['Groceries$210', 'On no line', 'Medical pharmacies and supplements$20'])
+    // Guilt-free spending has no lines, so its categories need no heading.
+    expect(guiltFree?.get('h3').text()).toBe('Guilt-free spending$20')
+    expect(
+      guiltFree?.findAll('.part-heading, .categories > li > .pick-row').map((row) => row.text()),
+    ).toEqual(['Restaurant$20'])
   })
 
   it('adds up the categories you pick', async () => {
@@ -125,7 +152,7 @@ describe('spending explorer', () => {
     expect(wrapper.get('.summary-average').text()).toBe('$210 a month on average')
 
     await checkbox(wrapper, 'Restaurant').setValue(true)
-    expect(wrapper.get('.summary-average').text()).toBe('$250 a month on average')
+    expect(wrapper.get('.summary-average').text()).toBe('$230 a month on average')
 
     await wrapper.get('.summary button').trigger('click')
     expect(wrapper.get('.summary-title').text()).toBe('All spending')

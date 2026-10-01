@@ -101,6 +101,7 @@ const coffee: PlaidTransaction = {
   category: 'FOOD_AND_DRINK',
   category_detailed: 'FOOD_AND_DRINK_COFFEE',
   bucket: 'GUILT_FREE',
+  plan_line: null,
   share_percent: 100,
   payee_key: 'coffee shop',
   payee_kind: 'BILL',

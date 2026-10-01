@@ -86,8 +86,9 @@ LINE_CRITERIA = {
     f"{bucket}: {line}": f"The {line} line, for {BUCKET_MEANINGS[bucket]}"
     for bucket, lines in PLAN_LINES.items() for line in lines
 }
-LINE_CRITERIA["none"] = ("Not a bill, investment or saving: money moved between the user's own checking "
-                         "accounts, credit card payments, payments to friends or family, or shopping.")
+LINE_CRITERIA["none"] = ("Fits none of the lines: money moved between the user's own checking accounts, "
+                         "credit card payments, payments to friends or family, or spending no line names, "
+                         "such as eating out or general shopping.")
 
 LINE_QUESTION = {
     "type": "choice",
@@ -144,6 +145,16 @@ LINES = {
     "Joint checking": "none",
 }
 
+# Where everyday spending belongs. Plan setup shows what the user spends on each line, so
+# shopping a line names goes there and the rest goes on none.
+SPENDING_LINES = {
+    "Whole Foods": "fixed costs: Groceries", "Trader Joe's": "fixed costs: Groceries",
+    "Kroger": "fixed costs: Groceries", "Uniqlo": "fixed costs: Clothes",
+    "Old Navy": "fixed costs: Clothes", "Starbucks": "none", "Chipotle": "none",
+    "Amazon": "none", "The Home Depot": "none", "IKEA": "none", "Best Buy": "none",
+    "Uber": "none", "Venmo": "none",
+}
+
 # (expected, payee, charges)
 CASES = [
     # Obvious subscriptions and bills, from one charge.
@@ -184,6 +195,10 @@ CASES = [
     (False, "Amazon", charges("AMAZON MKTPL*2K4", [43.17, 12.99, 88.40, 25.00], 11, "general merchandise: online marketplaces")),
     (False, "Target", monthly("TARGET 00012", 61.20, 1, "general merchandise: superstores", "in store")),
     (False, "Whole Foods", charges("WHOLEFDS MKT", [97.54, 102.10, 88.35, 110.02, 95.40], 7, "food and drink: groceries", "in store")),
+    (False, "Trader Joe's", charges("TRADER JOE S #552", [54.12, 61.80, 47.33], 9, "food and drink: groceries", "in store")),
+    (False, "Kroger", monthly("KROGER #412", 132.48, 1, "food and drink: groceries", "in store")),
+    (False, "Uniqlo", charges("UNIQLO USA", [59.80, 39.90], 40, "general merchandise: clothing and accessories", "in store")),
+    (False, "Old Navy", monthly("OLDNAVY.COM", 84.50, 1, "general merchandise: clothing and accessories")),
     (False, "Starbucks", charges("STARBUCKS STORE 123", [6.45] * 10, 2.4, "food and drink: coffee", "in store")),
     (False, "Chipotle", charges("CHIPOTLE 1234", [13.85, 12.40, 13.85], 14, "food and drink: fast food", "in store")),
     (False, "Uber", charges("UBER *TRIP", [23.10, 14.80, 31.25], 9, "transportation: taxis and ride shares")),
@@ -245,10 +260,11 @@ def main():
             right += ok
             verdict = " " if ok else "!"
         line_note = ""
-        if expected is not False and payee in LINES:
+        wanted = LINES.get(payee) if expected is not False else SPENDING_LINES.get(payee)
+        if wanted:
             lines_scored += 1
-            lines_right += line == LINES[payee]
-            line_note = f"  -> {line}" + ("" if line == LINES[payee] else f"  (!) expected {LINES[payee]}")
+            lines_right += line == wanted
+            line_note = f"  -> {line}" + ("" if line == wanted else f"  (!) expected {wanted}")
         label = {True: "bill", False: "not", None: "?"}[expected]
         print(f"{verdict} {score:4.2f}  {label:4}  {payee} ×{len(payee_charges)} "
               f"[{payee_charges[0]['plaid_category']}]{line_note}")
