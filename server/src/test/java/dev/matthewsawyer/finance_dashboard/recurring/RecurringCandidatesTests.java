@@ -125,6 +125,21 @@ class RecurringCandidatesTests {
     }
 
     @Test
+    void usesTheFrequencyTheUserSetOverTheChargeDates() {
+        charge("rent-1", "Sterling Group", "1554.91", TODAY.minusDays(93));
+        charge("rent-2", "Sterling Group", "1554.91", TODAY.minusDays(3));
+        judgeBill("sterling group", 0.9, RecurringFrequency.MONTHLY);
+        assertEquals(RecurringFrequency.QUARTERLY, candidates.find(userId, null).get(0).frequency());
+
+        candidates.answer(userId, RecurringKind.BILL, "sterling group", true, RecurringFrequency.MONTHLY);
+
+        RecurringCandidate rent = candidates.find(userId, null).get(0);
+        assertEquals(RecurringFrequency.MONTHLY, rent.frequency());
+        assertTrue(rent.frequencySet());
+        assertEquals(TODAY.minusDays(3).plusMonths(1), rent.nextDate());
+    }
+
+    @Test
     void readsAMonthlyBillAsMonthlyWhenAPaymentIsMissing() {
         charge("rent-1", "Sterling Group", "1554.91", TODAY.minusDays(125));
         charge("rent-2", "Sterling Group", "1554.91", TODAY.minusDays(95));

@@ -32,6 +32,7 @@ const paycheck: RecurringStream = {
   amount: -2400,
   iso_currency_code: 'USD',
   frequency: 'BIWEEKLY',
+  frequency_set: false,
   next_date: '2026-09-25',
   last_date: '2026-09-11',
   is_inflow: true,
@@ -40,6 +41,9 @@ const paycheck: RecurringStream = {
   share_percent: 100,
   plan_bucket: null,
   plan_line: null,
+  kind: null,
+  merchant_key: null,
+  status: 'DETECTED',
 }
 
 const rent: RecurringStream = {
@@ -50,6 +54,7 @@ const rent: RecurringStream = {
   amount: 1450,
   iso_currency_code: 'USD',
   frequency: 'MONTHLY',
+  frequency_set: false,
   next_date: '2026-10-01',
   last_date: '2026-09-01',
   is_inflow: false,
@@ -58,6 +63,9 @@ const rent: RecurringStream = {
   share_percent: 100,
   plan_bucket: 'FIXED_COSTS',
   plan_line: 'Rent/mortgage',
+  kind: null,
+  merchant_key: null,
+  status: 'DETECTED',
 }
 
 function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}) {

@@ -63,7 +63,8 @@ public class RecurringCandidatesController {
         if (request == null || request.kind() == null || request.confirmed() == null) {
             throw badRequest("kind and confirmed are required");
         }
-        candidates.answer(user.getId(), request.kind(), checkMerchantKey(request.merchantKey()), request.confirmed());
+        candidates.answer(user.getId(), request.kind(), checkMerchantKey(request.merchantKey()),
+                request.confirmed(), request.frequency());
     }
 
     /** Forgets an answer, so the merchant is suggested again. */
@@ -81,7 +82,9 @@ public class RecurringCandidatesController {
     public record AnswerRequest(
             @JsonProperty("kind") RecurringKind kind,
             @JsonProperty("merchant_key") String merchantKey,
-            @JsonProperty("confirmed") Boolean confirmed
+            @JsonProperty("confirmed") Boolean confirmed,
+            /** How often a payee that repeats is paid, when the user says; null leaves it automatic. */
+            @JsonProperty("frequency") RecurringFrequency frequency
     ) {
     }
 
@@ -100,6 +103,7 @@ public class RecurringCandidatesController {
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("iso_currency_code") String isoCurrencyCode,
             @JsonProperty("frequency") RecurringFrequency frequency,
+            @JsonProperty("frequency_set") boolean frequencySet,
             @JsonProperty("next_date") LocalDate nextDate,
             @JsonProperty("last_date") LocalDate lastDate,
             @JsonProperty("is_inflow") boolean isInflow,
@@ -122,6 +126,7 @@ public class RecurringCandidatesController {
                     candidate.amount(),
                     candidate.isoCurrencyCode(),
                     candidate.frequency(),
+                    candidate.frequencySet(),
                     candidate.nextDate(),
                     candidate.lastDate(),
                     candidate.kind() == RecurringKind.PAYCHECK,

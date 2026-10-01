@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -168,12 +169,17 @@ public class RecurringPayees {
         return byPayee;
     }
 
-    /** Payees Plaid detects as a recurring stream in the given accounts. */
+    /**
+     * Payees Plaid detects as a recurring stream in the given accounts. A stream whose payments
+     * have stopped doesn't count, so the payee can be found again from its charges elsewhere,
+     * such as a bill now paid from another account.
+     */
     public Set<RecurringMerchant> detectedByPlaid(UUID userId, Collection<String> accountIds) {
+        LocalDate today = LocalDate.now(clock);
         Set<RecurringMerchant> detected = new HashSet<>();
         for (PlaidRecurringStream stream : streamRepository.findAllByUserIdAndAccountIdIn(userId, accountIds)) {
             RecurringMerchant payee = RecurringMerchant.of(stream);
-            if (payee != null) {
+            if (payee != null && !stream.hasStopped(today)) {
                 detected.add(payee);
             }
         }

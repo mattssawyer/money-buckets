@@ -29,7 +29,7 @@ apiClient.interceptors.request.use(async (config) => {
   const accessToken = await accessTokenProvider?.()
 
   if (accessToken) {
-    config.headers.set("Authorization", `Bearer ${accessToken}`)
+    config.headers.set('Authorization', `Bearer ${accessToken}`)
   }
 
   return config

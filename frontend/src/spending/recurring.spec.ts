@@ -10,6 +10,7 @@ const stream: RecurringStream = {
   amount: 1450,
   iso_currency_code: 'USD',
   frequency: 'MONTHLY',
+  frequency_set: false,
   next_date: '2026-10-01',
   last_date: '2026-09-01',
   is_inflow: false,
@@ -18,6 +19,9 @@ const stream: RecurringStream = {
   share_percent: 100,
   plan_bucket: null,
   plan_line: null,
+  kind: null,
+  merchant_key: null,
+  status: 'DETECTED',
 }
 
 function candidate(overrides: Partial<RecurringCandidate>): RecurringCandidate {

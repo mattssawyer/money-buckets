@@ -9,6 +9,9 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
+import java.time.Clock;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
+import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
@@ -81,7 +84,9 @@ public class PlaidController {
     private final Spending spending;
     private final RecurringPayees recurringPayees;
     private final PayeeLookup payeeLookup;
+    private final RecurringCandidates recurringCandidates;
     private final UserService userService;
+    private final Clock clock;
 
     public PlaidController(
             PlaidItemLinking itemLinking,
@@ -93,7 +98,9 @@ public class PlaidController {
             Spending spending,
             RecurringPayees recurringPayees,
             PayeeLookup payeeLookup,
-            UserService userService
+            RecurringCandidates recurringCandidates,
+            UserService userService,
+            Clock clock
     ) {
         this.itemLinking = itemLinking;
         this.plaidItemRepository = plaidItemRepository;
@@ -104,7 +111,9 @@ public class PlaidController {
         this.spending = spending;
         this.recurringPayees = recurringPayees;
         this.payeeLookup = payeeLookup;
+        this.recurringCandidates = recurringCandidates;
         this.userService = userService;
+        this.clock = clock;
     }
 
     /**
@@ -251,11 +260,17 @@ public class PlaidController {
         itemLinking.recheckRecurring(user.getId());
     }
 
+    /**
+     * Plaid's recurring streams in the tracked accounts, soonest expected first. Streams whose
+     * payments have stopped are left out, and so are payees the user said don't repeat unless
+     * {@code dismissed} asks for them.
+     */
     @GetMapping("/transactions/recurring")
     public Map<String, List<RecurringStreamResponse>> getRecurringTransactions(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(name = "account_id", required = false) String accountId,
-            @RequestParam(name = "limit", required = false) Integer limit
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "dismissed", defaultValue = "false") boolean includeDismissed
     ) {
         User user = userService.getOrCreateUser(jwt);
 
@@ -265,9 +280,17 @@ public class PlaidController {
                 : recurringStreamRepository.findAllByUserIdAndAccountIdIn(user.getId(), shares.keySet());
 
         Map<RecurringMerchant, RecurringPayee> payees = stored.isEmpty() ? Map.of() : recurringPayees.judged(user.getId());
+        Map<RecurringMerchant, RecurringAnswer> answers =
+                stored.isEmpty() ? Map.of() : recurringCandidates.answers(user.getId());
+        LocalDate today = LocalDate.now(clock);
         List<RecurringStreamResponse> streams = stored.stream()
-                .map(stream -> RecurringStreamResponse.from(
-                        stream, shares.get(stream.getAccountId()), payees.get(RecurringMerchant.of(stream))))
+                .filter(stream -> !stream.hasStopped(today))
+                .map(stream -> {
+                    RecurringMerchant payee = RecurringMerchant.of(stream);
+                    return RecurringStreamResponse.from(
+                            stream, shares.get(stream.getAccountId()), payee, payees.get(payee), answers.get(payee));
+                })
+                .filter(stream -> includeDismissed || stream.status() != RecurringStreamResponse.Status.DISMISSED)
                 .sorted(Comparator
                         .comparing(RecurringStreamResponse::nextDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(RecurringStreamResponse::lastDate, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -288,7 +311,9 @@ public class PlaidController {
             @JsonProperty("description") String description,
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("iso_currency_code") String isoCurrencyCode,
+            /** The user's own frequency for the payee if they set one, else Plaid's. */
             @JsonProperty("frequency") String frequency,
+            @JsonProperty("frequency_set") boolean frequencySet,
             @JsonProperty("next_date") LocalDate nextDate,
             @JsonProperty("last_date") LocalDate lastDate,
             @JsonProperty("is_inflow") boolean isInflow,
@@ -298,9 +323,22 @@ public class PlaidController {
             @JsonProperty("share_percent") int sharePercent,
             /** The plan line Jev put the payee's bills under; null for pay, and until it's judged. */
             @JsonProperty("plan_bucket") SpendingPlanBucket planBucket,
-            @JsonProperty("plan_line") String planLine
+            @JsonProperty("plan_line") String planLine,
+            /** Who is paid, as the user's answers are stored; null when Plaid named nobody. */
+            @JsonProperty("kind") RecurringKind kind,
+            @JsonProperty("merchant_key") String merchantKey,
+            @JsonProperty("status") Status status
     ) {
-        static RecurringStreamResponse from(PlaidRecurringStream stream, int sharePercent, RecurringPayee payee) {
+        /** Detected by Plaid, unless the user said the payee doesn't repeat. */
+        public enum Status {
+            DETECTED,
+            DISMISSED
+        }
+
+        static RecurringStreamResponse from(
+                PlaidRecurringStream stream, int sharePercent, RecurringMerchant merchant, RecurringPayee payee,
+                RecurringAnswer answer) {
+            boolean frequencySet = answer != null && answer.getFrequency() != null;
             return new RecurringStreamResponse(
                     stream.getStreamId(),
                     stream.getAccountId(),
@@ -308,7 +346,8 @@ public class PlaidController {
                     stream.getDescription(),
                     stream.getAmount(),
                     stream.getIsoCurrencyCode(),
-                    stream.getFrequency(),
+                    frequencySet ? answer.getFrequency().name() : stream.getFrequency(),
+                    frequencySet,
                     stream.getNextDate(),
                     stream.getLastDate(),
                     stream.isInflow(),
@@ -316,7 +355,10 @@ public class PlaidController {
                     stream.getCategoryDetailed(),
                     sharePercent,
                     payee == null ? null : payee.getPlanBucket(),
-                    payee == null ? null : payee.getPlanLine()
+                    payee == null ? null : payee.getPlanLine(),
+                    merchant == null ? null : merchant.kind(),
+                    merchant == null ? null : merchant.key(),
+                    answer != null && !answer.isConfirmed() ? Status.DISMISSED : Status.DETECTED
             );
         }
     }

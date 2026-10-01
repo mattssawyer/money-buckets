@@ -72,18 +72,22 @@ public class RecurringCandidates {
             return List.of();
         }
 
-        Map<RecurringMerchant, Boolean> answers = new HashMap<>();
-        for (RecurringAnswer answer : answerRepository.findAllByUserId(userId)) {
-            answers.put(new RecurringMerchant(answer.getKind(), answer.getMerchantKey()), answer.isConfirmed());
-        }
-
         return candidates(
                 payees.charges(userId, shares.keySet()),
                 payees.judged(userId),
                 shares,
                 payees.detectedByPlaid(userId, shares.keySet()),
-                answers,
+                answers(userId),
                 LocalDate.now(clock));
+    }
+
+    /** The user's answers, by payee. They cover payees Plaid detects as well as candidates. */
+    public Map<RecurringMerchant, RecurringAnswer> answers(UUID userId) {
+        Map<RecurringMerchant, RecurringAnswer> answers = new HashMap<>();
+        for (RecurringAnswer answer : answerRepository.findAllByUserId(userId)) {
+            answers.put(answer.payee(), answer);
+        }
+        return answers;
     }
 
     /**
@@ -92,17 +96,29 @@ public class RecurringCandidates {
      * winner's instead, in a transaction of its own since the failed insert spoils the first.
      */
     public void answer(UUID userId, RecurringKind kind, String merchantKey, boolean confirmed) {
+        answer(userId, kind, merchantKey, confirmed, null);
+    }
+
+    /**
+     * As {@link #answer(UUID, RecurringKind, String, boolean)}, with how often the user says a
+     * payee that repeats is paid; null leaves the schedule to Plaid or the charge dates.
+     */
+    public void answer(
+            UUID userId, RecurringKind kind, String merchantKey, boolean confirmed, RecurringFrequency frequency) {
         try {
-            transactionTemplate.executeWithoutResult(status -> store(userId, kind, merchantKey, confirmed));
+            transactionTemplate.executeWithoutResult(
+                    status -> store(userId, kind, merchantKey, confirmed, frequency));
         } catch (DataIntegrityViolationException e) {
-            transactionTemplate.executeWithoutResult(status -> store(userId, kind, merchantKey, confirmed));
+            transactionTemplate.executeWithoutResult(
+                    status -> store(userId, kind, merchantKey, confirmed, frequency));
         }
     }
 
-    private void store(UUID userId, RecurringKind kind, String merchantKey, boolean confirmed) {
+    private void store(
+            UUID userId, RecurringKind kind, String merchantKey, boolean confirmed, RecurringFrequency frequency) {
         RecurringAnswer answer = answerRepository.findByUserIdAndKindAndMerchantKey(userId, kind, merchantKey)
                 .orElseGet(() -> new RecurringAnswer(userId, kind, merchantKey));
-        answer.answer(confirmed, Instant.now(clock));
+        answer.answer(confirmed, frequency, Instant.now(clock));
         // Flushed here so a clashing insert fails inside the transaction rather than at commit.
         answerRepository.saveAndFlush(answer);
     }
@@ -126,7 +142,7 @@ public class RecurringCandidates {
             Map<RecurringMerchant, RecurringPayee> judged,
             Map<String, Integer> shares,
             Set<RecurringMerchant> detectedByPlaid,
-            Map<RecurringMerchant, Boolean> answers,
+            Map<RecurringMerchant, RecurringAnswer> answers,
             LocalDate today
     ) {
         List<RecurringCandidate> candidates = new ArrayList<>();
@@ -134,7 +150,8 @@ public class RecurringCandidates {
             if (detectedByPlaid.contains(key)) {
                 return;
             }
-            Boolean answer = answers.get(key);
+            RecurringAnswer answered = answers.get(key);
+            Boolean answer = answered == null ? null : answered.isConfirmed();
             RecurringPayee payee = judged.get(key);
             BigDecimal probability = payee == null ? null : payee.getProbability();
             boolean likely = probability != null && probability.compareTo(SUGGEST_AT) >= 0;
@@ -144,7 +161,8 @@ public class RecurringCandidates {
 
             List<PlaidTransaction> usual = usualCharges(charges);
             PlaidTransaction latest = usual.get(0);
-            RecurringFrequency frequency = frequency(
+            boolean frequencySet = answered != null && answered.getFrequency() != null;
+            RecurringFrequency frequency = frequencySet ? answered.getFrequency() : frequency(
                     usual.stream().map(PlaidTransaction::getTransactionDate).toList(),
                     payee == null ? null : payee.getUsualFrequency());
             LocalDate next = frequency.next(latest.getTransactionDate());
@@ -162,6 +180,7 @@ public class RecurringCandidates {
                     latest.getAmount(),
                     latest.getIsoCurrencyCode(),
                     frequency,
+                    frequencySet,
                     next.isBefore(today) ? null : next,
                     latest.getTransactionDate(),
                     latest.getPersonalFinanceCategoryPrimary(),
