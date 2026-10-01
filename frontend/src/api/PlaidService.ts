@@ -215,9 +215,13 @@ export async function getAccounts(): Promise<PlaidAccount[]> {
   return data.accounts
 }
 
-export async function getSpendingByBucket(accountId?: string): Promise<SpendingByBucket> {
+/** Spending between range.start and range.end, both included; this month without a range. */
+export async function getSpendingByBucket(
+  accountId?: string,
+  range?: { start: string; end: string },
+): Promise<SpendingByBucket> {
   const { data } = await apiClient.get<SpendingByBucket>('/plaid/spending/by-bucket', {
-    params: accountId ? { account_id: accountId } : undefined,
+    params: { ...(accountId ? { account_id: accountId } : {}), ...(range ?? {}) },
   })
   return data
 }

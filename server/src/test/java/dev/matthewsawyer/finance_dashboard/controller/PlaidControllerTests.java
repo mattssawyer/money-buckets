@@ -319,7 +319,7 @@ class PlaidControllerTests {
         when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of("sterling group", correction)));
 
         PlaidController.CategorySpend category =
-                controller.getSpendingByBucket(jwt, null).buckets().get(0).categories().get(0);
+                controller.getSpendingByBucket(jwt, null, null, null).buckets().get(0).categories().get(0);
 
         assertEquals("RENT_AND_UTILITIES", category.category());
         PlaidController.TransactionResponse shown = category.transactions().get(0);
@@ -327,6 +327,37 @@ class PlaidControllerTests {
         assertEquals("sterling group", shown.payeeKey());
         assertTrue(shown.bucketCorrected());
         assertTrue(shown.categoryCorrected());
+    }
+
+    @Test
+    void totalsSpendingForTheRequestedDays() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("checking", 100));
+        LocalDate start = LocalDate.of(2026, 9, 1);
+        LocalDate end = LocalDate.of(2026, 9, 30);
+        when(transactionRepository.findSpending(eq(USER_ID), eq(start), eq(end), eq(Set.of("checking")), anyCollection()))
+                .thenReturn(List.of(spent("rent", "1450.00", "RENT_AND_UTILITIES", Bucket.FIXED_COSTS)));
+
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, start, end);
+
+        assertEquals(start, result.start());
+        assertEquals(end, result.end());
+        assertEquals(new BigDecimal("1450.00"), result.total());
+    }
+
+    @Test
+    void rejectsSpendingPeriodsThatAreBackwardsHalfGivenOrTooLong() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        LocalDate day = LocalDate.of(2026, 9, 30);
+
+        for (LocalDate[] period : List.of(
+                new LocalDate[] {day, day.minusDays(1)},
+                new LocalDate[] {day, null},
+                new LocalDate[] {day.minusDays(PlaidController.MAX_SPENDING_DAYS + 1), day})) {
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> controller.getSpendingByBucket(jwt, null, period[0], period[1]));
+            assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        }
     }
 
     @Test
@@ -340,7 +371,7 @@ class PlaidControllerTests {
                         spent("rent", "1450.00", "RENT_AND_UTILITIES", Bucket.FIXED_COSTS),
                         spent("to-savings", "300.00", "TRANSFER_OUT", Bucket.SAVINGS)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         LocalDate expectedStart = LocalDate.now().withDayOfMonth(1);
         assertEquals(expectedStart, result.start());
@@ -366,7 +397,7 @@ class PlaidControllerTests {
                         spent("coffee-2", "5.00", "FOOD_AND_DRINK", Bucket.GUILT_FREE),
                         spent("coffee-1", "7.50", "FOOD_AND_DRINK", Bucket.GUILT_FREE)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         PlaidController.CategorySpend food = result.buckets().get(0).categories().get(0);
         assertEquals(new BigDecimal("12.50"), food.amount());
@@ -384,7 +415,7 @@ class PlaidControllerTests {
                         spent("flight", "400.00", "TRAVEL", null),
                         spent("brokerage", "500.00", "TRANSFER_OUT", Bucket.INVESTMENTS)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(
                 List.of("INVESTMENTS", "UNSORTED"),
@@ -398,7 +429,7 @@ class PlaidControllerTests {
         when(transactionRepository.findSpending(eq(USER_ID), any(), any(), eq(Set.of("checking")), anyCollection()))
                 .thenReturn(List.of());
 
-        controller.getSpendingByBucket(jwt, null);
+        controller.getSpendingByBucket(jwt, null, null, null);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<String>> excludedCaptor = ArgumentCaptor.forClass(Collection.class);
@@ -421,7 +452,7 @@ class PlaidControllerTests {
                         spent("pharmacy-refund", "-8.00", "MEDICAL", Bucket.FIXED_COSTS),
                         spent("hotel", "300.00", "TRAVEL", Bucket.GUILT_FREE)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(
                 List.of("GUILT_FREE"),
@@ -574,7 +605,7 @@ class PlaidControllerTests {
                 eq(USER_ID), any(), any(), eq(Set.of("account-1")), anyCollection()))
                 .thenReturn(List.of());
 
-        controller.getSpendingByBucket(jwt, "account-1");
+        controller.getSpendingByBucket(jwt, "account-1", null, null);
 
         verify(transactionRepository).findSpending(
                 eq(USER_ID), any(), any(), eq(Set.of("account-1")), anyCollection());
@@ -590,7 +621,7 @@ class PlaidControllerTests {
                         spent("rent", "joint", "2000.00", "RENT_AND_UTILITIES", Bucket.FIXED_COSTS),
                         spent("coffee", "checking", "5.00", "FOOD_AND_DRINK", Bucket.GUILT_FREE)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(new BigDecimal("1005.00"), result.total());
         PlaidController.CategorySpend rent = result.buckets().get(0).categories().get(0);
@@ -614,7 +645,7 @@ class PlaidControllerTests {
                 eq(USER_ID), eq(Set.of("checking", "joint")), any(), any()))
                 .thenReturn(List.of(arrival("from-checking", "joint", "-600.00", today.plusDays(1))));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(new BigDecimal("40.00"), result.total());
         assertEquals(List.of("FIXED_COSTS"),
@@ -637,7 +668,7 @@ class PlaidControllerTests {
                         arrival("roommate", "joint", "-650.00", today),
                         arrival("later", "joint", "-600.00", today.plusDays(4))));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(new BigDecimal("600.00"), result.total());
     }
@@ -651,7 +682,7 @@ class PlaidControllerTests {
                 .thenReturn(List.of(
                         spent("to-savings", "checking", "300.00", "TRANSFER_OUT", Bucket.SAVINGS)));
 
-        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null);
+        PlaidController.SpendingByBucketResponse result = controller.getSpendingByBucket(jwt, null, null, null);
 
         assertEquals(new BigDecimal("300.00"), result.total());
         verify(transactionRepository, never()).findTransfersIn(any(), any(), any(), any());

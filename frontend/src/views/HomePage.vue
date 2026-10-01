@@ -39,6 +39,14 @@ import {
   yourAmount,
 } from '../api/plaidLabels'
 import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
+import {
+  SPENDING_PERIODS,
+  periodName,
+  periodRange,
+  recallPeriod,
+  rememberPeriod,
+  type SpendingPeriod,
+} from '../spending/period'
 import { isConfirmedCandidate, withConfirmed } from '../spending/recurring'
 
 const RECENT_TRANSACTION_COUNT = 25
@@ -131,13 +139,9 @@ const dismissedCandidates = computed(() =>
   candidates.value.filter((candidate) => candidate.status === 'DISMISSED'),
 )
 const spendingTotal = computed(() => spending.value?.total ?? 0)
-const spendingMonth = computed(() =>
-  spending.value
-    ? new Intl.DateTimeFormat('en-US', { month: 'long' }).format(
-        new Date(`${spending.value.start}T00:00:00`),
-      )
-    : '',
-)
+// What the spending card covers; remembered across visits.
+const spendingPeriod = ref<SpendingPeriod>(recallPeriod())
+const spendingPeriodName = computed(() => periodName(spendingPeriod.value))
 // Transactions are sorted into buckets with or without a plan, so spending is always charted by
 // bucket, the same buckets the transactions list shows.
 const spendingLegend = computed(() => {
@@ -339,18 +343,31 @@ async function loadSpendingPlan() {
   }
 }
 
+function onSpendingPeriodChange(event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLSelectElement)) return
+  choosePeriod(target.value as SpendingPeriod)
+}
+
+function choosePeriod(period: SpendingPeriod) {
+  spendingPeriod.value = period
+  rememberPeriod(period)
+  void loadSpending()
+}
+
 async function loadSpending() {
   clearTimeout(unsortedRecheck)
   unsortedRechecks = 0
   loadingSpending.value = true
   spendingError.value = ''
   const accountId = selectedAccountId.value
+  const range = periodRange(spendingPeriod.value)
   const current = startSpending()
   try {
-    const summary = await getSpendingByBucket(accountId)
+    const summary = await getSpendingByBucket(accountId, range)
     if (!current()) return
     spending.value = summary
-    recheckUnsorted(accountId)
+    recheckUnsorted(accountId, range, current)
   } catch {
     if (current()) spendingError.value = 'We couldn’t load your spending breakdown.'
   } finally {
@@ -358,18 +375,23 @@ async function loadSpending() {
   }
 }
 
-// Refreshes quietly in place, and gives up after a while in case sorting is switched off.
-function recheckUnsorted(accountId: string | undefined) {
+// Refreshes quietly in place, and gives up after a while in case sorting is switched off. Stops
+// once another load has started, such as for a different account or period.
+function recheckUnsorted(
+  accountId: string | undefined,
+  range: { start: string; end: string },
+  current: () => boolean,
+) {
   const waiting = spending.value?.buckets.some((entry) => entry.bucket === 'UNSORTED')
   if (!waiting || unsortedRechecks >= UNSORTED_RECHECK_LIMIT) return
   unsortedRecheck = setTimeout(async () => {
     unsortedRechecks++
     try {
-      const summary = await getSpendingByBucket(accountId)
-      if (disposed || accountId !== selectedAccountId.value) return
+      const summary = await getSpendingByBucket(accountId, range)
+      if (!current()) return
       // New data rebuilds the chart and replays its animation, so only swap it in when it changed.
       if (JSON.stringify(summary) !== JSON.stringify(spending.value)) spending.value = summary
-      recheckUnsorted(accountId)
+      recheckUnsorted(accountId, range, current)
     } catch {
       // Keep showing what loaded; the next visit tries again.
     }
@@ -913,13 +935,30 @@ async function openPlaidLink() {
 
           <section
             class="panel spending-card"
+            :class="{
+              'spending-card-empty': !loadingSpending && !spendingError && !spendingLegend.length,
+            }"
             role="region"
             aria-labelledby="spending-heading"
             :aria-busy="loadingSpending"
           >
-            <h2 id="spending-heading" class="card-label">
-              Spending<template v-if="spendingMonth"> · {{ spendingMonth }}</template>
-            </h2>
+            <div class="card-heading">
+              <h2 id="spending-heading" class="card-label">Spending</h2>
+              <select
+                class="period-select"
+                aria-label="Spending period"
+                :value="spendingPeriod"
+                @change="onSpendingPeriodChange($event)"
+              >
+                <option
+                  v-for="period in SPENDING_PERIODS"
+                  :key="period.value"
+                  :value="period.value"
+                >
+                  {{ period.label }}
+                </option>
+              </select>
+            </div>
             <div
               v-if="loadingSpending"
               class="spending-chart"
@@ -939,9 +978,24 @@ async function openPlaidLink() {
               />
             </div>
 
-            <p v-else-if="!spendingLegend.length" class="spending-empty">
-              No spending recorded this month yet.
-            </p>
+            <div v-else-if="!spendingLegend.length" class="spending-empty">
+              <p>
+                {{
+                  spendingPeriod === 'THIS_MONTH'
+                    ? `No spending in ${spendingPeriodName} yet.`
+                    : `No spending in ${spendingPeriodName}.`
+                }}
+              </p>
+              <Button
+                v-if="spendingPeriod === 'THIS_MONTH'"
+                label="See last month"
+                severity="secondary"
+                size="small"
+                text
+                class="spending-empty-action"
+                @click="choosePeriod('LAST_MONTH')"
+              />
+            </div>
 
             <div v-else class="spending-body">
               <p v-if="hasSpendingPlan === false" class="spending-plan-prompt">
@@ -954,11 +1008,13 @@ async function openPlaidLink() {
                   :data="spendingChartData"
                   :options="spendingChartOptions"
                   class="spending-chart-canvas"
-                  :aria-label="`Spending by bucket for ${spendingMonth}`"
+                  :aria-label="`Spending by bucket for ${spendingPeriodName}`"
                 />
                 <div class="spending-total" aria-hidden="true">
                   <span class="spending-total-amount">{{ formatWholeDollars(spendingTotal) }}</span>
-                  <span class="spending-total-label">this month</span>
+                  <span class="spending-total-label">{{
+                    spendingPeriod === 'THIS_MONTH' ? 'this month' : `in ${spendingPeriodName}`
+                  }}</span>
                 </div>
               </div>
               <ul class="spending-legend">
@@ -1437,9 +1493,44 @@ h1 {
   white-space: nowrap;
 }
 
+/* With nothing to chart, the card shrinks to its message instead of filling the column. */
+.spending-card-empty {
+  align-self: start;
+}
+
 .spending-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
   color: var(--app-text-secondary);
   line-height: 1.65;
+}
+
+.spending-empty p {
+  margin: 0;
+}
+
+.spending-empty-action {
+  margin-right: -0.5rem;
+}
+
+.period-select {
+  max-width: 10rem;
+  appearance: none;
+  padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+  color: var(--app-text);
+  background-color: var(--app-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.3rem center;
+  background-size: 0.875rem;
+  background-repeat: no-repeat;
+  border: 1px solid var(--app-control-border);
+  border-radius: var(--app-radius-chip);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .spending-plan-prompt {
