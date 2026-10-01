@@ -89,12 +89,6 @@ function mountExplorer() {
   })
 }
 
-function checkbox(wrapper: ReturnType<typeof mountExplorer>, name: string) {
-  const label = wrapper.findAll('label.pick').find((element) => element.text() === name)
-  if (!label) throw new Error(`No checkbox for ${name}`)
-  return label.get('input')
-}
-
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -116,14 +110,7 @@ describe('spending explorer', () => {
       start: '2026-07-01',
       end: '2026-09-30',
     })
-    const summary = wrapper.get('.summary')
-    expect(summary.get('.summary-title').text()).toBe('All spending')
-    expect(summary.get('.summary-average').text()).toBe('$250 a month on average')
-    expect(summary.findAll('li').map((month) => month.text())).toEqual([
-      'Jul$300',
-      'Aug$240',
-      'Sep$210',
-    ])
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
   })
 
   it('lists each bucket’s plan lines, then its spending on no line by category', async () => {
@@ -142,24 +129,7 @@ describe('spending explorer', () => {
     ).toEqual(['All guilt-free spending$20'])
   })
 
-  it('adds up the categories you pick', async () => {
-    const wrapper = mountExplorer()
-    await flushPromises()
-
-    await checkbox(wrapper, 'Groceries').setValue(true)
-
-    expect(wrapper.get('.summary-title').text()).toBe('Groceries')
-    expect(wrapper.get('.summary-average').text()).toBe('$210 a month on average')
-
-    await checkbox(wrapper, 'All guilt-free spending').setValue(true)
-    expect(wrapper.get('.summary-average').text()).toBe('$230 a month on average')
-
-    await wrapper.get('.summary button').trigger('click')
-    expect(wrapper.get('.summary-title').text()).toBe('All spending')
-    expect(checkbox(wrapper, 'Groceries').element.checked).toBe(false)
-  })
-
-  it('opens a category to show and pick its payees', async () => {
+  it('opens a category to show its payees', async () => {
     const wrapper = mountExplorer()
     await flushPromises()
 
@@ -167,16 +137,6 @@ describe('spending explorer', () => {
     expect(wrapper.get('[aria-label="Groceries payees"]').text()).toBe(
       'Whole Foods$180Trader Joe’s$30',
     )
-
-    await checkbox(wrapper, 'Whole Foods').setValue(true)
-
-    expect(wrapper.get('.summary-title').text()).toBe('Whole Foods')
-    expect(wrapper.get('.summary-average').text()).toBe('$180 a month on average')
-    expect(wrapper.findAll('.summary li').map((month) => month.text())).toEqual([
-      'Jul$300',
-      'Aug$240',
-      'Sep$0',
-    ])
   })
 
   it('finds payees by name', async () => {
@@ -194,10 +154,9 @@ describe('spending explorer', () => {
     expect(wrapper.text()).toContain('Nothing matches “zzz”.')
   })
 
-  it('looks further back when asked, starting the picks over', async () => {
+  it('looks further back when asked', async () => {
     const wrapper = mountExplorer()
     await flushPromises()
-    await checkbox(wrapper, 'Groceries').setValue(true)
 
     await wrapper.get('select').setValue('12')
     await flushPromises()
@@ -206,7 +165,6 @@ describe('spending explorer', () => {
       start: '2025-10-01',
       end: '2026-09-30',
     })
-    expect(wrapper.get('.summary-title').text()).toBe('All spending')
   })
 
   it('shows the latest period’s spending when an earlier answer arrives late', async () => {
@@ -224,7 +182,7 @@ describe('spending explorer', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No spending in your tracked accounts over these months yet.')
-    expect(wrapper.find('.summary').exists()).toBe(false)
+    expect(wrapper.find('section.group').exists()).toBe(false)
   })
 
   it('says so when there’s no spending yet', async () => {
@@ -245,6 +203,6 @@ describe('spending explorer', () => {
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.summary-average').text()).toBe('$250 a month on average')
+    expect(wrapper.get('section.group h3').text()).toBe('Fixed costs$230')
   })
 })

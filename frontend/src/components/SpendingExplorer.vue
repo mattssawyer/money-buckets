@@ -7,72 +7,24 @@ import { formatPlanAmount } from '../spendingPlan/money'
 import {
   HISTORY_MONTHS,
   historyRange,
-  monthLabel,
   searchHistory,
-  selectionHistory,
   spendingHistory,
   type CategoryGroup,
   type CategoryHistory,
   type HistoryMonths,
-  type PayeeHistory,
   type SpendingHistory,
 } from '../spendingPlan/spendingHistory'
-
-/** How many picked names the summary spells out before counting the rest. */
-const NAMED_PICKS = 2
 
 const period = ref<HistoryMonths>(3)
 const loading = ref(true)
 const loadError = ref(false)
 const history = ref<SpendingHistory | null>(null)
 const query = ref('')
-const pickedCategories = ref(new Set<string>())
-const pickedPayees = ref(new Set<string>())
 const openCategories = ref(new Set<string>())
 let latestLoad = 0
 
 const groups = computed(() => searchHistory(history.value?.groups ?? [], query.value))
 const searching = computed(() => query.value.trim() !== '')
-
-const summary = computed(() =>
-  history.value
-    ? selectionHistory(history.value, {
-        categories: pickedCategories.value,
-        payees: pickedPayees.value,
-      })
-    : null,
-)
-
-const pickedNames = computed(() => {
-  const names: string[] = []
-  for (const group of history.value?.groups ?? []) {
-    for (const category of group.categories) {
-      if (pickedCategories.value.has(category.key)) {
-        names.push(category.label)
-        continue
-      }
-      for (const payee of category.payees) {
-        if (pickedPayees.value.has(payee.key)) names.push(payee.name)
-      }
-    }
-  }
-  return names
-})
-
-const summaryTitle = computed(() => {
-  const names = pickedNames.value
-  if (names.length === 0) return 'All spending'
-  const more = names.length - NAMED_PICKS
-  return more > 0 ? `${names.slice(0, NAMED_PICKS).join(', ')} and ${more} more` : names.join(', ')
-})
-
-const coverage = computed(() => {
-  const months = history.value?.months ?? []
-  const first = months[0]
-  const last = months[months.length - 1]
-  if (!first || !last) return ''
-  return first === last ? monthLabel(first) : `${monthLabel(first)}–${monthLabel(last)}`
-})
 
 /**
  * A bucket's plan lines, then its spending on no line by category. The second part is only
@@ -113,8 +65,6 @@ function onPeriodChange(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
   period.value = Number(target.value) as HistoryMonths
-  // A longer stretch can hold categories the shorter one didn't, and the other way around.
-  clearPicks()
   void load()
 }
 
@@ -124,16 +74,6 @@ function onQueryInput(event: Event) {
   query.value = target.value
 }
 
-function toggleCategory(category: CategoryHistory) {
-  if (!pickedCategories.value.delete(category.key)) pickedCategories.value.add(category.key)
-  // The whole category now says it all; its payees no longer need their own picks.
-  for (const payee of category.payees) pickedPayees.value.delete(payee.key)
-}
-
-function togglePayee(payee: PayeeHistory) {
-  if (!pickedPayees.value.delete(payee.key)) pickedPayees.value.add(payee.key)
-}
-
 function toggleOpen(category: CategoryHistory) {
   if (!openCategories.value.delete(category.key)) openCategories.value.add(category.key)
 }
@@ -141,11 +81,6 @@ function toggleOpen(category: CategoryHistory) {
 /** A search shows the payees it found without having to open each category. */
 function isOpen(category: CategoryHistory) {
   return searching.value || openCategories.value.has(category.key)
-}
-
-function clearPicks() {
-  pickedCategories.value.clear()
-  pickedPayees.value.clear()
 }
 
 function amount(value: number) {
@@ -171,7 +106,7 @@ function amount(value: number) {
       </div>
       <p class="explorer-hint">
         What you spend in a month on average, by the plan line each payee belongs on, to help you
-        choose each amount. Pick lines or payees to add them up.
+        choose each amount.
       </p>
     </header>
 
@@ -190,24 +125,6 @@ function amount(value: number) {
     </p>
 
     <template v-else>
-      <section v-if="summary" class="summary" aria-live="polite" aria-label="Selected spending">
-        <div class="summary-head">
-          <span class="summary-title">{{ summaryTitle }}</span>
-          <button v-if="pickedNames.length" type="button" class="text-action" @click="clearPicks">
-            Clear
-          </button>
-        </div>
-        <p class="summary-average">
-          <strong>{{ amount(summary.average) }}</strong> a month on average
-        </p>
-        <ul class="summary-months" :aria-label="`Each month, ${coverage}`">
-          <li v-for="(month, index) in history.months" :key="month">
-            <span>{{ monthLabel(month) }}</span>
-            <span class="month-amount">{{ amount(summary.byMonth[index] ?? 0) }}</span>
-          </li>
-        </ul>
-      </section>
-
       <label class="search">
         <Search :size="14" :stroke-width="1.75" aria-hidden="true" />
         <input
@@ -242,27 +159,12 @@ function amount(value: number) {
                 >
                   <ChevronRight :size="14" :stroke-width="1.75" aria-hidden="true" />
                 </button>
-                <label class="pick">
-                  <input
-                    type="checkbox"
-                    :checked="pickedCategories.has(category.key)"
-                    @change="toggleCategory(category)"
-                  />
-                  <span class="pick-name">{{ category.label }}</span>
-                </label>
+                <span class="pick-name">{{ category.label }}</span>
                 <span class="pick-amount">{{ amount(category.average) }}</span>
               </div>
               <ul v-if="isOpen(category)" class="payees" :aria-label="`${category.label} payees`">
                 <li v-for="payee in category.payees" :key="payee.key" class="pick-row payee-row">
-                  <label class="pick">
-                    <input
-                      type="checkbox"
-                      :checked="pickedCategories.has(category.key) || pickedPayees.has(payee.key)"
-                      :disabled="pickedCategories.has(category.key)"
-                      @change="togglePayee(payee)"
-                    />
-                    <span class="pick-name">{{ payee.name }}</span>
-                  </label>
+                  <span class="pick-name">{{ payee.name }}</span>
                   <span class="pick-amount">{{ amount(payee.average) }}</span>
                 </li>
               </ul>
@@ -350,70 +252,6 @@ h2 {
 
 .text-action:hover {
   text-decoration: underline;
-}
-
-/* Stays in view while the list scrolls, so picking far down still shows what it adds up to. */
-.summary {
-  position: sticky;
-  top: -1.5rem;
-  z-index: 1;
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.875rem 1rem;
-  background: var(--app-surface);
-  border-radius: var(--app-radius-control);
-  box-shadow: var(--app-shadow-border);
-}
-
-.summary-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.summary-title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-average {
-  margin: 0;
-  color: var(--app-text-secondary);
-}
-
-.summary-average strong {
-  margin-right: 0.15rem;
-  color: var(--app-text);
-  font-size: 1.375rem;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.summary-months {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
-  margin: 0.15rem 0 0;
-  padding: 0;
-  color: var(--app-text-subdued);
-  font-size: 0.75rem;
-  list-style: none;
-}
-
-.summary-months li {
-  display: flex;
-  gap: 0.3rem;
-}
-
-.month-amount {
-  color: var(--app-text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 
 .search {
@@ -527,23 +365,8 @@ h2 {
   transform: rotate(90deg);
 }
 
-.pick {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  cursor: pointer;
-}
-
-.pick input {
-  flex: none;
-  margin: 0;
-  accent-color: var(--app-text);
-  cursor: pointer;
-}
-
 .pick-name {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

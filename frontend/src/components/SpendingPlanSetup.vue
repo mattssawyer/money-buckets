@@ -7,6 +7,7 @@ import Skeleton from 'primevue/skeleton'
 import {
   getRecurringCandidates,
   getRecurringTransactions,
+  getSpendingByBucket,
   type RecurringStream,
 } from '../api/PlaidService'
 import { recurringLabel } from '../api/plaidLabels'
@@ -32,6 +33,7 @@ import {
 } from '../spendingPlan/plan'
 import { fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
 import { withConfirmed } from '../spending/recurring'
+import { historyRange, lineAverages, spendingHistory } from '../spendingPlan/spendingHistory'
 import SpendingExplorer from './SpendingExplorer.vue'
 
 const props = defineProps<{
@@ -93,6 +95,9 @@ const BUCKETS: Bucket[] = [
 
 const editing = props.saved != null
 const loadingEstimates = ref(!editing)
+// A saved plan shows at once, but saving it or breaking a line down waits for the defaults: a
+// blank line would otherwise be saved, or carried into its first item, as nothing.
+const loadingDefaults = ref(editing)
 const takeHome = ref<number | null>(null)
 const bufferPercent = ref<number | null>(DEFAULT_BUFFER_PERCENT)
 const plan = ref<PlanRows>({ fixedCosts: [], investments: [], savings: [] })
@@ -108,7 +113,25 @@ const unplaced = ref<RecurringStream[]>([])
 // The row each unplaced bill will be added to, by stream id.
 const placeInto = ref<Record<string, string>>({})
 
-const evaluation = computed(() => evaluatePlan(takeHome.value, plan.value, bufferPercent.value))
+// What the user spends in a month on each line, by its name, for blank lines' default amounts.
+const lineDefaults = ref(new Map<string, number>())
+
+/** How many whole months of spending a line's default amount is averaged over. */
+const DEFAULT_MONTHS = 3
+
+/**
+ * The plan as it will be saved: a line the user left blank counts at its default amount, if it
+ * has one.
+ */
+const filledPlan = computed<PlanDraft>(() => ({
+  fixedCosts: plan.value.fixedCosts.map(filled),
+  investments: plan.value.investments.map(filled),
+  savings: plan.value.savings.map(filled),
+}))
+
+const evaluation = computed(() =>
+  evaluatePlan(takeHome.value, filledPlan.value, bufferPercent.value),
+)
 const guiltFree = computed(() => evaluation.value.guiltFree)
 
 if (props.saved) {
@@ -118,8 +141,13 @@ if (props.saved) {
 }
 
 onMounted(async () => {
-  if (editing) return
-  await loadEstimates()
+  // A saved plan keeps its own amounts; only its blank lines get defaults.
+  if (!editing) return loadEstimates()
+  try {
+    await loadDefaults()
+  } finally {
+    loadingDefaults.value = false
+  }
 })
 
 async function save() {
@@ -128,7 +156,7 @@ async function save() {
   try {
     // The plan follows whichever accounts are tracked, so it isn't tied to one.
     const saved = await saveSpendingPlan(
-      toSaveRequest(null, takeHome.value, bufferPercent.value ?? 0, plan.value),
+      toSaveRequest(null, takeHome.value, bufferPercent.value ?? 0, filledPlan.value),
     )
     emit('saved', fromSaved(saved))
   } catch {
@@ -140,7 +168,8 @@ async function save() {
 
 /**
  * Fills in amounts from the recurring transactions in every tracked account: Plaid's, and the
- * ones the user confirmed. Plaid's alone still fill in when candidates can't be loaded.
+ * ones the user confirmed. Plaid's alone still fill in when candidates can't be loaded. Lines
+ * with no recurring bill default to what the user spends on them, when that can be loaded.
  */
 async function loadEstimates() {
   loadingEstimates.value = true
@@ -148,6 +177,7 @@ async function loadEstimates() {
     const [found, candidates] = await Promise.all([
       getRecurringTransactions(undefined, 50),
       getRecurringCandidates().catch(() => []),
+      loadDefaults(),
     ])
     unansweredCandidates.value = candidates.filter(
       (candidate) => candidate.status === 'SUGGESTED',
@@ -165,6 +195,16 @@ async function loadEstimates() {
   }
 }
 
+/** What the user usually spends on each line; without it, blank lines simply stay blank. */
+async function loadDefaults() {
+  try {
+    const spending = await getSpendingByBucket(undefined, historyRange(DEFAULT_MONTHS))
+    lineDefaults.value = lineAverages(spendingHistory(spending))
+  } catch {
+    lineDefaults.value = new Map()
+  }
+}
+
 function setPlan(draft: PlanDraft) {
   plan.value = {
     fixedCosts: draft.fixedCosts.map(toRow),
@@ -172,6 +212,19 @@ function setPlan(draft: PlanDraft) {
     savings: draft.savings.map(toRow),
   }
   expandedRows.value.clear()
+}
+
+/**
+ * What a blank line counts as: the user's average monthly spending on it. A line broken down
+ * into items is their sum instead.
+ */
+function defaultAmount(row: PlanRow): number | null {
+  if (row.items.length > 0) return null
+  return lineDefaults.value.get(row.name) ?? null
+}
+
+function filled(row: PlanRow): PlanLineDraft {
+  return { ...row, amount: row.amount ?? defaultAmount(row) }
 }
 
 function toRow(draft: PlanLineDraft): PlanRow {
@@ -229,12 +282,14 @@ function toggleBreakdown(id: string) {
 }
 
 function addItem(row: PlanRow) {
-  // A typed line amount becomes the first item so breaking a line down never changes its total.
-  const carried = row.items.length === 0 && row.amount != null
+  // The line's amount, typed or default, becomes the first item so breaking a line down never
+  // changes its total.
+  const amount = row.amount ?? defaultAmount(row)
+  const carried = row.items.length === 0 && amount != null
   row.items.push(
     toItem({
       name: carried ? row.name : '',
-      amount: carried ? row.amount : null,
+      amount: carried ? amount : null,
       streamId: null,
     }),
   )
@@ -245,8 +300,8 @@ function placeBill(bill: RecurringStream) {
   const rowId = placeInto.value[bill.stream_id]
   const row = BUCKETS.flatMap((bucket) => plan.value[bucket.id]).find((row) => row.id === rowId)
   if (!row) return
-  // A typed line amount becomes an item first, so the bill adds to it rather than replacing it.
-  if (row.items.length === 0 && row.amount != null) addItem(row)
+  // The line's own amount becomes an item first, so the bill adds to it rather than replacing it.
+  if (row.items.length === 0 && filled(row).amount != null) addItem(row)
   row.items.push(toItem(recurringItem(bill)))
   skipBill(bill)
 }
@@ -308,7 +363,8 @@ function amountValue(amount: number | null) {
         <div v-if="!editing" class="plan-toolbar">
           <p class="autofill-note">
             <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-            Amounts found in your tracked accounts’ recurring transactions are filled in for you.
+            Amounts are filled in from your tracked accounts’ recurring transactions and what you
+            usually spend.
             <RouterLink to="/accounts">Choose accounts</RouterLink>
           </p>
           <p v-if="unansweredCandidates" class="autofill-note">
@@ -464,10 +520,15 @@ function amountValue(amount: number | null) {
                     {{ lineAmount(row) }}
                   </span>
                 </div>
-                <div v-else class="amount-field">
+                <div
+                  v-else
+                  class="amount-field"
+                  :class="{ 'amount-default': row.amount == null && defaultAmount(row) != null }"
+                >
                   <span aria-hidden="true">$</span>
                   <input
                     :value="amountValue(row.amount)"
+                    :placeholder="amountValue(defaultAmount(row))"
                     inputmode="decimal"
                     autocomplete="off"
                     :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
@@ -524,7 +585,12 @@ function amountValue(amount: number | null) {
                     />
                   </div>
                 </div>
-                <button type="button" class="add-cost add-item" @click="addItem(row)">
+                <button
+                  type="button"
+                  class="add-cost add-item"
+                  :disabled="loadingDefaults"
+                  @click="addItem(row)"
+                >
                   <Plus :size="13" :stroke-width="1.75" aria-hidden="true" />
                   Add an item
                 </button>
@@ -626,7 +692,7 @@ function amountValue(amount: number | null) {
       <Button
         label="Save plan"
         :loading="saving"
-        :disabled="loadingEstimates || saving"
+        :disabled="loadingEstimates || loadingDefaults || saving"
         @click="save"
       />
     </footer>
@@ -1019,6 +1085,21 @@ h2 {
   border-bottom-style: dashed;
 }
 
+/* A default amount reads like a filled-in one, but gives way to typing as soon as it's clicked. */
+.amount-default {
+  color: var(--app-text-secondary);
+  border-bottom-style: dashed;
+}
+
+.amount-field input::placeholder {
+  color: var(--app-text-secondary);
+  opacity: 1;
+}
+
+.amount-field input:focus::placeholder {
+  color: transparent;
+}
+
 .derived-value {
   flex: 1;
   font-variant-numeric: tabular-nums;
@@ -1059,8 +1140,13 @@ h2 {
   cursor: pointer;
 }
 
-.add-cost:hover {
+.add-cost:hover:not(:disabled) {
   color: var(--app-text);
+}
+
+.add-cost:disabled {
+  color: var(--app-text-subdued);
+  cursor: default;
 }
 
 .buffer-row {

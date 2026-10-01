@@ -26,15 +26,6 @@ export function historyRange(months: HistoryMonths, today = new Date()): DateRan
   }
 }
 
-/** One transaction's part in the history: what was spent, where, and in which month. */
-interface Entry {
-  category: string
-  payee: string
-  /** Index into the history's months. */
-  month: number
-  amount: number
-}
-
 export interface PayeeHistory {
   /** Unique across the history: the same payee under two categories is listed under each. */
   key: string
@@ -73,19 +64,6 @@ export interface SpendingHistory {
    */
   months: string[]
   groups: CategoryGroup[]
-  entries: Entry[]
-}
-
-/** What the user picked to add up: whole categories, and single payees within others. */
-export interface Selection {
-  categories: ReadonlySet<string>
-  payees: ReadonlySet<string>
-}
-
-export interface SelectionHistory {
-  average: number
-  /** Spent in each of the history's months. */
-  byMonth: number[]
 }
 
 /** The order buckets are listed in, following the plan, with what isn't sorted yet last. */
@@ -116,9 +94,8 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
     ),
     spending.end,
   )
-  if (transactions.length === 0) return { months: [], groups: [], entries: [] }
+  if (transactions.length === 0) return { months: [], groups: [] }
 
-  const entries: Entry[] = []
   const groups = new Map<
     Bucket,
     Map<string, { label: string; onLine: boolean; payees: Map<string, number> }>
@@ -138,8 +115,6 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
           : `${bucket.bucket}/category/${primary}/${detailed ?? ''}`
       const payee = transactionLabel(transaction)
       const amount = yourAmount(transaction)
-      entries.push({ category, payee, month: months.indexOf(transaction.date.slice(0, 7)), amount })
-
       const found = categories.get(category) ?? {
         label:
           whole ??
@@ -160,7 +135,6 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
 
   return {
     months,
-    entries,
     groups: BUCKET_ORDER.flatMap((bucket) => {
       const categories = groups.get(bucket)
       return categories ? [[bucket, categories] as const] : []
@@ -194,23 +168,21 @@ export function spendingHistory(spending: SpendingByBucket): SpendingHistory {
   }
 }
 
-/** What the selection adds up to; with nothing picked, all spending. */
-export function selectionHistory(history: SpendingHistory, selection: Selection): SelectionHistory {
-  const everything = selection.categories.size === 0 && selection.payees.size === 0
-  const byMonth = history.months.map(() => 0)
-  for (const entry of history.entries) {
-    if (
-      everything ||
-      selection.categories.has(entry.category) ||
-      selection.payees.has(payeeKey(entry.category, entry.payee))
-    ) {
-      byMonth[entry.month] = (byMonth[entry.month] ?? 0) + entry.amount
-    }
+/**
+ * What the user spends in a month on each plan line, by the line's name, in whole dollars: an
+ * average isn't exact to the cent. Lines with no spending are left out.
+ */
+export function lineAverages(history: SpendingHistory): Map<string, number> {
+  const averages = new Map<string, number>()
+  for (const category of history.groups.flatMap((group) => group.categories)) {
+    if (!category.onLine) continue
+    averages.set(category.label, (averages.get(category.label) ?? 0) + category.average)
   }
-  return {
-    average: history.months.length ? roundCents(sum(byMonth) / history.months.length) : 0,
-    byMonth: byMonth.map(roundCents),
-  }
+  return new Map(
+    [...averages]
+      .map(([line, average]) => [line, Math.round(average)] as const)
+      .filter(([, average]) => average > 0),
+  )
 }
 
 /**
@@ -233,14 +205,6 @@ export function searchHistory(groups: CategoryGroup[], query: string): CategoryG
         .filter((category) => category.payees.length > 0),
     }))
     .filter((group) => group.categories.length > 0)
-}
-
-/** "Jul" for 2026-07. */
-export function monthLabel(month: string): string {
-  const [year, index] = month.split('-').map(Number)
-  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(
-    new Date(year ?? 0, (index ?? 1) - 1, 1),
-  )
 }
 
 function payeeKey(category: string, payee: string) {

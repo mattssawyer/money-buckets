@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Bucket, PlaidTransaction, SpendingByBucket } from '../api/PlaidService'
-import {
-  historyRange,
-  monthLabel,
-  searchHistory,
-  selectionHistory,
-  spendingHistory,
-} from './spendingHistory'
+import { historyRange, lineAverages, searchHistory, spendingHistory } from './spendingHistory'
 
 let nextId = 0
 
@@ -171,23 +165,19 @@ describe('spending history', () => {
   })
 
   it('is empty without spending', () => {
-    expect(spendingHistory(spending({}))).toEqual({ months: [], groups: [], entries: [] })
+    expect(spendingHistory(spending({}))).toEqual({ months: [], groups: [] })
   })
 
-  it('adds up everything until something is picked', () => {
-    expect(selectionHistory(history, { categories: new Set(), payees: new Set() })).toEqual({
-      average: 420,
-      byMonth: [300, 780, 180],
-    })
-  })
+  it('gives each plan line its monthly average in whole dollars, and nothing off a line', () => {
+    expect([...lineAverages(history)]).toEqual([
+      ['Groceries', 210],
+      ['Clothes', 50],
+    ])
 
-  it('adds up picked lines and payees without counting a payee twice', () => {
-    const picked = selectionHistory(history, {
-      categories: new Set(['FIXED_COSTS/line/Groceries']),
-      payees: new Set(['FIXED_COSTS/line/Groceries|Whole Foods', 'GUILT_FREE/all|Dig Inn']),
-    })
-
-    expect(picked).toEqual({ average: 230, byMonth: [300, 240, 150] })
+    const uneven = spendingHistory(
+      spending({ FIXED_COSTS: [spent('Whole Foods', 100, '2026-07-04', GROCERIES)] }),
+    )
+    expect(lineAverages(uneven).get('Groceries')).toBe(33)
   })
 
   it('searches lines and categories by name and otherwise by payee', () => {
@@ -202,9 +192,5 @@ describe('spending history', () => {
 
     expect(searchHistory(history.groups, 'guilt')[0]?.categories[0]?.payees).toHaveLength(2)
     expect(searchHistory(history.groups, 'nothing like this')).toEqual([])
-  })
-
-  it('names a month', () => {
-    expect(monthLabel('2026-07')).toBe('Jul')
   })
 })
