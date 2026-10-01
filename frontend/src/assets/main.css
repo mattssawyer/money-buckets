@@ -17,6 +17,8 @@
 
   --app-success: #10a861;
   --app-danger: #c91313;
+  /* A plan over its target is worth a look, not an error, so it's a softer red than danger. */
+  --app-over-target: #c0444e;
   --app-danger-surface: #fff1f0;
   --app-danger-border: #ffdedb;
 

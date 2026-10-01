@@ -1208,7 +1208,7 @@ h2 {
 }
 
 .total-share-over {
-  color: var(--app-danger);
+  color: var(--app-over-target);
 }
 
 .income-addback {
@@ -1266,7 +1266,7 @@ h2 {
 .guilt-free-over,
 .guilt-free-over .total-share,
 .guilt-free-warning {
-  color: var(--app-danger);
+  color: var(--app-over-target);
 }
 
 .guilt-free-empty {

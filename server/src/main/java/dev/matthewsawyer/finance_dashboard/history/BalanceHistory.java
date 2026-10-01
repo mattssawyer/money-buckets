@@ -26,8 +26,8 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Records each account's balance snapshots and turns them into the investment and net worth
- * graphs.
+ * Records each account's balance snapshots and turns them into the net worth graph and each
+ * account's own.
  *
  * <p>Plaid only reports today's balances, so these snapshots are the only record of past ones
  * (see docs/adr/0001). A day with no snapshot carries the account's previous balance forward.
@@ -37,10 +37,9 @@ import java.util.stream.Collectors;
 @Service
 public class BalanceHistory {
 
+    // "brokerage" is Plaid's legacy name for the investment type.
     private static final Set<String> ASSETS = Set.of("depository", "investment", "brokerage");
     private static final Set<String> LIABILITIES = Set.of("credit", "loan");
-    // "brokerage" is Plaid's legacy name for the investment type.
-    private static final Set<String> INVESTMENTS = Set.of("investment", "brokerage");
     private static final String NET_WORTH_CURRENCY = "USD";
 
     private final PlaidAccountRepository accountRepository;
@@ -79,9 +78,9 @@ public class BalanceHistory {
      * The user's net worth from {@code from} (or the first counted snapshot, when null or earlier)
      * through {@code to}, inclusive. It counts USD depository, investment, and brokerage balances
      * and subtracts USD credit and loan balances, excluding days an account was dropped and
-     * accounts the user left out, and counting a shared account at the user's share. Current
-     * investment accounts get their own series from their first snapshot or {@code from}, whichever
-     * is later, with dropped days omitted. Account changes mark later first snapshots, drops, and
+     * accounts the user left out, and counting a shared account at the user's share. Every account
+     * that isn't dropped gets its own series of whole balances, as Plaid reports them, from its
+     * first snapshot or {@code from}, whichever is later, with dropped days omitted. Account changes mark later first snapshots, drops, and
      * restorations. Net worth is empty when no counted account has a snapshot by {@code to}.
      */
     @Transactional(readOnly = true)
@@ -95,13 +94,13 @@ public class BalanceHistory {
         Map<String, List<AccountDrop>> pastDrops = dropRepository.findAllByUserId(userId).stream()
                 .collect(Collectors.groupingBy(AccountDrop::getAccountId));
 
-        List<AccountSeries> investmentAccounts = new ArrayList<>();
+        List<AccountSeries> ownSeries = new ArrayList<>();
         List<PlaidAccount> counted = new ArrayList<>();
         List<String> leftOut = new ArrayList<>();
         for (PlaidAccount account : accounts) {
             NavigableMap<LocalDate, BigDecimal> accountBalances = balances.getOrDefault(account.getAccountId(), new TreeMap<>());
-            if (INVESTMENTS.contains(account.getType()) && !account.isDropped()) {
-                investmentAccounts.add(new AccountSeries(account.getAccountId(),
+            if (!account.isDropped()) {
+                ownSeries.add(new AccountSeries(account.getAccountId(),
                         daily(accountBalances, from, to, day -> countsOn(account, pastDrops, day))));
             }
             if (!account.countsInNetWorth()) {
@@ -124,7 +123,7 @@ public class BalanceHistory {
                 .min(Comparator.naturalOrder())
                 .orElse(null);
         if (netWorthStart == null) {
-            return new History(List.of(), investmentAccounts, List.of(), List.of(), leftOut);
+            return new History(List.of(), ownSeries, List.of(), List.of(), leftOut);
         }
         LocalDate start = from == null || from.isBefore(netWorthStart) ? netWorthStart : from;
 
@@ -181,7 +180,7 @@ public class BalanceHistory {
         }
         accountsDropped.sort(Comparator.comparing(AccountDropped::day));
 
-        return new History(netWorth, investmentAccounts, accountsAdded, accountsDropped, leftOut);
+        return new History(netWorth, ownSeries, accountsAdded, accountsDropped, leftOut);
     }
 
     /**
@@ -238,7 +237,7 @@ public class BalanceHistory {
 
     public record History(
             List<Point> netWorth,
-            List<AccountSeries> investmentAccounts,
+            List<AccountSeries> accounts,
             List<AccountAdded> accountsAdded,
             List<AccountDropped> accountsDropped,
             List<String> leftOutOfNetWorth

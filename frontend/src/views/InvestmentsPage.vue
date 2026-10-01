@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { UserButton } from '@clerk/vue'
 import { Landmark, Plus, TrendingDown, TrendingUp } from '@lucide/vue'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
@@ -17,7 +17,11 @@ import {
   type PlaidAccount,
   type PlaidItem,
 } from '../api/PlaidService'
-import { getBalanceHistory, type BalanceHistory } from '../api/InvestmentsService'
+import {
+  getBalanceHistory,
+  type BalanceHistory,
+  type BalancePoint,
+} from '../api/InvestmentsService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import {
   RANGES,
@@ -33,7 +37,24 @@ import {
 import { closePlaidLink, openPlaidLink } from '../plaid/plaidLink'
 
 const NET_WORTH_COLOR = '#171717'
-const INVESTMENT_COLOR = '#eb6834'
+
+/** What net worth is made of, in the order it's listed: what's invested, what's in the bank, what's owed. */
+type Group = 'investments' | 'bank' | 'debts'
+
+const GROUPS: { id: Group; heading: string; color: string }[] = [
+  { id: 'investments', heading: 'Investment accounts', color: '#eb6834' },
+  { id: 'bank', heading: 'Bank accounts', color: '#2a78d6' },
+  { id: 'debts', heading: 'Credit cards and loans', color: '#737373' },
+]
+
+// "brokerage" is Plaid's legacy name for the investment type.
+const GROUP_OF: Record<string, Group> = {
+  investment: 'investments',
+  brokerage: 'investments',
+  depository: 'bank',
+  credit: 'debts',
+  loan: 'debts',
+}
 
 const SUBTYPE_LABELS: Record<string, string> = {
   '401k': '401(k)',
@@ -48,6 +69,16 @@ const SUBTYPE_LABELS: Record<string, string> = {
   'sep ira': 'SEP IRA',
   'simple ira': 'SIMPLE IRA',
   crypto: 'Crypto',
+  'credit card': 'Credit card',
+  'cash management': 'Cash management',
+  'money market': 'Money market',
+  cd: 'CD',
+}
+
+const GROUP_KIND: Record<Group, string> = {
+  investments: 'Investment',
+  bank: 'Bank account',
+  debts: 'Loan',
 }
 
 const range = ref<Range>('3M')
@@ -65,6 +96,9 @@ const addingItemId = ref<string>()
 const addError = ref('')
 // Outlives the connection it's about, which leaves the list once it's known not to offer investments.
 const addNote = ref('')
+// The account the big chart shows instead of net worth, if the user picked one.
+const focusedId = ref<string>()
+const figure = useTemplateRef<HTMLElement>('figure')
 let disposed = false
 
 const netWorth = computed(() => history.value?.net_worth ?? [])
@@ -78,22 +112,86 @@ const accountChanges = computed(() =>
   ].sort((a, b) => a.date.localeCompare(b.date)),
 )
 
-const investmentCards = computed(() =>
+/**
+ * A card for every account that makes up net worth, as it counts toward it: a debt below zero,
+ * and a shared account at the user's share. Investment accounts the user left out of net worth
+ * still get a card, since this is where their balances are followed.
+ */
+const cards = computed(() =>
   (history.value?.accounts ?? []).flatMap((series) => {
     const account = accounts.value.find((candidate) => candidate.account_id === series.account_id)
-    if (!account) return []
+    const group = account ? GROUP_OF[account.type] : undefined
+    if (!account || !group) return []
+    if (group !== 'investments' && !account.counts_in_net_worth) return []
+    const points = towardNetWorth(series.points, account, group)
     return [
       {
         id: series.account_id,
+        group,
         name: accountLabel(account),
-        kind: account.subtype ? (SUBTYPE_LABELS[account.subtype] ?? account.subtype) : 'Investment',
-        points: series.points,
-        value: latestValue(series.points),
-        change: changeOver(series.points),
+        kind: kind(account, group),
+        color: GROUPS.find((candidate) => candidate.id === group)!.color,
+        points,
+        value: latestValue(points),
+        change: changeOver(points),
       },
     ]
   }),
 )
+
+const cardGroups = computed(() =>
+  GROUPS.map((group) => ({
+    ...group,
+    cards: cards.value.filter((card) => card.group === group.id),
+  })),
+)
+
+// An account that's since been dropped or left out of net worth has no card to focus.
+const focused = computed(() => cards.value.find((card) => card.id === focusedId.value))
+
+/** What the big chart shows: net worth, or the account in focus. */
+const shown = computed(() =>
+  focused.value
+    ? {
+        label: focused.value.name,
+        detail: focused.value.kind,
+        color: focused.value.color,
+        points: focused.value.points,
+        value: focused.value.value,
+        change: focused.value.change,
+      }
+    : {
+        label: 'Net worth',
+        detail: '',
+        color: NET_WORTH_COLOR,
+        points: netWorth.value,
+        value: netWorthValue.value,
+        change: netWorthChange.value,
+      },
+)
+
+function towardNetWorth(points: BalancePoint[], account: PlaidAccount, group: Group) {
+  const sign = group === 'debts' ? -1 : 1
+  return points.map((point) => ({
+    date: point.date,
+    value: (sign * Math.round(point.value * account.share_percent)) / 100,
+  }))
+}
+
+function kind(account: PlaidAccount, group: Group) {
+  const subtype = account.subtype
+  const label = subtype
+    ? (SUBTYPE_LABELS[subtype] ?? subtype.charAt(0).toUpperCase() + subtype.slice(1))
+    : GROUP_KIND[group]
+  return account.share_percent < 100 ? `${label} · Your ${account.share_percent}%` : label
+}
+
+/** Puts an account on the big chart, or with the one already there, goes back to net worth. */
+function focus(id: string) {
+  focusedId.value = focusedId.value === id ? undefined : id
+  // The big chart may be scrolled out of view above the cards.
+  if (focusedId.value) figure.value?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+}
 
 // Unknown availability still shows; trying finds out, and banks without investments drop off.
 const itemsWithoutInvestments = computed(() =>
@@ -291,107 +389,146 @@ function changeIcon(change: Change) {
         </div>
 
         <section
+          ref="figure"
           class="panel net-worth"
           :class="{ refreshing: historyLoading }"
           aria-labelledby="net-worth-heading"
         >
           <div class="figure-heading">
-            <h2 id="net-worth-heading" class="figure-label">Net worth</h2>
-            <p v-if="netWorthValue != null" class="hero-figure">{{ formatMoney(netWorthValue) }}</p>
-            <p v-if="netWorthChange" class="change">
+            <div class="figure-title">
+              <h2 id="net-worth-heading" class="figure-label">
+                {{ shown.label }}
+                <span v-if="shown.detail" class="figure-detail">· {{ shown.detail }}</span>
+              </h2>
+              <Button
+                v-if="focused"
+                label="Back to net worth"
+                size="small"
+                severity="secondary"
+                text
+                class="figure-back"
+                @click="focusedId = undefined"
+              />
+            </div>
+            <p v-if="shown.value != null" class="hero-figure">{{ formatMoney(shown.value) }}</p>
+            <p v-if="shown.change" class="change">
               <component
-                :is="changeIcon(netWorthChange)"
+                :is="changeIcon(shown.change)"
                 :size="16"
                 :stroke-width="1.75"
-                :class="netWorthChange.amount < 0 ? 'down' : 'up'"
+                :class="shown.change.amount < 0 ? 'down' : 'up'"
                 aria-hidden="true"
               />
-              {{ formatChange(netWorthChange) }}
+              {{ formatChange(shown.change) }}
               <span class="change-range">{{ range === 'All' ? 'all time' : range }}</span>
             </p>
           </div>
 
+          <!-- One day of history still draws, as a flat line at that day's value. -->
           <BalanceChart
-            v-if="netWorth.length >= 2"
-            :points="netWorth"
-            label="Net worth"
-            :color="NET_WORTH_COLOR"
+            v-if="shown.points.length"
+            :points="shown.points"
+            :label="shown.label"
+            :color="shown.color"
             height="16rem"
-            :added="history?.accounts_added"
-            :dropped="history?.accounts_dropped"
+            :added="focused ? undefined : history?.accounts_added"
+            :dropped="focused ? undefined : history?.accounts_dropped"
           />
-          <p v-else-if="netWorth.length === 1" class="history-note">
-            History starts today. Money Buckets records your balances each day from here on.
-          </p>
           <p v-else class="history-note">
             Your first balances are recorded the next time your accounts sync.
           </p>
 
-          <ul
-            v-if="accountChanges.length"
-            class="account-changes"
-            aria-label="Accounts added and removed"
-          >
-            <li v-for="change in accountChanges" :key="`${change.verb}-${change.account_id}`">
-              {{ formatDay(change.date, true) }} · {{ change.name }} {{ change.verb }}
-            </li>
-          </ul>
-          <p v-if="leftOutCount" class="footnote">
-            Net worth leaves out {{ leftOutCount }}
-            {{ leftOutCount === 1 ? 'account that isn’t' : 'accounts that aren’t' }} in US dollars.
-          </p>
+          <template v-if="!focused">
+            <ul
+              v-if="accountChanges.length"
+              class="account-changes"
+              aria-label="Accounts added and removed"
+            >
+              <li v-for="change in accountChanges" :key="`${change.verb}-${change.account_id}`">
+                {{ formatDay(change.date, true) }} · {{ change.name }} {{ change.verb }}
+              </li>
+            </ul>
+            <p v-if="leftOutCount" class="footnote">
+              Net worth leaves out {{ leftOutCount }}
+              {{ leftOutCount === 1 ? 'account that isn’t' : 'accounts that aren’t' }} in US
+              dollars.
+            </p>
+          </template>
         </section>
 
-        <section class="accounts-section" aria-labelledby="accounts-heading">
-          <h2 id="accounts-heading" class="section-heading">Investment accounts</h2>
-          <div v-if="investmentCards.length" class="account-grid">
-            <article
-              v-for="card in investmentCards"
-              :key="card.id"
-              class="panel account-card"
-              :class="{ refreshing: historyLoading }"
-              :aria-label="card.name"
-            >
-              <div class="account-card-heading">
-                <div>
-                  <h3>{{ card.name }}</h3>
-                  <p class="account-kind">{{ card.kind }}</p>
+        <template v-for="group in cardGroups" :key="group.id">
+          <section
+            v-if="group.cards.length || group.id === 'investments'"
+            class="accounts-section"
+            :aria-labelledby="`accounts-heading-${group.id}`"
+          >
+            <h2 :id="`accounts-heading-${group.id}`" class="section-heading">
+              {{ group.heading }}
+            </h2>
+            <div v-if="group.cards.length" class="account-grid">
+              <article
+                v-for="card in group.cards"
+                :key="card.id"
+                class="panel account-card"
+                :class="{
+                  refreshing: historyLoading,
+                  'account-card-focused': focusedId === card.id,
+                }"
+                :aria-label="card.name"
+                @click="focus(card.id)"
+              >
+                <div class="account-card-heading">
+                  <div>
+                    <h3>
+                      <!-- The whole card takes the click; the name is what a keyboard reaches. -->
+                      <button
+                        type="button"
+                        class="account-focus"
+                        :aria-pressed="focusedId === card.id"
+                        :aria-label="`Show ${card.name} on the big chart`"
+                        @click.stop="focus(card.id)"
+                      >
+                        {{ card.name }}
+                      </button>
+                    </h3>
+                    <p class="account-kind">{{ card.kind }}</p>
+                  </div>
+                  <div class="account-figures">
+                    <p v-if="card.value != null" class="account-value">
+                      {{ formatMoney(card.value) }}
+                    </p>
+                    <p v-if="card.change" class="change small">
+                      <component
+                        :is="changeIcon(card.change)"
+                        :size="14"
+                        :stroke-width="1.75"
+                        :class="card.change.amount < 0 ? 'down' : 'up'"
+                        aria-hidden="true"
+                      />
+                      {{ formatChange(card.change) }}
+                    </p>
+                  </div>
                 </div>
-                <div class="account-figures">
-                  <p v-if="card.value != null" class="account-value">
-                    {{ formatMoney(card.value) }}
-                  </p>
-                  <p v-if="card.change" class="change small">
-                    <component
-                      :is="changeIcon(card.change)"
-                      :size="14"
-                      :stroke-width="1.75"
-                      :class="card.change.amount < 0 ? 'down' : 'up'"
-                      aria-hidden="true"
-                    />
-                    {{ formatChange(card.change) }}
-                  </p>
-                </div>
-              </div>
-              <BalanceChart
-                v-if="card.points.length >= 2"
-                :points="card.points"
-                :label="card.name"
-                :color="INVESTMENT_COLOR"
-                height="9rem"
-              />
-              <p v-else class="history-note">History starts today.</p>
-            </article>
-          </div>
-          <div v-else class="panel prompt compact">
-            <div class="prompt-content">
-              <h3>No investment accounts yet</h3>
-              <p>
-                Link a new one, or add investments from an institution you’ve already connected.
-              </p>
+                <BalanceChart
+                  v-if="card.points.length"
+                  :points="card.points"
+                  :label="card.name"
+                  :color="card.color"
+                  height="9rem"
+                />
+                <p v-else class="history-note">No balance recorded yet.</p>
+              </article>
             </div>
-          </div>
-        </section>
+            <div v-else class="panel prompt compact">
+              <div class="prompt-content">
+                <h3>No investment accounts yet</h3>
+                <p>
+                  Link a new one, or add investments from an institution you’ve already connected.
+                </p>
+              </div>
+            </div>
+          </section>
+        </template>
 
         <Message v-if="addNote && !itemsWithoutInvestments.length" severity="secondary">
           {{ addNote }}
@@ -586,6 +723,24 @@ h1 {
   letter-spacing: 0;
 }
 
+.figure-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 1.75rem;
+}
+
+.figure-detail {
+  color: var(--app-text-subdued);
+  font-weight: 400;
+}
+
+.figure-back {
+  flex: none;
+  margin-right: -0.5rem;
+}
+
 .hero-figure {
   margin-top: 0.25rem;
   font-size: 3rem;
@@ -659,6 +814,41 @@ h1 {
   display: grid;
   gap: 1rem;
   padding: 1.125rem 1.25rem 1.25rem;
+}
+
+/* A card puts its account on the big chart, so it's a control: it lifts on hover and keeps a ring while in focus. */
+.account-card {
+  cursor: pointer;
+  transition: box-shadow 150ms ease;
+}
+
+.account-card:hover {
+  box-shadow: var(--app-shadow-border-sm);
+}
+
+/* Drawn inside the card's edge: the page scrolls, so anything outside the first column is cut off by the sidebar. */
+.account-card-focused,
+.account-card-focused:hover {
+  box-shadow:
+    var(--app-shadow-sm),
+    inset 0 0 0 1.5px var(--app-text);
+}
+
+.account-focus {
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.account-focus:focus-visible {
+  outline: 2px solid var(--app-text);
+  outline-offset: 2px;
+  border-radius: var(--app-radius-chip);
 }
 
 .account-card .history-note {

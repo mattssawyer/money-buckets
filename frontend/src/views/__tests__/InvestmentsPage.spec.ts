@@ -172,7 +172,7 @@ describe('investments page', () => {
     expect(wrapper.get('.net-worth').classes()).not.toContain('refreshing')
   })
 
-  it('says history starts today when there is only one day', async () => {
+  it('draws a chart from the first day of history', async () => {
     vi.mocked(getBalanceHistory).mockResolvedValue({
       ...history,
       net_worth: [{ date: '2026-09-24', value: 45000 }],
@@ -183,8 +183,99 @@ describe('investments page', () => {
     await flushPromises()
 
     expect(wrapper.get('.hero-figure').text()).toBe('$45,000.00')
-    expect(wrapper.find('.chart-stub').exists()).toBe(false)
-    expect(wrapper.get('.net-worth').text()).toContain('History starts today.')
+    expect(wrapper.get('.net-worth .chart-stub').text()).toBe('1 days')
+    expect(wrapper.get('[aria-label="Roth IRA ••4321"] .chart-stub').text()).toBe('1 days')
+    expect(wrapper.text()).not.toContain('History starts today')
+  })
+
+  it('lists bank accounts and debts under net worth too, as they count toward it', async () => {
+    const checking: PlaidAccount = {
+      ...ira,
+      account_id: 'checking',
+      mask: '8889',
+      name: 'Checking',
+      subtype: 'checking',
+      type: 'depository',
+    }
+    const joint: PlaidAccount = {
+      ...checking,
+      account_id: 'joint',
+      mask: '1111',
+      name: 'Joint',
+      share_percent: 50,
+    }
+    const card: PlaidAccount = {
+      ...ira,
+      account_id: 'card',
+      mask: '2222',
+      name: 'Visa',
+      subtype: 'credit card',
+      type: 'credit',
+    }
+    const leftOut: PlaidAccount = {
+      ...checking,
+      account_id: 'left-out',
+      mask: '3333',
+      name: 'Old savings',
+      counts_in_net_worth: false,
+    }
+    vi.mocked(getAccounts).mockResolvedValue([ira, checking, joint, card, leftOut])
+    const day = (value: number) => [{ date: '2026-09-24', value }]
+    vi.mocked(getBalanceHistory).mockResolvedValue({
+      ...history,
+      accounts: [
+        ...history.accounts,
+        { account_id: 'checking', points: day(5000) },
+        { account_id: 'joint', points: day(3000) },
+        { account_id: 'card', points: day(400) },
+        { account_id: 'left-out', points: day(900) },
+      ],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.findAll('.accounts-section h2').map((heading) => heading.text())).toEqual([
+      'Investment accounts',
+      'Bank accounts',
+      'Credit cards and loans',
+    ])
+    expect(wrapper.get('[aria-label="Checking ••8889"]').text()).toContain('$5,000.00')
+    // A shared account counts at your share, and a debt below zero.
+    const shared = wrapper.get('[aria-label="Joint ••1111"]')
+    expect(shared.text()).toContain('Checking · Your 50%')
+    expect(shared.text()).toContain('$1,500.00')
+    expect(wrapper.get('[aria-label="Visa ••2222"]').text()).toContain('Credit card')
+    expect(wrapper.get('[aria-label="Visa ••2222"]').text()).toContain('-$400.00')
+    expect(wrapper.find('[aria-label="Old savings ••3333"]').exists()).toBe(false)
+  })
+
+  it('puts an account on the big chart when you pick its card, and goes back to net worth', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const figure = wrapper.get('.net-worth')
+
+    await wrapper.get('button[aria-label="Show Roth IRA ••4321 on the big chart"]').trigger('click')
+
+    expect(figure.get('h2').text()).toBe('Roth IRA ••4321 · Roth IRA')
+    expect(figure.get('.hero-figure').text()).toBe('$41,000.00')
+    expect(figure.text()).toContain('+$1,000.00 (+2.5%)')
+    expect(figure.get('.chart-stub').text()).toBe('2 days')
+    // Accounts joining and leaving are net worth's story, not one account's.
+    expect(figure.text()).not.toContain('Roth IRA added')
+    expect(wrapper.get('[aria-label="Roth IRA ••4321"]').classes()).toContain(
+      'account-card-focused',
+    )
+
+    await button(wrapper, 'Back to net worth').trigger('click')
+
+    expect(figure.get('h2').text()).toBe('Net worth')
+    expect(figure.get('.hero-figure').text()).toBe('$45,000.00')
+
+    // Clicking anywhere on the card works too, and again lets go of it.
+    await wrapper.get('[aria-label="Roth IRA ••4321"]').trigger('click')
+    expect(figure.get('.hero-figure').text()).toBe('$41,000.00')
+    await wrapper.get('[aria-label="Roth IRA ••4321"]').trigger('click')
+    expect(figure.get('.hero-figure').text()).toBe('$45,000.00')
   })
 
   it('notes accounts net worth leaves out', async () => {
