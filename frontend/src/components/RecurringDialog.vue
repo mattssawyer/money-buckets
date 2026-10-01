@@ -63,6 +63,10 @@ const answerError = ref('')
 // than after every click.
 let changed = false
 
+// Only the newest request may fill the list, in case the account changes mid-flight or an
+// answer is given while a load is on its way.
+let latestRequest = 0
+
 const rowsByTab = computed(() => {
   const byTab: Record<Tab, RecurringStream[]> = { recurring: [], possible: [], dismissed: [] }
   for (const row of rows.value) byTab[TAB_OF[row.status]].push(row)
@@ -86,7 +90,8 @@ function onEdited() {
 
 /**
  * Saves whether a row's payee repeats, or with null forgets the answer. The row moves to its
- * new list straight away, and comes back if the save fails.
+ * new list straight away, and comes back if the save fails. Once saved, the list quietly catches
+ * up with what only the server can work out, like whether a guess is still worth suggesting.
  */
 async function answer(stream: RecurringStream, repeats: boolean | null) {
   if (answering.value.has(stream.stream_id) || !stream.kind || !stream.merchant_key) return
@@ -94,17 +99,29 @@ async function answer(stream: RecurringStream, repeats: boolean | null) {
   const previous = stream.status
   answering.value.add(stream.stream_id)
   answerError.value = ''
+  // A load still on its way was asked before this answer, so it mustn't land on top of it.
+  latestRequest++
   setStatus(stream, answered(stream, repeats))
+  let saved = false
   try {
     if (repeats === null) await undoRecurringAnswer(payee)
     else await answerRecurringCandidate(payee, repeats)
-    changed = true
+    saved = true
   } catch {
     setStatus(stream, previous)
     answerError.value = `We couldn’t save your answer for ${recurringLabel(stream)}. Please try again.`
   } finally {
     answering.value.delete(stream.stream_id)
   }
+  if (!saved) return
+  if (!visible.value) {
+    // Closed before the answer was saved, so closing couldn't pass the change on.
+    emit('changed')
+    return
+  }
+  changed = true
+  // While another answer is being saved, a load would show its row as it was.
+  if (answering.value.size === 0) void load(true)
 }
 
 /**
@@ -123,9 +140,6 @@ function setStatus(stream: RecurringStream, status: RecurringStatus) {
     row.stream_id === stream.stream_id ? { ...row, status } : row,
   )
 }
-
-// Only the newest request may fill the list, in case the account changes mid-flight.
-let latestRequest = 0
 
 watch(
   [visible, () => props.accountId],

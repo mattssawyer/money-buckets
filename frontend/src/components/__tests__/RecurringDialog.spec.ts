@@ -149,29 +149,80 @@ describe('recurring dialog', () => {
     expect(rowTexts(wrapper)).toEqual(['YYouTubeLast Sep 17-$13.99Undo'])
   })
 
-  it('moves a row to its new list in one click, without loading again', async () => {
+  it('moves a row to its new list in one click, then catches up without a loading state', async () => {
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
 
+    let saveAnswer: () => void = () => {}
+    vi.mocked(answerRecurringCandidate).mockReturnValueOnce(
+      new Promise((resolve) => (saveAnswer = resolve)),
+    )
     await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+
+    // The row has moved before the save is even answered.
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      youtube,
+      { ...power, status: 'DISMISSED' },
+    ])
+    saveAnswer()
     await flushPromises()
 
     expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
       { kind: 'BILL', merchant_key: 'alabama power' },
       false,
     )
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
     expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
-    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+  })
 
-    await showTab(wrapper, 'Possibly recurring')
-    await wrapper.get('button[aria-label="Yes, Cursor repeats"]').trigger('click')
+  it('keeps an answer when a load asked before it arrives after it', async () => {
+    const wrapper = mountDialog({ visible: true })
     await flushPromises()
-    expect(answerRecurringCandidate).toHaveBeenLastCalledWith(
-      { kind: 'BILL', merchant_key: 'cursor' },
-      true,
+
+    // Saving in the editor starts a quiet load; it's still on its way when the answer is given.
+    let finishLoad: (streams: RecurringStream[]) => void = () => {}
+    await open(wrapper, 'Sterling Group')
+    await wrapper.get('select[aria-label="Frequency"]').setValue('MONTHLY')
+    vi.mocked(getRecurringTransactions).mockReturnValueOnce(
+      new Promise((resolve) => (finishLoad = resolve)),
     )
-    expect(tabs(wrapper)).toEqual(['Recurring 2', 'Possibly recurring 0', 'Not recurring 2'])
-    expect(wrapper.text()).toContain('Nothing is waiting on your answer.')
+    await button(wrapper, 'Save').trigger('click')
+    await flushPromises()
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      youtube,
+      { ...power, status: 'DISMISSED' },
+    ])
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await flushPromises()
+    finishLoad([youtube, power])
+    await flushPromises()
+
+    expect(tabs(wrapper)).toEqual(['Recurring 1', 'Possibly recurring 1', 'Not recurring 2'])
+  })
+
+  it('passes on an answer that’s saved after the dialog has closed', async () => {
+    const wrapper = mountDialog({ visible: true })
+    await flushPromises()
+    let saveAnswer: () => void = () => {}
+    vi.mocked(answerRecurringCandidate).mockReturnValueOnce(
+      new Promise((resolve) => (saveAnswer = resolve)),
+    )
+
+    await wrapper.get('button[aria-label="Alabama Power doesn’t repeat"]').trigger('click')
+    await wrapper.setProps({ visible: false })
+    expect(wrapper.emitted('changed')).toBeUndefined()
+
+    saveAnswer()
+    await flushPromises()
+
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
   })
 
   it('puts a row back where it came from when you undo ruling it out', async () => {
@@ -179,6 +230,9 @@ describe('recurring dialog', () => {
     const wrapper = mountDialog({ visible: true })
     await flushPromises()
     await showTab(wrapper, 'Not recurring')
+
+    // Saves stay unanswered here, so this is where the rows go before the server is heard from.
+    vi.mocked(undoRecurringAnswer).mockReturnValue(new Promise(() => {}))
 
     // One of Plaid's streams is recurring again; one of Jev's guesses is a guess again.
     await wrapper.get('button[aria-label="Undo dismissing YouTube"]').trigger('click')
