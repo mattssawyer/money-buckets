@@ -209,6 +209,24 @@ describe('spending explorer', () => {
     expect(wrapper.get('.summary-title').text()).toBe('All spending')
   })
 
+  it('shows the latest period’s spending when an earlier answer arrives late', async () => {
+    let answerFirst: (spending: SpendingByBucket) => void = () => {}
+    vi.mocked(getSpendingByBucket)
+      .mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
+      .mockResolvedValueOnce({ ...spending, total: 0, buckets: [] })
+    const wrapper = mountExplorer()
+
+    await wrapper.get('select').setValue('12')
+    await flushPromises()
+    expect(wrapper.text()).toContain('No spending in your tracked accounts over these months yet.')
+
+    answerFirst(spending)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No spending in your tracked accounts over these months yet.')
+    expect(wrapper.find('.summary').exists()).toBe(false)
+  })
+
   it('says so when there’s no spending yet', async () => {
     vi.mocked(getSpendingByBucket).mockResolvedValue({ ...spending, total: 0, buckets: [] })
     const wrapper = mountExplorer()

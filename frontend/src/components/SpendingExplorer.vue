@@ -29,6 +29,7 @@ const query = ref('')
 const pickedCategories = ref(new Set<string>())
 const pickedPayees = ref(new Set<string>())
 const openCategories = ref(new Set<string>())
+let latestLoad = 0
 
 const groups = computed(() => searchHistory(history.value?.groups ?? [], query.value))
 const searching = computed(() => query.value.trim() !== '')
@@ -90,17 +91,21 @@ onMounted(load)
 
 /** Spending from every tracked account, as the plan draws on all of them. */
 async function load() {
+  // Changing the period again before an answer arrives starts a newer load; only the newest
+  // one's answer is shown, whichever order they come back in.
+  const request = ++latestLoad
   loading.value = true
   loadError.value = false
   try {
-    history.value = spendingHistory(
-      await getSpendingByBucket(undefined, historyRange(period.value)),
-    )
+    const spending = await getSpendingByBucket(undefined, historyRange(period.value))
+    if (request !== latestLoad) return
+    history.value = spendingHistory(spending)
   } catch {
+    if (request !== latestLoad) return
     history.value = null
     loadError.value = true
   } finally {
-    loading.value = false
+    if (request === latestLoad) loading.value = false
   }
 }
 
