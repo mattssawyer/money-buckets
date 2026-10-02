@@ -1,5 +1,6 @@
 # Runs the whole app from the published images.
 # Copy .env.example to .env in this folder, fill it in, then: docker compose up -d
+# To build the images from this checkout instead, see compose.build.yaml.
 name: money-buckets
 
 services:
@@ -19,14 +20,13 @@ services:
 
   server:
     image: ghcr.io/mattssawyer/money-buckets-server:latest
-    build:
-      context: ..
-      dockerfile: docker/server.Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
+    # Only this machine can reach the API directly. Anywhere else, serve it through an HTTPS
+    # reverse proxy and set API_URL to that proxy's URL.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/abacus
       SPRING_DATASOURCE_USERNAME: abacus_app
@@ -43,13 +43,10 @@ services:
 
   frontend:
     image: ghcr.io/mattssawyer/money-buckets-frontend:latest
-    build:
-      context: ..
-      dockerfile: docker/frontend.Dockerfile
     depends_on:
       - server
     ports:
-      - "3000:80"
+      - "3000:8080"
     environment:
       VITE_API_BASE_URL: ${API_URL:?set API_URL in .env}
       VITE_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?set CLERK_PUBLISHABLE_KEY in .env}

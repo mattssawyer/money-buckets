@@ -97,8 +97,24 @@ docker compose up -d
 ```
 
 Fill in `docker/.env` first; it lists every setting both images read. The app opens at
-`http://localhost:3000`. To build the images from your checkout instead of pulling them,
-run `docker compose up -d --build`.
+`http://localhost:3000`.
+
+Pulling works without logging in only once the GHCR packages are public. Until then, log
+in with a GitHub token that has the `read:packages` scope:
+
+```sh
+echo YOUR_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+To build the images from your checkout instead of pulling them:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+The API listens only on `127.0.0.1:8080`. To run the app anywhere but your own machine,
+put the frontend and the API behind a reverse proxy that serves HTTPS, and set
+`FRONTEND_URL` and `API_URL` in `docker/.env` to its `https://` URLs.
 
 ## Development commands
 

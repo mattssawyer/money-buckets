@@ -13,8 +13,13 @@ ENV VITE_API_BASE_URL=__VITE_API_BASE_URL__ \
     VITE_PRIMEUI_LICENSE_KEY=__VITE_PRIMEUI_LICENSE_KEY__
 RUN npm run build-only
 
-FROM nginx:1.29-alpine
+# Runs as the nginx user (101) rather than root, so it listens on 8080.
+FROM nginxinc/nginx-unprivileged:1.29-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --chmod=755 docker/frontend-env.sh /docker-entrypoint.d/40-frontend-env.sh
 COPY --from=build /app/dist /usr/share/nginx/template
-EXPOSE 80
+# frontend-env.sh rewrites the served files at startup.
+USER root
+RUN chown 101 /usr/share/nginx/html
+USER 101
+EXPOSE 8080
