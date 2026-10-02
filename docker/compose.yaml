@@ -37,7 +37,8 @@ services:
       PLAID_ENV: ${PLAID_ENV:-sandbox}
       PLAID_SECRET: ${PLAID_SECRET:?set PLAID_SECRET in .env}
       PLAID_TOKEN_ENCRYPTION_KEYSET: ${PLAID_TOKEN_ENCRYPTION_KEYSET:?set PLAID_TOKEN_ENCRYPTION_KEYSET in .env}
-      PLAID_WEBHOOK_URL: ${PLAID_WEBHOOK_URL:-}
+      # PLAID_WEBHOOK_URL if set, otherwise the ngrok domain's webhook URL, otherwise none.
+      PLAID_WEBHOOK_URL: ${PLAID_WEBHOOK_URL:-${NGROK_DOMAIN:+https://${NGROK_DOMAIN}/api/plaid/webhook}}
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
     restart: unless-stopped
 
