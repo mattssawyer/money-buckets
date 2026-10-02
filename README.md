@@ -112,6 +112,10 @@ To build the images from your checkout instead of pulling them:
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
+The Compose file also runs an ngrok tunnel, so Plaid's webhooks can reach the server and
+keep transactions syncing after accounts are linked. It needs a free ngrok account: set
+`NGROK_AUTHTOKEN` and your free static domain as `NGROK_DOMAIN` in `docker/.env`.
+
 The API listens only on `127.0.0.1:8080`. To run the app anywhere but your own machine,
 put the frontend and the API behind a reverse proxy that serves HTTPS, and set
 `FRONTEND_URL` and `API_URL` in `docker/.env` to its `https://` URLs.
