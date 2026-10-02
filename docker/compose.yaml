@@ -37,8 +37,7 @@ services:
       PLAID_ENV: ${PLAID_ENV:-sandbox}
       PLAID_SECRET: ${PLAID_SECRET:?set PLAID_SECRET in .env}
       PLAID_TOKEN_ENCRYPTION_KEYSET: ${PLAID_TOKEN_ENCRYPTION_KEYSET:?set PLAID_TOKEN_ENCRYPTION_KEYSET in .env}
-      # PLAID_WEBHOOK_URL if set, otherwise the ngrok domain's webhook URL, otherwise none.
-      PLAID_WEBHOOK_URL: ${PLAID_WEBHOOK_URL:-${NGROK_DOMAIN:+https://${NGROK_DOMAIN}/api/plaid/webhook}}
+      PLAID_WEBHOOK_URL: https://${NGROK_DOMAIN:?set NGROK_DOMAIN in .env}/api/plaid/webhook
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
     restart: unless-stopped
 
@@ -55,15 +54,14 @@ services:
     restart: unless-stopped
 
   # Gives Plaid a public HTTPS URL for its webhooks, so transactions keep syncing after
-  # accounts are linked. Starts only when .env sets COMPOSE_PROFILES=webhook.
+  # accounts are linked.
   ngrok:
     image: ngrok/ngrok:3
-    profiles: [webhook]
     depends_on:
       - server
-    command: ["http", "server:8080", "--url", "https://${NGROK_DOMAIN:-}"]
+    command: ["http", "server:8080", "--url", "https://${NGROK_DOMAIN}"]
     environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env}
     restart: unless-stopped
 
 volumes:
