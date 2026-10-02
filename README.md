@@ -112,6 +112,10 @@ To build the images from your checkout instead of pulling them:
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
+Without a webhook, transactions sync only when an account is linked. To keep them syncing,
+the Compose file can run an ngrok tunnel on a free static domain; the ngrok section of
+`docker/.env.example` lists the three settings it needs.
+
 The API listens only on `127.0.0.1:8080`. To run the app anywhere but your own machine,
 put the frontend and the API behind a reverse proxy that serves HTTPS, and set
 `FRONTEND_URL` and `API_URL` in `docker/.env` to its `https://` URLs.

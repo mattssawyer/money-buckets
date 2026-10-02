@@ -53,5 +53,17 @@ services:
       VITE_PRIMEUI_LICENSE_KEY: ${PRIMEUI_LICENSE_KEY:-}
     restart: unless-stopped
 
+  # Gives Plaid a public HTTPS URL for its webhooks, so transactions keep syncing after
+  # accounts are linked. Starts only when .env sets COMPOSE_PROFILES=webhook.
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: [webhook]
+    depends_on:
+      - server
+    command: ["http", "server:8080", "--url", "https://${NGROK_DOMAIN:-}"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    restart: unless-stopped
+
 volumes:
   postgres-data:
