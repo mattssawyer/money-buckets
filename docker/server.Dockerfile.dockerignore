@@ -1,0 +1,6 @@
+*
+!server/gradlew
+!server/settings.gradle
+!server/build.gradle
+!server/gradle
+!server/src

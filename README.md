@@ -85,6 +85,21 @@ npm run dev
 
 Open `http://localhost:5173` to sign in and connect a sandbox account.
 
+## Self-hosting with Docker
+
+Every push to `main` publishes `ghcr.io/mattssawyer/money-buckets-server` and
+`ghcr.io/mattssawyer/money-buckets-frontend`. To run them with a database:
+
+```sh
+cd docker
+cp .env.example .env
+docker compose up -d
+```
+
+Fill in `docker/.env` first; it lists every setting both images read. The app opens at
+`http://localhost:3000`. To build the images from your checkout instead of pulling them,
+run `docker compose up -d --build`.
+
 ## Development commands
 
 | Directory | Command | Purpose |
@@ -99,5 +114,6 @@ Open `http://localhost:5173` to sign in and connect a sandbox account.
 frontend/     Vue application
 server/       Spring Boot API and database migrations
 docs/         Additional setup documentation
+docker/       Dockerfiles and the self-hosting Compose file
 compose.yaml  Local PostgreSQL service
 ```
