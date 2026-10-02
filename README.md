@@ -85,6 +85,37 @@ npm run dev
 
 Open `http://localhost:5173` to sign in and connect a sandbox account.
 
+## Self-hosting with Docker
+
+Every push to `main` publishes `ghcr.io/mattssawyer/money-buckets-server` and
+`ghcr.io/mattssawyer/money-buckets-frontend`. To run them with a database:
+
+```sh
+cd docker
+cp .env.example .env
+docker compose up -d
+```
+
+Fill in `docker/.env` first; it lists every setting both images read. The app opens at
+`http://localhost:3000`.
+
+Pulling works without logging in only once the GHCR packages are public. Until then, log
+in with a GitHub token that has the `read:packages` scope:
+
+```sh
+echo YOUR_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+To build the images from your checkout instead of pulling them:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+The API listens only on `127.0.0.1:8080`. To run the app anywhere but your own machine,
+put the frontend and the API behind a reverse proxy that serves HTTPS, and set
+`FRONTEND_URL` and `API_URL` in `docker/.env` to its `https://` URLs.
+
 ## Development commands
 
 | Directory | Command | Purpose |
@@ -99,5 +130,6 @@ Open `http://localhost:5173` to sign in and connect a sandbox account.
 frontend/     Vue application
 server/       Spring Boot API and database migrations
 docs/         Additional setup documentation
+docker/       Dockerfiles and the self-hosting Compose file
 compose.yaml  Local PostgreSQL service
 ```
