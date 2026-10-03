@@ -7,6 +7,8 @@ import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 
 /**
@@ -93,6 +96,22 @@ public class PlaidItemSync {
     /** Syncs a newly linked or relinked item before returning, so its data is there right away. */
     public void linked(PlaidItem item) {
         syncUnderLock(item.getItemId(), Scope.EVERYTHING);
+    }
+
+    /**
+     * Queues a full sync of every item that hasn't been removed, on startup. Webhooks Plaid sent
+     * while the server was down are lost, so this picks up what they would have.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void catchUp() {
+        for (PlaidItem item : plaidItemRepository.findAllByRemovedOnIsNull()) {
+            String itemId = item.getItemId();
+            try {
+                executor.execute(() -> syncUnderLock(itemId, Scope.EVERYTHING));
+            } catch (RejectedExecutionException e) {
+                log.warn("Sync queue is full; item {} waits for Plaid's next webhook", itemId);
+            }
+        }
     }
 
     /** Refreshes an item's accounts and details from Plaid before returning. */

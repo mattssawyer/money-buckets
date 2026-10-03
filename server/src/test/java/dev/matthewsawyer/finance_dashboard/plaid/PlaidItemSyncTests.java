@@ -261,6 +261,24 @@ class PlaidItemSyncTests {
     }
 
     @Test
+    void catchingUpQueuesAFullSyncOfEachItemNotRemoved() throws IOException {
+        items.saveAndFlush(new PlaidItem(
+                "removed-item", tokenEncryption.encrypt("removed-token", userId, "removed-item"), userId));
+        items.markRemoved("removed-item", TODAY);
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+
+        itemSync.catchUp();
+        verifyNoInteractions(plaidApi);
+        assertEquals(1, queued.size());
+        runQueued();
+
+        assertEquals(List.of("txn-1"), transactionIds());
+        assertEquals(List.of("rent"), streamIds());
+        verify(bucketSorting).sortLater(userId);
+    }
+
+    @Test
     void recurringSyncHoldingAnOlderCopyOfTheItemKeepsTheNewerCursor() throws IOException {
         PlaidItem olderCopy = storedItem();
         entityManager.detach(olderCopy);
