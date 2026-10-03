@@ -23,15 +23,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Only this machine can reach the API directly. Anywhere else, serve it through an HTTPS
-    # reverse proxy and set API_URL to that proxy's URL.
+    # Browsers reach the API through the frontend at /api. This port is only for calling it
+    # directly from this machine.
     ports:
       - "127.0.0.1:8080:8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/abacus
       SPRING_DATASOURCE_USERNAME: abacus_app
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env}
+      SPRING_FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       CLERK_FRONTEND_API_URL: ${CLERK_FRONTEND_API_URL:?set CLERK_FRONTEND_API_URL in .env}
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:?set PLAID_CLIENT_ID in .env}
       PLAID_ENV: ${PLAID_ENV:-sandbox}
@@ -48,7 +48,7 @@ services:
     ports:
       - "3000:8080"
     environment:
-      VITE_API_BASE_URL: ${API_URL:?set API_URL in .env}
+      VITE_API_BASE_URL: ${API_URL:-/api}
       VITE_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?set CLERK_PUBLISHABLE_KEY in .env}
       VITE_PRIMEUI_LICENSE_KEY: ${PRIMEUI_LICENSE_KEY:-}
     restart: unless-stopped

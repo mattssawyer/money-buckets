@@ -96,8 +96,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Fill in `docker/.env` first; it lists every setting both images read. The app opens at
-`http://localhost:3000`.
+Fill in `docker/.env` first; it lists every setting both images read. The app opens on
+port 3000: `http://localhost:3000` on the machine running it, or that machine's address from
+any other.
 
 Pulling works without logging in only once the GHCR packages are public. Until then, log
 in with a GitHub token that has the `read:packages` scope:
@@ -116,9 +117,9 @@ The Compose file also runs an ngrok tunnel, so Plaid's webhooks can reach the se
 keep transactions syncing after accounts are linked. It needs a free ngrok account: set
 `NGROK_AUTHTOKEN` and your free static domain as `NGROK_DOMAIN` in `docker/.env`.
 
-The API listens only on `127.0.0.1:8080`. To run the app anywhere but your own machine,
-put the frontend and the API behind a reverse proxy that serves HTTPS, and set
-`FRONTEND_URL` and `API_URL` in `docker/.env` to its `https://` URLs.
+The frontend passes `/api` through to the server, so browsers never reach the API
+directly; its own port listens only on `127.0.0.1:8080`. To reach the app from outside
+your network, put port 3000 behind a reverse proxy that serves HTTPS.
 
 ## Development commands
 
