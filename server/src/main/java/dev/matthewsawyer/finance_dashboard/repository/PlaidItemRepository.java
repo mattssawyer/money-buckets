@@ -15,6 +15,8 @@ import java.util.UUID;
 
 public interface PlaidItemRepository extends JpaRepository<PlaidItem, String> {
 
+    List<PlaidItem> findAllByRemovedOnIsNull();
+
     List<PlaidItem> findAllByUserIdOrderByItemIdAsc(UUID userId);
 
     List<PlaidItem> findAllByUserIdAndRemovedOnIsNullOrderByItemIdAsc(UUID userId);
