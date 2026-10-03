@@ -2,3 +2,4 @@
 server/.DS_Store
 docker/.env
 plaid-*-keyset.json
+docker/data/
