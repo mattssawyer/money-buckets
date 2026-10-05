@@ -843,6 +843,80 @@ describe('homepage spending breakdown', () => {
     expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
   })
 
+  describe("what's left of guilt-free spending", () => {
+    // 4,000 take-home less 2,000 rent leaves 2,000 for guilt-free spending.
+    const plan: SpendingPlanResponse = {
+      account_id: null,
+      take_home: 4000,
+      fixed_cost_buffer_percent: 0,
+      lines: [
+        { bucket: 'FIXED_COSTS', name: 'Rent', amount: 2000, from_paycheck: false, items: [] },
+      ],
+      updated_at: '2026-10-01T00:00:00Z',
+    }
+
+    beforeEach(() => {
+      vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+      vi.mocked(getSpendingPlan).mockResolvedValue(plan)
+    })
+
+    it("shows what's left of the plan's guilt-free spending this month", async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+
+      const left = wrapper.get('.guilt-free-left')
+      expect(left.get('.guilt-free-left-amount').text()).toBe('$1,988 left')
+      expect(left.get('.guilt-free-left-detail').text()).toBe('$12 of $2,000 spent')
+      expect(getSpendingByBucket).toHaveBeenCalledOnce()
+    })
+
+    it('says how far over it is once spending passes the plan', async () => {
+      vi.mocked(getSpendingByBucket).mockResolvedValue({
+        ...spending,
+        buckets: [{ bucket: 'GUILT_FREE', amount: 2150.4, categories: [] }],
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-left').classes()).toContain('guilt-free-over')
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$150 over')
+    })
+
+    it('counts every tracked account, as the plan does, when one account is picked', async () => {
+      localStorage.setItem('abacus.selectedAccountId', 'savings')
+      vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+      vi.mocked(getSpendingByBucket).mockImplementation(async (accountId) =>
+        accountId === undefined
+          ? { ...spending, buckets: [{ bucket: 'GUILT_FREE', amount: 500, categories: [] }] }
+          : spending,
+      )
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('THIS_MONTH'))
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,500 left')
+      expect(wrapper.get('.guilt-free-left-detail').text()).toBe(
+        '$500 of $2,000 spent across all tracked accounts',
+      )
+    })
+
+    it('only shows alongside this month', async () => {
+      localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_MONTH')
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+    })
+
+    it('waits for take-home pay to work out the budget', async () => {
+      vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: null })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+    })
+  })
+
   it('keeps its shape at zero, with every bucket at $0, and offers last month', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getSpendingByBucket).mockResolvedValueOnce({ ...spending, total: 0, buckets: [] })

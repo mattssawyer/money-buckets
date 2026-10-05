@@ -31,6 +31,8 @@ import {
   type SpendingByBucket,
 } from '../api/PlaidService'
 import { getSpendingPlan } from '../api/SpendingPlanService'
+import { guiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
+import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 import {
   BUCKET_STYLES,
   categoryLabel,
@@ -84,8 +86,14 @@ const showDismissed = ref(false)
 const answeringKey = ref<string>()
 const answerError = ref('')
 const spending = ref<SpendingByBucket>()
-// Unknown until loaded, so the plan prompt never flashes for someone who has a plan.
-const hasSpendingPlan = ref<boolean>()
+// This month across every tracked account, when the card shows something else. The plan covers
+// every tracked account, so what's left of it does too.
+const thisMonthSpending = ref<SpendingByBucket>()
+// Undefined until loaded, so the plan prompt never flashes for someone who has a plan.
+const savedPlan = ref<SavedPlan | null>()
+const hasSpendingPlan = computed(() =>
+  savedPlan.value === undefined ? undefined : savedPlan.value !== null,
+)
 // Legend rows the user has flipped from how they start. Buckets start open and categories start
 // closed. Category keys include the bucket, since the same category can appear under two buckets.
 const toggledRows = ref(new Set<string>())
@@ -134,6 +142,17 @@ const spendingTotal = computed(() => spending.value?.total ?? 0)
 // What the spending card covers; remembered across visits.
 const spendingPeriod = ref<SpendingPeriod>(recallPeriod())
 const spendingPeriodName = computed(() => periodName(spendingPeriod.value))
+// The plan is monthly, so what's left only shows alongside this month.
+const guiltFree = computed(() => {
+  if (!savedPlan.value || spendingPeriod.value !== 'THIS_MONTH') return null
+  const month = selectedAccountId.value === undefined ? spending.value : thisMonthSpending.value
+  return month ? guiltFreeLeft(savedPlan.value, month) : null
+})
+const guiltFreeSpentPercent = computed(() => {
+  if (!guiltFree.value) return 0
+  const { budget, spent } = guiltFree.value
+  return budget > 0 ? Math.min(100, (spent / budget) * 100) : 100
+})
 // Transactions are sorted into buckets with or without a plan, so spending is always charted by
 // bucket, the same buckets the transactions list shows.
 const spendingLegend = computed(() => {
@@ -206,6 +225,7 @@ let disposed = false
 // Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
 const startTransactions = latestRequest()
 const startSpending = latestRequest()
+const startThisMonth = latestRequest()
 const startRecurring = latestRequest()
 
 onMounted(loadConnections)
@@ -337,9 +357,9 @@ function onAccountChange(event: Event) {
 async function loadSpendingPlan() {
   try {
     const plan = await getSpendingPlan()
-    if (!disposed) hasSpendingPlan.value = plan !== null
+    if (!disposed) savedPlan.value = plan && fromSaved(plan)
   } catch {
-    // The prompt is only a nudge, so leave it hidden when the plan can't be checked.
+    // The prompt and what's left are only extras, so leave them hidden when the plan can't load.
   }
 }
 
@@ -363,6 +383,7 @@ async function loadSpending() {
   const accountId = selectedAccountId.value
   const range = periodRange(spendingPeriod.value)
   const current = startSpending()
+  if (spendingPeriod.value === 'THIS_MONTH' && accountId !== undefined) void loadThisMonth()
   try {
     const summary = await getSpendingByBucket(accountId, range)
     if (!current()) return
@@ -372,6 +393,17 @@ async function loadSpending() {
     if (current()) spendingError.value = 'We couldn’t load your spending breakdown.'
   } finally {
     if (current()) loadingSpending.value = false
+  }
+}
+
+// Leaves the last answer in place when this fails, since what's left is only an extra.
+async function loadThisMonth() {
+  const current = startThisMonth()
+  try {
+    const month = await getSpendingByBucket(undefined, periodRange('THIS_MONTH'))
+    if (current()) thisMonthSpending.value = month
+  } catch {
+    // Nothing to tell the user; the card itself still loaded.
   }
 }
 
@@ -990,6 +1022,37 @@ async function openPlaidLink() {
                 <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
                 to set a target for each bucket.
               </p>
+              <div
+                v-else-if="guiltFree"
+                class="guilt-free-left"
+                :class="{ 'guilt-free-over': guiltFree.left < 0 }"
+              >
+                <p class="guilt-free-left-heading">
+                  <span>Guilt-free left this month</span>
+                  <span class="guilt-free-left-amount">
+                    {{ formatWholeDollars(Math.abs(guiltFree.left)) }}
+                    {{ guiltFree.left < 0 ? 'over' : 'left' }}
+                  </span>
+                </p>
+                <div class="guilt-free-bar" aria-hidden="true">
+                  <div
+                    class="guilt-free-bar-fill"
+                    :style="{
+                      width: `${guiltFreeSpentPercent}%`,
+                      backgroundColor:
+                        guiltFree.left < 0 ? undefined : BUCKET_STYLES.GUILT_FREE.color,
+                    }"
+                  />
+                </div>
+                <p class="guilt-free-left-detail">
+                  {{ formatWholeDollars(guiltFree.spent) }} of
+                  {{ formatWholeDollars(guiltFree.budget) }} spent<template
+                    v-if="selectedAccountId !== undefined"
+                  >
+                    across all tracked accounts</template
+                  >
+                </p>
+              </div>
               <div class="spending-chart">
                 <Chart
                   type="doughnut"
@@ -1575,6 +1638,58 @@ li.spending-legend-row {
   color: var(--app-text-secondary);
   font-size: 0.875rem;
   line-height: 1.5;
+}
+
+.guilt-free-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.guilt-free-left p {
+  margin: 0;
+}
+
+.guilt-free-left-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  color: var(--app-text-secondary);
+  font-size: 0.875rem;
+}
+
+.guilt-free-left-amount {
+  color: var(--app-text);
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.guilt-free-over .guilt-free-left-amount {
+  color: var(--app-over-target);
+}
+
+.guilt-free-bar {
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--app-inset);
+}
+
+.guilt-free-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.guilt-free-over .guilt-free-bar-fill {
+  background: var(--app-over-target);
+}
+
+.guilt-free-left-detail {
+  color: var(--app-text-subdued);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .spending-plan-prompt a {
