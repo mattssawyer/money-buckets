@@ -446,8 +446,8 @@ function amountValue(amount: number | null) {
   <div class="plan-setup" :class="{ 'showing-spending': showSpending }">
     <div class="plan-body">
       <form class="plan-form" aria-label="Spending plan" @submit.prevent>
-        <div class="plan-toolbar">
-          <p v-if="!editing" class="autofill-note">
+        <div v-if="!editing" class="plan-toolbar">
+          <p class="autofill-note">
             <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
             Amounts are filled in from your tracked accounts’ recurring transactions and what you
             usually spend.
@@ -470,19 +470,6 @@ function amountValue(amount: number | null) {
               Review them
             </button>
           </p>
-          <Button
-            label="Recurring payments"
-            severity="secondary"
-            size="small"
-            outlined
-            class="recurring-button"
-            aria-haspopup="dialog"
-            @click="openRecurring('recurring')"
-          >
-            <template #icon>
-              <Repeat :size="14" :stroke-width="1.75" aria-hidden="true" />
-            </template>
-          </Button>
         </div>
 
         <section
@@ -711,9 +698,7 @@ function amountValue(amount: number | null) {
             <div v-if="bucket.buffer" class="sheet-row buffer-row">
               <label class="row-label" for="fixed-cost-buffer">
                 Miscellaneous buffer
-                <span class="row-hint">
-                  A percent of fixed costs, for costs you forgot and prices that rise
-                </span>
+                <span class="row-hint">For costs you forgot and prices that rise</span>
               </label>
               <div class="percent-field">
                 <input
@@ -793,9 +778,23 @@ function amountValue(amount: number | null) {
     </div>
 
     <footer class="plan-footer">
-      <button type="button" class="spending-toggle" @click="showSpending = !showSpending">
-        {{ showSpending ? 'Back to your plan' : 'See your spending' }}
-      </button>
+      <div class="footer-actions">
+        <Button
+          label="Recurring payments"
+          severity="secondary"
+          outlined
+          class="recurring-button"
+          aria-haspopup="dialog"
+          @click="openRecurring('recurring')"
+        >
+          <template #icon>
+            <Repeat :size="15" :stroke-width="1.75" aria-hidden="true" />
+          </template>
+        </Button>
+        <button type="button" class="spending-toggle" @click="showSpending = !showSpending">
+          {{ showSpending ? 'Back to your plan' : 'See your spending' }}
+        </button>
+      </div>
       <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
       <p v-else-if="replacing" class="save-note">Saving replaces your current plan.</p>
       <Button
@@ -833,9 +832,16 @@ function amountValue(amount: number | null) {
   border-top: 1px solid var(--app-divider);
 }
 
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-right: auto;
+}
+
 .save-error,
 .save-note {
-  margin: 0 auto 0 0;
+  margin: 0;
   font-size: 0.8125rem;
 }
 
@@ -864,7 +870,6 @@ function amountValue(amount: number | null) {
 
 .spending-toggle {
   display: none;
-  margin-right: auto;
   padding: 0.25rem 0;
   color: var(--app-text);
   background: transparent;
@@ -923,10 +928,6 @@ function amountValue(amount: number | null) {
   background: none;
   border: 0;
   cursor: pointer;
-}
-
-.recurring-button {
-  margin-left: auto;
 }
 
 .unplaced {
@@ -1280,6 +1281,8 @@ h2 {
 
 .buffer-row {
   margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--app-divider);
 }
 
 .row-hint {
@@ -1289,18 +1292,28 @@ h2 {
   font-weight: 400;
 }
 
+/* A pill like the line badges, shaded so it reads as the one setting to adjust. */
 .percent-field {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 0.15rem;
-  width: 3.25rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--app-divider);
+  gap: 0.1rem;
+  width: 4rem;
+  padding: 0.2rem 0.6rem;
+  background: var(--app-inset);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.percent-field:hover {
+  background: var(--app-inset-hover);
 }
 
 .percent-field:focus-within {
-  border-bottom-color: var(--app-text);
+  background: var(--app-surface);
+  border-color: var(--app-text);
 }
 
 .percent-field input {
