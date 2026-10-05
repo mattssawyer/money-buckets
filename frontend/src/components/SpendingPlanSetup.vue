@@ -474,7 +474,7 @@ function amountValue(amount: number | null) {
             label="Recurring payments"
             severity="secondary"
             size="small"
-            text
+            outlined
             class="recurring-button"
             aria-haspopup="dialog"
             @click="openRecurring('recurring')"
