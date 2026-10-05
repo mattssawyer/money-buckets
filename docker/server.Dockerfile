@@ -12,6 +12,8 @@ RUN ./gradlew bootJar --no-daemon && cp build/libs/*.jar app.jar
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/app.jar app.jar
+# Where the server keeps files of its own, such as a generated Plaid token keyset.
+RUN mkdir data && chown 1000 data
 USER 1000
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

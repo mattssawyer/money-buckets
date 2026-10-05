@@ -38,6 +38,13 @@ Startup fails for a missing or invalid keyset. Sealed variables are not supplied
 by `railway run` or copied to preview environments; give each environment its own
 keyset. There is no connection to Google Cloud and no extra hosted service.
 
+### Self-hosting with Docker
+
+With `PLAID_TOKEN_ENCRYPTION_KEYSET` empty, the server reads its keyset from the file named
+by `PLAID_TOKEN_ENCRYPTION_KEYSET_FILE`, generating one there on first start. The Docker
+Compose file points it into the `server-data` volume; see the README for backing it up.
+A keyset set directly always wins over the file.
+
 ### Local development
 
 Generate a separate keyset with Tinkey using the same command but output to

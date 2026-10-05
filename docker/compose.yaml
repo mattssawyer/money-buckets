@@ -37,9 +37,15 @@ services:
       PLAID_CLIENT_ID: ${PLAID_CLIENT_ID:?set PLAID_CLIENT_ID in .env}
       PLAID_ENV: ${PLAID_ENV:-sandbox}
       PLAID_SECRET: ${PLAID_SECRET:?set PLAID_SECRET in .env}
-      PLAID_TOKEN_ENCRYPTION_KEYSET: ${PLAID_TOKEN_ENCRYPTION_KEYSET:?set PLAID_TOKEN_ENCRYPTION_KEYSET in .env}
-      PLAID_WEBHOOK_URL: https://${NGROK_DOMAIN:?set NGROK_DOMAIN in .env}/api/plaid/webhook
+      # Generated into the server-data volume on first start unless set in .env.
+      PLAID_TOKEN_ENCRYPTION_KEYSET: ${PLAID_TOKEN_ENCRYPTION_KEYSET:-}
+      PLAID_TOKEN_ENCRYPTION_KEYSET_FILE: /app/data/plaid-keyset.json
+      # Only with the webhooks profile; otherwise the server syncs every few hours instead.
+      PLAID_WEBHOOK_URL: ${NGROK_DOMAIN:+https://${NGROK_DOMAIN}/api/plaid/webhook}
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+    # A Docker volume rather than a folder here, so the server's non-root user can write to it.
+    volumes:
+      - server-data:/app/data
     restart: unless-stopped
 
   frontend:
@@ -54,13 +60,18 @@ services:
       VITE_PRIMEUI_LICENSE_KEY: ${PRIMEUI_LICENSE_KEY:-}
     restart: unless-stopped
 
-  # Gives Plaid a public HTTPS URL for its webhooks, so transactions keep syncing after
-  # accounts are linked.
+  # Optional: gives Plaid a public HTTPS URL for its webhooks, so new transactions arrive
+  # within minutes rather than at the next scheduled sync. Turn it on with
+  # COMPOSE_PROFILES=webhooks in .env.
   ngrok:
     image: ngrok/ngrok:3
+    profiles: [webhooks]
     depends_on:
       - server
-    command: ["http", "server:8080", "--url", "https://${NGROK_DOMAIN}"]
+    command: ["http", "server:8080", "--url", "https://${NGROK_DOMAIN:-}"]
     environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env}
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
     restart: unless-stopped
+
+volumes:
+  server-data:

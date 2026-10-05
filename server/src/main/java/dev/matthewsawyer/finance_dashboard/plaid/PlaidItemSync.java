@@ -7,9 +7,8 @@ import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -28,8 +27,8 @@ import java.util.concurrent.ScheduledFuture;
  * the day's balance snapshots, and queues new transactions for sorting.
  *
  * <p>Syncs of the same item never overlap: concurrent syncs would race each other's
- * transactions cursor. Failures are logged rather than thrown, because Plaid notifies again on
- * its next update and that sync picks up whatever this one missed.
+ * transactions cursor. Failures are logged rather than thrown, because the next webhook or
+ * scheduled sync picks up whatever this one missed.
  */
 @Service
 public class PlaidItemSync {
@@ -99,17 +98,18 @@ public class PlaidItemSync {
     }
 
     /**
-     * Queues a full sync of every item that hasn't been removed, on startup. Webhooks Plaid sent
-     * while the server was down are lost, so this picks up what they would have.
+     * Queues a full sync of every item that hasn't been removed, on startup and every few hours
+     * after. Webhooks Plaid sent while the server was down are lost, and a server without a
+     * public address gets none, so this picks up what they would have.
      */
-    @EventListener(ApplicationReadyEvent.class)
-    public void catchUp() {
+    @Scheduled(fixedDelayString = "${plaid.sync.every:PT6H}")
+    public void syncAll() {
         for (PlaidItem item : plaidItemRepository.findAllByRemovedOnIsNull()) {
             String itemId = item.getItemId();
             try {
                 executor.execute(() -> syncUnderLock(itemId, Scope.EVERYTHING));
             } catch (RejectedExecutionException e) {
-                log.warn("Sync queue is full; item {} waits for Plaid's next webhook", itemId);
+                log.warn("Sync queue is full; item {} waits for the next sync", itemId);
             }
         }
     }

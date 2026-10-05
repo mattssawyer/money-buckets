@@ -96,13 +96,13 @@ Open `http://localhost:5173` to sign in and connect a sandbox account.
 
 ## Self-hosting with Docker
 
-The `docker/` folder runs the whole app from published images: PostgreSQL, the API, the
-web app and an ngrok tunnel for Plaid's webhooks. Every push to `main` publishes
+The `docker/` folder runs the whole app from published images: PostgreSQL, the API and
+the web app. Every push to `main` publishes
 `ghcr.io/mattssawyer/money-buckets-server` and `ghcr.io/mattssawyer/money-buckets-frontend`
 for amd64 and arm64, and they can be pulled without logging in.
 
-You need Docker with Docker Compose, and accounts with Clerk, Plaid, ngrok and, optionally,
-TypeSafe. Clerk, Plaid Sandbox and ngrok's static domain are free.
+You need Docker with Docker Compose and two accounts: Clerk for sign-in and Plaid for bank
+data. Both are free to start with. A TypeSafe key is optional.
 
 ### 1. Create the settings file
 
@@ -124,36 +124,11 @@ it up somewhere safe, such as a password manager.
 | `PLAID_CLIENT_ID` | Yes | [Plaid dashboard](https://dashboard.plaid.com) → **Developers** → **Keys**. |
 | `PLAID_ENV` | Yes | Starts as `sandbox`, for Plaid's test banks, or `production` for real accounts once Plaid has approved production access for you. |
 | `PLAID_SECRET` | Yes | Same page, the secret for the environment in `PLAID_ENV`. |
-| `PLAID_TOKEN_ENCRYPTION_KEYSET` | Yes | A Tink keyset you generate, below. It encrypts Plaid's access tokens in the database. |
-| `NGROK_AUTHTOKEN` | Yes | [ngrok dashboard](https://dashboard.ngrok.com) → **Your Authtoken**. |
-| `NGROK_DOMAIN` | Yes | ngrok dashboard → **Domains**: your free static domain, without `https://`. |
 | `TYPESAFE_API_KEY` | No | [TypeSafe](https://docs.typesafe.ai). Without it the app runs, but transactions show as not sorted yet and nothing is put on plan lines or suggested as recurring. |
 | `PRIMEUI_LICENSE_KEY` | No | A PrimeUI license key, if you have one. |
+| `PLAID_TOKEN_ENCRYPTION_KEYSET` | No | Encrypts Plaid's access tokens in the database. Left empty, the server generates one on first start. To manage your own, see [the encryption guide](docs/plaid-token-encryption.md). |
+| `COMPOSE_PROFILES`, `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` | No | For faster syncing, below. |
 | `FRONTEND_URL`, `API_URL` | No | Only for serving the API from a different address than the app; see the comments in `.env.example`. |
-
-To generate the keyset, install Google's
-[Tinkey](https://developers.google.com/tink/tinkey-overview) (on macOS,
-`brew tap tink-crypto/tink-tinkey https://github.com/tink-crypto/tink-tinkey` then
-`brew install tinkey`) and run:
-
-```sh
-umask 077
-tinkey create-keyset --key-template AES256_GCM --out-format json --out plaid-docker-keyset.json
-```
-
-Paste the JSON into `.env` on one line, in single quotes:
-
-```dotenv
-PLAID_TOKEN_ENCRYPTION_KEYSET='{"primaryKeyId":123,"key":[...]}'
-```
-
-Keep a copy of the keyset. Without it, the linked accounts' tokens can't be decrypted and
-every account has to be linked again. See [the encryption guide](docs/plaid-token-encryption.md)
-for how it's used and rotated.
-
-ngrok gives Plaid a public HTTPS address to send its webhooks to. They keep transactions
-syncing after accounts are linked. Plaid stores the webhook address on each account when
-it's linked, so keep the same `NGROK_DOMAIN` once you've linked accounts.
 
 ### 3. Start it
 
@@ -163,8 +138,23 @@ docker compose up -d
 
 Open `http://localhost:3000` on the machine running it, or port 3000 at that machine's
 address from another device on your network. The first start creates the database
-schema. The database lives in `docker/data/postgres`, so moving or backing up the
-`docker` folder keeps your data.
+schema and the token keyset.
+
+### Back up your data
+
+The database lives in `docker/data/postgres`. The generated keyset lives in the
+`money-buckets_server-data` Docker volume, and the database's Plaid tokens can't be
+decrypted without it, so keep a copy somewhere safe, such as a password manager:
+
+```sh
+docker compose cp server:/app/data/plaid-keyset.json ./plaid-docker-keyset.json
+```
+
+To move the app to another machine, copy the `docker` folder, then paste the keyset's JSON
+into `PLAID_TOKEN_ENCRYPTION_KEYSET` in `.env` on one line, in single quotes, before
+starting it there.
+
+### Keep it up to date
 
 To update to the latest images:
 
@@ -178,6 +168,18 @@ To build the images from your checkout instead of pulling them:
 ```sh
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
+
+### Faster syncing (optional)
+
+The server syncs every linked bank on startup and every 6 hours. Plaid can also tell the
+server about new transactions as they arrive, through webhooks, but that needs a public
+HTTPS address. The Compose file can run an [ngrok](https://ngrok.com) tunnel for it with a
+free ngrok account: in `.env`, uncomment `COMPOSE_PROFILES=webhooks`, and set
+`NGROK_AUTHTOKEN` (ngrok dashboard → **Your Authtoken**) and `NGROK_DOMAIN` (ngrok
+dashboard → **Domains**, your free static domain without `https://`).
+
+Plaid saves the webhook address on each account when it's linked, so set this up before
+linking accounts and keep the same domain afterwards.
 
 ### Reaching it from outside your network
 
