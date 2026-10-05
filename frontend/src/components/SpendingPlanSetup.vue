@@ -43,6 +43,8 @@ const props = defineProps<{
   saved?: SavedPlan
   /** A new setup will replace an existing saved plan. */
   replacing?: boolean
+  /** Start on the buffer's percent, for changing just that. */
+  focusBuffer?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -709,12 +711,15 @@ function amountValue(amount: number | null) {
             <div v-if="bucket.buffer" class="sheet-row buffer-row">
               <label class="row-label" for="fixed-cost-buffer">
                 Miscellaneous buffer
-                <span class="row-hint">For costs you forgot and prices that rise</span>
+                <span class="row-hint">
+                  A percent of fixed costs, for costs you forgot and prices that rise
+                </span>
               </label>
               <div class="percent-field">
                 <input
                   id="fixed-cost-buffer"
                   :value="amountValue(bufferPercent)"
+                  :autofocus="focusBuffer"
                   inputmode="decimal"
                   autocomplete="off"
                   aria-describedby="fixed-cost-buffer-amount"

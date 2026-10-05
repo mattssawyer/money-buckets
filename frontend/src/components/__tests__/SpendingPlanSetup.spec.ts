@@ -862,6 +862,16 @@ describe('spending plan setup', () => {
     expect(vi.mocked(saveSpendingPlan).mock.calls[0]?.[0].fixed_cost_buffer_percent).toBe(0)
   })
 
+  it('starts on the buffer when asked to', async () => {
+    const atBuffer = mountSetup({ saved: savedPlan, focusBuffer: true })
+    await flushPromises()
+    expect(atBuffer.get('#fixed-cost-buffer').attributes('autofocus')).toBeDefined()
+
+    const atTop = mountSetup({ saved: savedPlan })
+    await flushPromises()
+    expect(atTop.get('#fixed-cost-buffer').attributes('autofocus')).toBeUndefined()
+  })
+
   it('caps the buffer at 100 percent', async () => {
     const wrapper = mountSetup()
     await flushPromises()

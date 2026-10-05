@@ -91,12 +91,20 @@ describe('spending plan overview', () => {
     const wrapper = mountOverview()
     const fixedCosts = wrapper.get('[aria-labelledby="overview-fixedCosts-heading"]')
 
-    expect(fixedCosts.get('.buffer-line').text()).toBe('Miscellaneous buffer (15%)$221.62')
+    expect(fixedCosts.get('.buffer-line').text()).toBe('Miscellaneous buffer (15%) $221.62')
     expect(fixedCosts.get('.bucket-total').text()).toBe('$1,699.10')
 
     const withoutBuffer = mountOverview({ ...plan, bufferPercent: 0 })
     expect(withoutBuffer.find('.buffer-line').exists()).toBe(false)
     expect(withoutBuffer.get('[aria-label="Fixed costs amount"]').text()).toBe('$1,477.48')
+  })
+
+  it('opens the buffer for changing when it is clicked', async () => {
+    const wrapper = mountOverview()
+
+    await wrapper.get('[aria-label="Change the miscellaneous buffer"]').trigger('click')
+
+    expect(wrapper.emitted('editBuffer')).toHaveLength(1)
   })
 
   it('flags fixed costs over target and a plan that exceeds income', () => {

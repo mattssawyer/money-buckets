@@ -19,6 +19,8 @@ const loadError = ref(false)
 const savedPlan = ref<SavedPlan | null>(null)
 const dialogVisible = ref(false)
 const dialogMode = ref<DialogMode>('setup')
+// Whether the dialog opens on the buffer's percent rather than at the top.
+const focusBuffer = ref(false)
 
 const dialogHeader = computed(() => {
   if (dialogMode.value === 'edit') return 'Edit your spending plan'
@@ -40,8 +42,9 @@ async function loadPlan() {
   }
 }
 
-function openDialog(mode: DialogMode) {
+function openDialog(mode: DialogMode, buffer = false) {
   dialogMode.value = mode
+  focusBuffer.value = buffer
   dialogVisible.value = true
 }
 
@@ -80,6 +83,7 @@ function onSaved(plan: SavedPlan) {
         v-else-if="savedPlan"
         :plan="savedPlan"
         @edit="openDialog('edit')"
+        @edit-buffer="openDialog('edit', true)"
         @start-over="openDialog('setup')"
       />
 
@@ -119,6 +123,7 @@ function onSaved(plan: SavedPlan) {
         :key="dialogMode"
         :saved="dialogMode === 'edit' ? (savedPlan ?? undefined) : undefined"
         :replacing="dialogMode === 'setup' && savedPlan != null"
+        :focus-buffer="focusBuffer"
         @saved="onSaved"
       />
     </Dialog>
