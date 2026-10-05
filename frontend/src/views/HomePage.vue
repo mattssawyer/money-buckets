@@ -86,9 +86,9 @@ const showDismissed = ref(false)
 const answeringKey = ref<string>()
 const answerError = ref('')
 const spending = ref<SpendingByBucket>()
-// This month across every tracked account, when the card shows something else. The plan covers
-// every tracked account, so what's left of it does too.
-const thisMonthSpending = ref<SpendingByBucket>()
+// The card's month across every tracked account, when the card shows one account. The plan
+// covers every tracked account, so what's left of it does too.
+const planMonthSpending = ref<{ period: SpendingPeriod; summary: SpendingByBucket }>()
 // Undefined until loaded, so the plan prompt never flashes for someone who has a plan.
 const savedPlan = ref<SavedPlan | null>()
 const hasSpendingPlan = computed(() =>
@@ -142,12 +142,24 @@ const spendingTotal = computed(() => spending.value?.total ?? 0)
 // What the spending card covers; remembered across visits.
 const spendingPeriod = ref<SpendingPeriod>(recallPeriod())
 const spendingPeriodName = computed(() => periodName(spendingPeriod.value))
-// The plan is monthly, so what's left only shows alongside this month.
+// The plan is monthly, so guilt-free spending is only measured against it for a calendar month:
+// what's left of this month, or how last month ended.
+const PLAN_MONTHS: readonly SpendingPeriod[] = ['THIS_MONTH', 'LAST_MONTH']
+const showsPlanMonth = computed(() => PLAN_MONTHS.includes(spendingPeriod.value))
 const guiltFree = computed(() => {
-  if (!savedPlan.value || spendingPeriod.value !== 'THIS_MONTH') return null
-  const month = selectedAccountId.value === undefined ? spending.value : thisMonthSpending.value
+  if (!savedPlan.value || !showsPlanMonth.value) return null
+  const month =
+    selectedAccountId.value === undefined
+      ? spending.value
+      : planMonthSpending.value?.period === spendingPeriod.value
+        ? planMonthSpending.value.summary
+        : undefined
   return month ? guiltFreeLeft(savedPlan.value, month) : null
 })
+// Without take-home pay the plan has no guilt-free budget, so say what's missing.
+const needsTakeHome = computed(
+  () => showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome == null,
+)
 const guiltFreeSpentPercent = computed(() => {
   if (!guiltFree.value) return 0
   const { budget, spent } = guiltFree.value
@@ -225,7 +237,7 @@ let disposed = false
 // Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
 const startTransactions = latestRequest()
 const startSpending = latestRequest()
-const startThisMonth = latestRequest()
+const startPlanMonth = latestRequest()
 const startRecurring = latestRequest()
 
 onMounted(loadConnections)
@@ -383,7 +395,7 @@ async function loadSpending() {
   const accountId = selectedAccountId.value
   const range = periodRange(spendingPeriod.value)
   const current = startSpending()
-  if (spendingPeriod.value === 'THIS_MONTH' && accountId !== undefined) void loadThisMonth()
+  if (showsPlanMonth.value && accountId !== undefined) void loadPlanMonth(spendingPeriod.value)
   try {
     const summary = await getSpendingByBucket(accountId, range)
     if (!current()) return
@@ -397,11 +409,11 @@ async function loadSpending() {
 }
 
 // Leaves the last answer in place when this fails, since what's left is only an extra.
-async function loadThisMonth() {
-  const current = startThisMonth()
+async function loadPlanMonth(period: SpendingPeriod) {
+  const current = startPlanMonth()
   try {
-    const month = await getSpendingByBucket(undefined, periodRange('THIS_MONTH'))
-    if (current()) thisMonthSpending.value = month
+    const summary = await getSpendingByBucket(undefined, periodRange(period))
+    if (current()) planMonthSpending.value = { period, summary }
   } catch {
     // Nothing to tell the user; the card itself still loaded.
   }
@@ -1028,10 +1040,20 @@ async function openPlaidLink() {
                 :class="{ 'guilt-free-over': guiltFree.left < 0 }"
               >
                 <p class="guilt-free-left-heading">
-                  <span>Guilt-free left this month</span>
+                  <span>{{
+                    spendingPeriod === 'THIS_MONTH'
+                      ? 'Guilt-free left this month'
+                      : `Guilt-free in ${spendingPeriodName}`
+                  }}</span>
                   <span class="guilt-free-left-amount">
                     {{ formatWholeDollars(Math.abs(guiltFree.left)) }}
-                    {{ guiltFree.left < 0 ? 'over' : 'left' }}
+                    {{
+                      guiltFree.left < 0
+                        ? 'over'
+                        : spendingPeriod === 'THIS_MONTH'
+                          ? 'left'
+                          : 'under'
+                    }}
                   </span>
                 </p>
                 <div class="guilt-free-bar" aria-hidden="true">
@@ -1053,6 +1075,10 @@ async function openPlaidLink() {
                   >
                 </p>
               </div>
+              <p v-else-if="needsTakeHome" class="spending-plan-prompt">
+                <RouterLink to="/spending-plan">Add your take-home pay</RouterLink>
+                to your plan to see how much guilt-free spending is left.
+              </p>
               <div class="spending-chart">
                 <Chart
                   type="doughnut"

@@ -900,20 +900,47 @@ describe('homepage spending breakdown', () => {
       )
     })
 
-    it('only shows alongside this month', async () => {
+    it('says how last month ended against the plan', async () => {
       localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_MONTH')
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+      expect(wrapper.get('.guilt-free-left-heading span').text()).toBe(
+        `Guilt-free in ${periodName('LAST_MONTH')}`,
+      )
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,988 under')
     })
 
-    it('waits for take-home pay to work out the budget', async () => {
+    it('counts every tracked account for last month too when one account is picked', async () => {
+      localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_MONTH')
+      localStorage.setItem('abacus.selectedAccountId', 'savings')
+      vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+      mountHome()
+      await flushPromises()
+
+      expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('LAST_MONTH'))
+    })
+
+    it("leaves rolling periods alone, since they don't line up with the plan's months", async () => {
+      localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_30_DAYS')
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+      expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
+    })
+
+    it('asks for take-home pay when the plan has none to work the budget out from', async () => {
       vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: null })
       const wrapper = mountHome()
       await flushPromises()
 
       expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+      const prompt = wrapper.get('.spending-plan-prompt')
+      expect(prompt.text()).toBe(
+        'Add your take-home pay to your plan to see how much guilt-free spending is left.',
+      )
+      expect(prompt.get('a').attributes('href')).toBe('/spending-plan')
     })
   })
 
