@@ -163,7 +163,8 @@ const needsTakeHome = computed(
 const guiltFreeSpentPercent = computed(() => {
   if (!guiltFree.value) return 0
   const { budget, spent } = guiltFree.value
-  return budget > 0 ? Math.min(100, (spent / budget) * 100) : 100
+  if (budget > 0) return Math.min(100, (spent / budget) * 100)
+  return spent > 0 ? 100 : 0
 })
 // Transactions are sorted into buckets with or without a plan, so spending is always charted by
 // bucket, the same buckets the transactions list shows.
@@ -434,7 +435,12 @@ function recheckUnsorted(
       const summary = await getSpendingByBucket(accountId, range)
       if (!current()) return
       // New data rebuilds the chart and replays its animation, so only swap it in when it changed.
-      if (JSON.stringify(summary) !== JSON.stringify(spending.value)) spending.value = summary
+      if (JSON.stringify(summary) !== JSON.stringify(spending.value)) {
+        spending.value = summary
+        // Sorting moved on, so what's left of guilt-free spending may have changed too.
+        if (showsPlanMonth.value && accountId !== undefined)
+          void loadPlanMonth(spendingPeriod.value)
+      }
       recheckUnsorted(accountId, range, current)
     } catch {
       // Keep showing what loaded; the next visit tries again.

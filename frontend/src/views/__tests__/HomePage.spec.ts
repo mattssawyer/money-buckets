@@ -900,6 +900,43 @@ describe('homepage spending breakdown', () => {
       )
     })
 
+    it('catches up with sorting when one account is picked', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      localStorage.setItem('abacus.selectedAccountId', 'savings')
+      vi.mocked(getAccounts).mockResolvedValue([checking, savings])
+      const guiltFree = (amount: number) => ({
+        ...spending,
+        buckets: [{ bucket: 'GUILT_FREE' as const, amount, categories: [] }],
+      })
+      let sorted = false
+      vi.mocked(getSpendingByBucket).mockImplementation(async (accountId) => {
+        if (accountId === undefined) return guiltFree(sorted ? 600 : 500)
+        return sorted
+          ? spending
+          : { ...spending, buckets: [{ bucket: 'UNSORTED', amount: 100, categories: [] }] }
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,500 left')
+
+      sorted = true
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,400 left')
+      vi.useRealTimers()
+    })
+
+    it('leaves the bar empty when the plan leaves nothing and nothing is spent', async () => {
+      vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: 2000 })
+      vi.mocked(getSpendingByBucket).mockResolvedValue({ ...spending, buckets: [] })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$0 left')
+      expect(wrapper.get('.guilt-free-bar-fill').attributes('style')).toContain('width: 0%')
+    })
+
     it('says how last month ended against the plan', async () => {
       localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_MONTH')
       const wrapper = mountHome()
