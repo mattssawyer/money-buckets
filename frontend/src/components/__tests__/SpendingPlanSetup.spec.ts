@@ -516,6 +516,21 @@ describe('spending plan setup', () => {
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
   })
 
+  it('lists a newly recurring bill to place once, even if answers overlap', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, sterlingRent])
+    await wrapper.get('.recurring-button').trigger('click')
+    const dialog = wrapper.getComponent(RecurringDialog)
+    dialog.vm.$emit('changed')
+    dialog.vm.$emit('changed')
+    await flushPromises()
+
+    const list = wrapper.get('[aria-labelledby="unplaced-heading"]')
+    expect(list.findAll('.unplaced-row')).toHaveLength(1)
+  })
+
   it('adds a payment confirmed while editing a saved plan to its line', async () => {
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()

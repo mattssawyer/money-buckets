@@ -257,7 +257,11 @@ async function onRecurringChanged() {
     if (onPlan.has(bill.stream_id)) continue
     if (!bill.is_inflow && bill.plan_bucket && bill.plan_line) {
       addBill(BUCKET_IDS[bill.plan_bucket], bill.plan_line, bill)
-    } else if (unplacedBills([bill]).length) {
+    } else if (
+      unplacedBills([bill]).length &&
+      // An earlier answer's catch-up, still on its way when this one started, may have listed it.
+      !unplaced.value.some((other) => other.stream_id === bill.stream_id)
+    ) {
       unplaced.value.push(bill)
     }
   }
