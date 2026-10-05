@@ -16,7 +16,7 @@ vi.mock('../../api/SpendingPlanService', () => ({
 vi.mock('../../components/SpendingPlanSetup.vue', () => ({
   default: {
     name: 'SpendingPlanSetup',
-    props: ['saved', 'replacing'],
+    props: ['saved', 'replacing', 'focusBuffer'],
     emits: ['saved'],
     template: '<div class="setup-stub" />',
   },
@@ -135,6 +135,20 @@ describe('spending plan page', () => {
     const setup = wrapper.getComponent({ name: 'SpendingPlanSetup' })
     expect(setup.props('saved')).toMatchObject({ accountId: 'checking', takeHome: 5200 })
     expect(setup.props('replacing')).toBe(false)
+    expect(setup.props('focusBuffer')).toBe(false)
+  })
+
+  it('edits the plan at the buffer when the buffer is clicked', async () => {
+    vi.mocked(getSpendingPlan).mockResolvedValue(savedResponse)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Change the miscellaneous buffer"]').trigger('click')
+
+    expect(wrapper.getComponent({ name: 'Dialog' }).props('header')).toBe('Edit your spending plan')
+    const setup = wrapper.getComponent({ name: 'SpendingPlanSetup' })
+    expect(setup.props('saved')).toMatchObject({ bufferPercent: 15 })
+    expect(setup.props('focusBuffer')).toBe(true)
   })
 
   it('starts a new setup that replaces the saved plan', async () => {

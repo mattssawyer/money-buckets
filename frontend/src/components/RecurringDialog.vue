@@ -44,6 +44,8 @@ const props = defineProps<{
   accountId?: string
   /** Shown under the title so it's clear which account the list covers. */
   accountLabel?: string
+  /** The list it opens on; the recurring one unless asked for another. */
+  startOn?: Tab
 }>()
 const emit = defineEmits<{
   /** Payees were answered while this was open, so other views of them should load again. */
@@ -153,7 +155,7 @@ watch(
   [visible, () => props.accountId],
   ([open]) => {
     if (open) {
-      tab.value = 'recurring'
+      tab.value = props.startOn ?? 'recurring'
       needsCatchUp = false
       void load()
     } else if (changed) {

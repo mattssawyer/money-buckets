@@ -19,6 +19,8 @@ const props = defineProps<{ plan: SavedPlan }>()
 
 const emit = defineEmits<{
   edit: []
+  /** Edit the plan, starting at the buffer's percent. */
+  editBuffer: []
   startOver: []
 }>()
 
@@ -174,9 +176,20 @@ function plannedLines(lines: PlanLineDraft[]) {
               </li>
             </ul>
           </li>
-          <li v-if="hasBuffer(bucket)" class="line-row buffer-line">
-            <span class="line-name">Miscellaneous buffer ({{ plan.bufferPercent }}%)</span>
-            <span class="line-amount">{{ formatPlanAmount(evaluation.buffer) }}</span>
+          <li v-if="hasBuffer(bucket)" class="buffer-line">
+            <button
+              type="button"
+              class="line-row buffer-button"
+              aria-haspopup="dialog"
+              aria-label="Change the miscellaneous buffer"
+              @click="emit('editBuffer')"
+            >
+              <span class="line-name">
+                Miscellaneous buffer ({{ plan.bufferPercent }}%)
+                <Pencil :size="13" :stroke-width="1.75" aria-hidden="true" />
+              </span>
+              <span class="line-amount">{{ formatPlanAmount(evaluation.buffer) }}</span>
+            </button>
           </li>
         </ul>
         <p v-else class="bucket-empty">Nothing planned yet.</p>
@@ -384,8 +397,29 @@ h2 {
 
 .buffer-line {
   padding-top: 0.5rem;
-  color: var(--app-text-secondary);
   border-top: 1px dashed var(--app-divider);
+}
+
+.buffer-button {
+  width: 100%;
+  padding: 0;
+  color: var(--app-text-secondary);
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.buffer-button .line-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.buffer-button:hover,
+.buffer-button:focus-visible {
+  color: var(--app-text);
 }
 
 .bucket-empty {

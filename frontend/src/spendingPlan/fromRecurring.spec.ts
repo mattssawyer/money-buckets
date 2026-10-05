@@ -4,6 +4,7 @@ import type { SpendingPlanBucket } from '../api/SpendingPlanService'
 import {
   estimateMonthlyTakeHome,
   planFromRecurring,
+  recurringChanges,
   toMonthlyAmount,
   unplacedBills,
 } from './fromRecurring'
@@ -298,5 +299,27 @@ describe('unplacedBills', () => {
     })
 
     expect(unplacedBills([rent, netflix, card, stream({ amount: -2400 })])).toEqual([rent])
+  })
+})
+
+describe('recurringChanges', () => {
+  const rent = stream({ stream_id: 'rent', amount: 1450, frequency: 'MONTHLY', is_inflow: false })
+  const gym = stream({ stream_id: 'gym', amount: 40, frequency: 'MONTHLY', is_inflow: false })
+  const netflix = stream({ stream_id: 'netflix', amount: 15.49, frequency: 'MONTHLY' })
+
+  it('finds the payments that started and stopped counting as recurring', () => {
+    const changes = recurringChanges([rent, gym], [rent, netflix])
+
+    expect(changes.added).toEqual([netflix])
+    expect([...changes.removed]).toEqual(['gym'])
+    expect(changes.amounts.size).toBe(0)
+  })
+
+  it('finds monthly amounts that changed with how often a bill is paid', () => {
+    const changes = recurringChanges([gym], [{ ...gym, frequency: 'BIWEEKLY' }])
+
+    expect(changes.amounts.get('gym')).toEqual({ from: 40, to: 86.67 })
+    expect(changes.added).toEqual([])
+    expect(changes.removed.size).toBe(0)
   })
 })
