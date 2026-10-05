@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight, CircleMinus, Info, Plus } from '@lucide/vue'
+import { ChevronRight, CircleMinus, Info, Plus, Repeat } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
@@ -15,6 +15,7 @@ import { saveSpendingPlan } from '../api/SpendingPlanService'
 import {
   estimateMonthlyTakeHome,
   planFromRecurring,
+  recurringChanges,
   recurringItem,
   unplacedBills,
 } from '../spendingPlan/fromRecurring'
@@ -31,9 +32,10 @@ import {
   type PlanItemDraft,
   type PlanLineDraft,
 } from '../spendingPlan/plan'
-import { fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
+import { BUCKET_IDS, fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
 import { withConfirmed } from '../spending/recurring'
 import { historyRange, lineAverages, spendingHistory } from '../spendingPlan/spendingHistory'
+import RecurringDialog from './RecurringDialog.vue'
 import SpendingExplorer from './SpendingExplorer.vue'
 
 const props = defineProps<{
@@ -112,6 +114,11 @@ const unansweredCandidates = ref(0)
 const unplaced = ref<RecurringStream[]>([])
 // The row each unplaced bill will be added to, by stream id.
 const placeInto = ref<Record<string, string>>({})
+const recurringVisible = ref(false)
+const recurringStartOn = ref<'recurring' | 'possible'>('recurring')
+// The recurring payments the plan was last brought up to date with, so answers given in the
+// recurring dialog can be told apart from bills the user skipped or took off a line.
+let recurringBefore: Promise<RecurringStream[] | null> | null = null
 
 // What the user spends in a month on each line, by its name, for blank lines' default amounts.
 const lineDefaults = ref(new Map<string, number>())
@@ -174,15 +181,9 @@ async function save() {
 async function loadEstimates() {
   loadingEstimates.value = true
   try {
-    const [found, candidates] = await Promise.all([
-      getRecurringTransactions(undefined, 50),
-      getRecurringCandidates().catch(() => []),
-      loadDefaults(),
-    ])
-    unansweredCandidates.value = candidates.filter(
-      (candidate) => candidate.status === 'SUGGESTED',
-    ).length
-    const streams = withConfirmed(found, candidates)
+    const loading = loadRecurring()
+    recurringBefore = loading.catch(() => null)
+    const [streams] = await Promise.all([loading, loadDefaults()])
     const estimated = estimateMonthlyTakeHome(streams)
     takeHome.value = estimated
     setPlan(planFromRecurring(streams))
@@ -193,6 +194,85 @@ async function loadEstimates() {
   } finally {
     loadingEstimates.value = false
   }
+}
+
+/**
+ * Plaid's recurring payments in every tracked account and the ones the user confirmed. Plaid's
+ * alone still load when candidates can't.
+ */
+async function loadRecurring() {
+  const [found, candidates] = await Promise.all([
+    getRecurringTransactions(undefined, 50),
+    getRecurringCandidates().catch(() => []),
+  ])
+  unansweredCandidates.value = candidates.filter(
+    (candidate) => candidate.status === 'SUGGESTED',
+  ).length
+  return withConfirmed(found, candidates)
+}
+
+function openRecurring(startOn: 'recurring' | 'possible') {
+  // A saved plan didn't load the recurring payments, so what they were before any answers is
+  // loaded now.
+  recurringBefore ??= loadRecurring().catch(() => null)
+  recurringStartOn.value = startOn
+  recurringVisible.value = true
+}
+
+/**
+ * Brings the plan up to date with what the user answered in the recurring dialog, keeping
+ * their own edits: a payment that now repeats goes on its line, or on the list to place, and
+ * one that doesn't comes off. Take-home pay follows only if the user left the estimate as it was.
+ */
+async function onRecurringChanged() {
+  const before = await recurringBefore
+  let after: RecurringStream[]
+  try {
+    after = await loadRecurring()
+  } catch {
+    return
+  }
+  recurringBefore = Promise.resolve(after)
+  if (!before) return
+
+  const changes = recurringChanges(before, after)
+  const rows = BUCKETS.flatMap((bucket) => plan.value[bucket.id])
+  for (const row of rows) {
+    const hadItems = row.items.length > 0
+    row.items = row.items.filter((item) => !item.streamId || !changes.removed.has(item.streamId))
+    // With its last bill gone, a line falls back to what the user usually spends on it.
+    if (hadItems && row.items.length === 0) row.amount = null
+    for (const item of row.items) {
+      const amount = item.streamId ? changes.amounts.get(item.streamId) : undefined
+      // An amount the user typed over stays.
+      if (amount && item.amount === amount.from) item.amount = amount.to
+    }
+  }
+  unplaced.value = unplaced.value.filter((bill) => !changes.removed.has(bill.stream_id))
+
+  const onPlan = new Set(rows.flatMap((row) => row.items.map((item) => item.streamId)))
+  for (const bill of changes.added) {
+    if (onPlan.has(bill.stream_id)) continue
+    if (!bill.is_inflow && bill.plan_bucket && bill.plan_line) {
+      addBill(BUCKET_IDS[bill.plan_bucket], bill.plan_line, bill)
+    } else if (unplacedBills([bill]).length) {
+      unplaced.value.push(bill)
+    }
+  }
+
+  if (takeHome.value === estimateMonthlyTakeHome(before)) {
+    takeHome.value = estimateMonthlyTakeHome(after)
+  }
+}
+
+/** Adds a bill to the named line, adding the line if the plan doesn't have it. */
+function addBill(bucket: BucketId, lineName: string, bill: RecurringStream) {
+  let row = plan.value[bucket].find((candidate) => candidate.name === lineName)
+  if (!row) {
+    row = toRow({ name: lineName, amount: null, items: [], fromPaycheck: false })
+    plan.value[bucket].push(row)
+  }
+  addToRow(row, bill)
 }
 
 /** What the user usually spends on each line; without it, blank lines simply stay blank. */
@@ -300,10 +380,14 @@ function placeBill(bill: RecurringStream) {
   const rowId = placeInto.value[bill.stream_id]
   const row = BUCKETS.flatMap((bucket) => plan.value[bucket.id]).find((row) => row.id === rowId)
   if (!row) return
+  addToRow(row, bill)
+  skipBill(bill)
+}
+
+function addToRow(row: PlanRow, bill: RecurringStream) {
   // The line's own amount becomes an item first, so the bill adds to it rather than replacing it.
   if (row.items.length === 0 && filled(row).amount != null) addItem(row)
   row.items.push(toItem(recurringItem(bill)))
-  skipBill(bill)
 }
 
 function skipBill(bill: RecurringStream) {
@@ -360,8 +444,8 @@ function amountValue(amount: number | null) {
   <div class="plan-setup" :class="{ 'showing-spending': showSpending }">
     <div class="plan-body">
       <form class="plan-form" aria-label="Spending plan" @submit.prevent>
-        <div v-if="!editing" class="plan-toolbar">
-          <p class="autofill-note">
+        <div class="plan-toolbar">
+          <p v-if="!editing" class="autofill-note">
             <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
             Amounts are filled in from your tracked accounts’ recurring transactions and what you
             usually spend.
@@ -374,9 +458,29 @@ function amountValue(amount: number | null) {
                 ? '1 payment might be recurring.'
                 : `${unansweredCandidates} payments might be recurring.`
             }}
-            Confirm them on Home to fill them in.
-            <RouterLink to="/">Go to Home</RouterLink>
+            Confirm them to fill them in.
+            <button
+              type="button"
+              class="note-action"
+              aria-haspopup="dialog"
+              @click="openRecurring('possible')"
+            >
+              Review them
+            </button>
           </p>
+          <Button
+            label="Recurring payments"
+            severity="secondary"
+            size="small"
+            text
+            class="recurring-button"
+            aria-haspopup="dialog"
+            @click="openRecurring('recurring')"
+          >
+            <template #icon>
+              <Repeat :size="14" :stroke-width="1.75" aria-hidden="true" />
+            </template>
+          </Button>
         </div>
 
         <section
@@ -696,6 +800,12 @@ function amountValue(amount: number | null) {
         @click="save"
       />
     </footer>
+
+    <RecurringDialog
+      v-model:visible="recurringVisible"
+      :start-on="recurringStartOn"
+      @changed="onRecurringChanged"
+    />
   </div>
 </template>
 
@@ -795,9 +905,23 @@ function amountValue(amount: number | null) {
   flex: none;
 }
 
-.autofill-note a {
+.autofill-note a,
+.note-action {
   color: var(--app-text);
   font-weight: 500;
+}
+
+.note-action {
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.recurring-button {
+  margin-left: auto;
 }
 
 .unplaced {

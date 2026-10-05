@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
+import RecurringDialog from '../RecurringDialog.vue'
 import SpendingPlanSetup from '../SpendingPlanSetup.vue'
 import {
   getRecurringCandidates,
@@ -81,6 +82,8 @@ function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}
         RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
         // It loads spending of its own; SpendingExplorer.spec.ts covers it.
         SpendingExplorer: true,
+        // RecurringDialog.spec.ts covers answering in it; these tests only say it changed.
+        RecurringDialog: true,
       },
     },
     attachTo: document.body,
@@ -435,10 +438,111 @@ describe('spending plan setup', () => {
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
     expect(wrapper.get('[aria-label="Subscriptions amount"]').element).toHaveProperty('value', '')
     const notes = wrapper.findAll('.autofill-note')
-    expect(notes[1]?.text()).toBe(
-      '1 payment might be recurring. Confirm them on Home to fill them in. Go to Home',
+    expect(notes[1]?.text().replace(/\s+/g, ' ')).toBe(
+      '1 payment might be recurring. Confirm them to fill them in. Review them',
     )
-    expect(notes[1]?.get('a').attributes('href')).toBe('/')
+
+    await notes[1]?.get('button').trigger('click')
+    const dialog = wrapper.getComponent(RecurringDialog)
+    expect(dialog.props('visible')).toBe(true)
+    expect(dialog.props('startOn')).toBe('possible')
+  })
+
+  it('opens the recurring payments from the plan', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    await wrapper.get('.recurring-button').trigger('click')
+
+    const dialog = wrapper.getComponent(RecurringDialog)
+    expect(dialog.props('visible')).toBe(true)
+    expect(dialog.props('startOn')).toBe('recurring')
+    expect(dialog.props('accountId')).toBeUndefined()
+  })
+
+  it('brings the plan up to date with recurring answers, keeping your own edits', async () => {
+    const gym: RecurringStream = {
+      ...rent,
+      stream_id: 'gym',
+      merchant_name: 'Gym',
+      amount: 40,
+      plan_line: 'Utilities',
+    }
+    const netflix: RecurringCandidate = {
+      ...rent,
+      stream_id: 'candidate-netflix',
+      merchant_name: 'Netflix',
+      amount: 15.49,
+      plan_line: 'Subscriptions',
+      kind: 'BILL',
+      merchant_key: 'netflix',
+      probability: 0.9,
+      status: 'SUGGESTED',
+    }
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, gym])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('#take-home-income').setValue('5000')
+    await wrapper.get('[aria-label="Groceries amount"]').setValue('500')
+    expect(wrapper.get('[aria-label="Utilities amount"]').text()).toBe('40')
+
+    // In the dialog, the user confirms Netflix and says the gym doesn't repeat.
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
+    vi.mocked(getRecurringCandidates).mockResolvedValue([{ ...netflix, status: 'CONFIRMED' }])
+    await wrapper.get('.recurring-button').trigger('click')
+    wrapper.getComponent(RecurringDialog).vm.$emit('changed')
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Subscriptions amount"]').text()).toBe('15.49')
+    expect(wrapper.get('[aria-label="Utilities amount"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('[aria-label="Groceries amount"]').element).toHaveProperty('value', '500')
+    expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5000')
+    expect(wrapper.findAll('.autofill-note')).toHaveLength(1)
+  })
+
+  it('leaves a bill the user skipped off the plan after recurring answers', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('[aria-label="Skip Sterling Group"]').trigger('click')
+
+    await wrapper.get('.recurring-button').trigger('click')
+    wrapper.getComponent(RecurringDialog).vm.$emit('changed')
+    await flushPromises()
+
+    expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
+    // Take-home pay the user didn't touch follows the paycheck.
+    expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
+  })
+
+  it('adds a payment confirmed while editing a saved plan to its line', async () => {
+    const wrapper = mountSetup({ saved: savedPlan })
+    await flushPromises()
+    await wrapper.get('.recurring-button').trigger('click')
+    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+
+    vi.mocked(getRecurringTransactions).mockResolvedValue([
+      paycheck,
+      rent,
+      {
+        ...rent,
+        stream_id: 'water',
+        merchant_name: 'City Water',
+        amount: 60,
+        plan_line: 'Utilities',
+      },
+    ])
+    wrapper.getComponent(RecurringDialog).vm.$emit('changed')
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Utilities amount"]').text()).toBe('60')
+    // Rent was recurring before, so the amount the plan was saved with stays.
+    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').element).toHaveProperty(
+      'value',
+      '1500',
+    )
+    expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
   })
 
   it('fills in Plaid’s recurring payments when candidates can’t be loaded', async () => {
