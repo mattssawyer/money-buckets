@@ -1,10 +1,13 @@
 package dev.matthewsawyer.finance_dashboard.plaid;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import dev.matthewsawyer.finance_dashboard.TestPlaidKeysets;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
@@ -64,6 +67,26 @@ class PlaidTokenEncryptionTests {
                 () -> new PlaidTokenEncryption(key));
         assertEquals("PLAID_TOKEN_ENCRYPTION_KEYSET must be a valid Tink AEAD JSON keyset", error.getMessage());
         assertNull(error.getCause());
+    }
+
+    @Test
+    void generatesAKeysetFileTheFirstTimeAndKeepsUsingIt(@TempDir Path dir) {
+        Path file = dir.resolve("keys/plaid-keyset.json");
+        String stored = new PlaidTokenEncryption("", file.toString()).encrypt("access-sandbox-token", USER_ID, "item");
+
+        assertTrue(Files.exists(file));
+        assertEquals("access-sandbox-token",
+                new PlaidTokenEncryption("", file.toString()).decrypt(stored, USER_ID, "item"));
+    }
+
+    @Test
+    void prefersTheKeysetSetDirectlyOverTheFile(@TempDir Path dir) {
+        Path file = dir.resolve("plaid-keyset.json");
+        String stored = encryption.encrypt("access-sandbox-token", USER_ID, "item");
+
+        assertEquals("access-sandbox-token",
+                new PlaidTokenEncryption(keysetJson, file.toString()).decrypt(stored, USER_ID, "item"));
+        assertFalse(Files.exists(file));
     }
 
     @ParameterizedTest

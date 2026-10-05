@@ -1,15 +1,25 @@
 # Money Buckets
 
-A personal finance dashboard for automating your spending planning. 
+A personal finance dashboard for automating your spending planning. It pulls your bank
+data from Plaid and helps you build and follow a Conscious Spending Plan: fixed costs,
+investments, savings and guilt-free spending.
 
-Money Buckets is in early development. The current integration uses Plaid Sandbox.
+Money Buckets is in early development. It works with Plaid Sandbox's test banks or, with
+Plaid production access, your real accounts.
 
 ## Features
 
-- Sign in with Clerk.
-- Connect financial accounts through Plaid Link.
-- View connected account details, current balances, and available balances.
-- Store user and account connections in PostgreSQL.
+- **Home:** balance, recent transactions, recurring bills and paychecks, and spending this
+  month (or another period) by bucket and category, with how much guilt-free spending is
+  left.
+- **Spending plan:** set up the plan from your take-home pay, recurring bills and what you
+  usually spend, with a buffer on fixed costs and targets for each bucket.
+- **Sorting:** Jev, through [TypeSafe](https://docs.typesafe.ai), sorts transactions into
+  buckets and plan lines and spots recurring payments Plaid hasn't. You can correct any
+  payee by clicking a transaction.
+- **Accounts:** choose which accounts count toward spending and net worth, and mark a shared
+  account so only your share counts.
+- **Investments:** link investment accounts and see holdings and net worth over time.
 
 ## Tech stack
 
@@ -54,9 +64,8 @@ The database defaults match the local Docker Compose configuration.
 
 The API runs at `http://localhost:8080/api`. Flyway creates the schema on a fresh database.
 
-The initial migrations may change during pre-production development. If you have
-already run older versions, reset the local database before restarting the backend.
-From the repository root:
+Schema changes go in new Flyway migrations; don't edit ones that have already run. To
+start over with an empty local database, from the repository root:
 
 ```sh
 docker compose down -v
@@ -87,24 +96,71 @@ Open `http://localhost:5173` to sign in and connect a sandbox account.
 
 ## Self-hosting with Docker
 
-Every push to `main` publishes `ghcr.io/mattssawyer/money-buckets-server` and
-`ghcr.io/mattssawyer/money-buckets-frontend`. To run them with a database:
+The `docker/` folder runs the whole app from published images: PostgreSQL, the API and
+the web app. Every push to `main` publishes
+`ghcr.io/mattssawyer/money-buckets-server` and `ghcr.io/mattssawyer/money-buckets-frontend`
+for amd64 and arm64, and they can be pulled without logging in.
+
+You need Docker with Docker Compose and two accounts: Clerk for sign-in and Plaid for bank
+data. Both are free to start with. A TypeSafe key is optional.
+
+### 1. Create the settings file
 
 ```sh
 cd docker
 cp .env.example .env
+```
+
+`docker/.env` holds every setting and secret the app reads. Keep it out of Git and back
+it up somewhere safe, such as a password manager.
+
+### 2. Fill in the keys
+
+| Setting | Required | Where it comes from |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | Yes | Any strong password you make up. The database is created with it on first start, so don't change it afterwards. |
+| `CLERK_PUBLISHABLE_KEY` | Yes | [Clerk dashboard](https://dashboard.clerk.com) → your application → **API keys**. Starts with `pk_`. |
+| `CLERK_FRONTEND_API_URL` | Yes | Same page, the **Frontend API URL**, such as `https://your-app.clerk.accounts.dev`. The API uses it to check sign-ins, so it must come from the same Clerk application as the publishable key. |
+| `PLAID_CLIENT_ID` | Yes | [Plaid dashboard](https://dashboard.plaid.com) → **Developers** → **Keys**. |
+| `PLAID_ENV` | Yes | Starts as `sandbox`, for Plaid's test banks, or `production` for real accounts once Plaid has approved production access for you. |
+| `PLAID_SECRET` | Yes | Same page, the secret for the environment in `PLAID_ENV`. |
+| `TYPESAFE_API_KEY` | No | [TypeSafe](https://docs.typesafe.ai). Without it the app runs, but transactions show as not sorted yet and nothing is put on plan lines or suggested as recurring. |
+| `PRIMEUI_LICENSE_KEY` | No | A PrimeUI license key, if you have one. |
+| `PLAID_TOKEN_ENCRYPTION_KEYSET` | No | Encrypts Plaid's access tokens in the database. Left empty, the server generates one on first start. To manage your own, see [the encryption guide](docs/plaid-token-encryption.md). |
+| `COMPOSE_PROFILES`, `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` | No | For faster syncing, below. |
+| `FRONTEND_URL`, `API_URL` | No | Only for serving the API from a different address than the app; see the comments in `.env.example`. |
+
+### 3. Start it
+
+```sh
 docker compose up -d
 ```
 
-Fill in `docker/.env` first; it lists every setting both images read. The app opens on
-port 3000: `http://localhost:3000` on the machine running it, or that machine's address from
-any other.
+Open `http://localhost:3000` on the machine running it, or port 3000 at that machine's
+address from another device on your network. The first start creates the database
+schema and the token keyset.
 
-Pulling works without logging in only once the GHCR packages are public. Until then, log
-in with a GitHub token that has the `read:packages` scope:
+### Back up your data
+
+The database lives in `docker/data/postgres`. The generated keyset lives in the
+`money-buckets_server-data` Docker volume, and the database's Plaid tokens can't be
+decrypted without it, so keep a copy somewhere safe, such as a password manager:
 
 ```sh
-echo YOUR_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+docker compose cp server:/app/data/plaid-keyset.json ./plaid-docker-keyset.json
+```
+
+To move the app to another machine, copy the `docker` folder, then paste the keyset's JSON
+into `PLAID_TOKEN_ENCRYPTION_KEYSET` in `.env` on one line, in single quotes, before
+starting it there.
+
+### Keep it up to date
+
+To update to the latest images:
+
+```sh
+docker compose pull
+docker compose up -d
 ```
 
 To build the images from your checkout instead of pulling them:
@@ -113,13 +169,24 @@ To build the images from your checkout instead of pulling them:
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
-The Compose file also runs an ngrok tunnel, so Plaid's webhooks can reach the server and
-keep transactions syncing after accounts are linked. It needs a free ngrok account: set
-`NGROK_AUTHTOKEN` and your free static domain as `NGROK_DOMAIN` in `docker/.env`.
+### Faster syncing (optional)
 
-The frontend passes `/api` through to the server, so browsers never reach the API
-directly; its own port listens only on `127.0.0.1:8080`. To reach the app from outside
-your network, put port 3000 behind a reverse proxy that serves HTTPS.
+The server syncs every linked bank on startup and every 6 hours. Plaid can also tell the
+server about new transactions as they arrive, through webhooks, but that needs a public
+HTTPS address. The Compose file can run an [ngrok](https://ngrok.com) tunnel for it with a
+free ngrok account: in `.env`, uncomment `COMPOSE_PROFILES=webhooks`, and set
+`NGROK_AUTHTOKEN` (ngrok dashboard → **Your Authtoken**) and `NGROK_DOMAIN` (ngrok
+dashboard → **Domains**, your free static domain without `https://`).
+
+Plaid saves the webhook address on each account when it's linked, so set this up before
+linking accounts and keep the same domain afterwards.
+
+### Reaching it from outside your network
+
+The web app passes `/api` through to the API, so browsers never reach the API directly;
+the API's own port listens only on `127.0.0.1:8080`. To use the app away from home, put
+port 3000 behind a reverse proxy that serves HTTPS. A Clerk production instance only
+works on the domain it's set up for, so give it that address.
 
 ## Development commands
 

@@ -261,14 +261,14 @@ class PlaidItemSyncTests {
     }
 
     @Test
-    void catchingUpQueuesAFullSyncOfEachItemNotRemoved() throws IOException {
+    void syncingAllQueuesAFullSyncOfEachItemNotRemoved() throws IOException {
         items.saveAndFlush(new PlaidItem(
                 "removed-item", tokenEncryption.encrypt("removed-token", userId, "removed-item"), userId));
         items.markRemoved("removed-item", TODAY);
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurring(recurringResponse());
 
-        itemSync.catchUp();
+        itemSync.syncAll();
         verifyNoInteractions(plaidApi);
         assertEquals(1, queued.size());
         runQueued();
