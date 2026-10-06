@@ -3,8 +3,11 @@ import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/t
 import PrimeVue from 'primevue/config'
 import AccountsPage from '../AccountsPage.vue'
 import {
+  createLinkToken,
+  exchangePublicToken,
   getAccounts,
   updateAccountTracking,
+  type LinkResult,
   type AccountTracking,
   type PlaidAccount,
 } from '../../api/PlaidService'
@@ -13,11 +16,17 @@ vi.mock('@clerk/vue', () => ({
   UserButton: { template: '<div />' },
 }))
 vi.mock('../../api/PlaidService', () => ({
+  createLinkToken: vi.fn<() => Promise<string>>(),
+  exchangePublicToken: vi.fn<(publicToken: string) => Promise<LinkResult>>(),
+  removeItem: vi.fn<(itemId: string) => Promise<void>>(),
   getAccounts: vi.fn<() => Promise<PlaidAccount[]>>(),
   updateAccountTracking:
     vi.fn<(accountId: string, tracking: AccountTracking) => Promise<PlaidAccount>>(),
 }))
 enableAutoUnmount(afterEach)
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function account(accountId: string, overrides: Partial<PlaidAccount> = {}): PlaidAccount {
   return {
@@ -50,6 +59,8 @@ const ira = account('IRA', {
   tracks_spending: false,
 })
 
+let linkOptions: Parameters<Window['Plaid']['create']>[0]
+
 function mountPage() {
   return mount(AccountsPage, {
     global: {
@@ -74,9 +85,23 @@ function cell(accountRow: ReturnType<typeof row>, label: string) {
   return accountRow.get(`td[data-label="${label}"]`)
 }
 
+function button(wrapper: VueWrapper, label: string) {
+  const found = wrapper.findAll('button').find((element) => element.text() === label)
+  if (!found) throw new Error(`Button not found: ${label}`)
+  return found
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(getAccounts).mockResolvedValue([checking, joint, card, ira])
+  vi.mocked(createLinkToken).mockResolvedValue('link-token')
+  vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'new-item', same_institution: [] })
+  vi.stubGlobal('Plaid', {
+    create: vi.fn((options: typeof linkOptions) => {
+      linkOptions = options
+      return { open: vi.fn(), destroy: vi.fn() }
+    }),
+  })
   vi.mocked(updateAccountTracking).mockImplementation(async (accountId, tracking) => ({
     ...[checking, joint, card, ira].find((each) => each.account_id === accountId)!,
     ...tracking,
@@ -285,13 +310,69 @@ describe('accounts page', () => {
     expect(wrapper.text()).not.toContain('save the change to Checking')
   })
 
-  it('points to Home when nothing is connected', async () => {
+  it('connects an account from the page and lists it', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+    expect(createLinkToken).toHaveBeenCalledWith()
+    expect(button(wrapper, 'Connecting…').attributes('disabled')).toBeDefined()
+
+    vi.mocked(getAccounts).mockResolvedValue([checking, joint, card, ira, account('Savings')])
+    linkOptions.onSuccess('public-token', {})
+    await flushPromises()
+
+    expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
+    expect(row(wrapper, 'Savings').exists()).toBe(true)
+    expect(button(wrapper, 'Add an account').attributes('disabled')).toBeUndefined()
+  })
+
+  it('warns when the linked bank was already connected', async () => {
+    vi.mocked(exchangePublicToken).mockResolvedValue({
+      item_id: 'new-item',
+      same_institution: [
+        {
+          item_id: 'chase',
+          institution_name: 'Chase',
+          investments: false,
+          investments_available: true,
+        },
+      ],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+    linkOptions.onSuccess('public-token', {})
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('You already had Chase connected')
+  })
+
+  it('says so when an account can’t be connected', async () => {
+    vi.mocked(exchangePublicToken).mockRejectedValue(new Error('Server unavailable'))
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+    linkOptions.onSuccess('public-token', {})
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('We couldn’t connect that account. Please try again.')
+  })
+
+  it('offers to connect an account when nothing is connected', async () => {
     vi.mocked(getAccounts).mockResolvedValue([])
     const wrapper = mountPage()
     await flushPromises()
 
     expect(wrapper.text()).toContain('No accounts yet')
-    expect(wrapper.get('.prompt-link').attributes('href')).toBe('/')
+    const buttons = wrapper.findAll('button').filter((b) => b.text() === 'Add an account')
+    expect(buttons).toHaveLength(1)
+    await buttons[0]!.trigger('click')
+    await flushPromises()
+    expect(window.Plaid.create).toHaveBeenCalled()
   })
 
   it('offers to try again when accounts fail to load', async () => {
