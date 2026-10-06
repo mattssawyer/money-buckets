@@ -20,6 +20,7 @@ const MONEY_IN_COLOR = BUCKET_STYLES.NOT_COUNTED.color
  * spending, so it's labelled for what it is instead of as waiting to be sorted.
  */
 export function bucketStyle(transaction: PlaidTransaction): { label: string; color: string } {
+  if (transaction.excluded) return { ...BUCKET_STYLES.NOT_COUNTED, label: 'Excluded' }
   if (transaction.bucket) return BUCKET_STYLES[transaction.bucket]
   if (transaction.category === 'INCOME') return { label: 'Income', color: MONEY_IN_COLOR }
   if (transaction.category === 'TRANSFER_IN') return { label: 'Transfer in', color: MONEY_IN_COLOR }

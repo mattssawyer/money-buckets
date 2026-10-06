@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Check } from '@lucide/vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import {
   answerRecurringCandidate,
   correctPayee,
+  setTransactionCounting,
   undoPayeeCorrection,
   undoRecurringAnswer,
   type PayeeRef,
@@ -39,6 +41,7 @@ const emit = defineEmits<{
 const bucket = ref<SpendingBucket | ''>('')
 const category = ref('')
 const saving = ref(false)
+const future = ref(false)
 const error = ref('')
 
 // Spending has a bucket and category; pay coming in only has whether it repeats.
@@ -78,6 +81,7 @@ watch(
     bucket.value = transaction?.bucket ?? ''
     category.value = transaction?.category ?? ''
     error.value = ''
+    future.value = false
   },
   { immediate: true },
 )
@@ -99,6 +103,20 @@ async function save() {
       categorySet && category.value ? category.value : null,
     ),
   )
+}
+
+async function setCounting() {
+  const transaction = props.transaction
+  if (!transaction) return
+  await run(() =>
+    setTransactionCounting(transaction.transaction_id, !transaction.excluded, future.value),
+  )
+}
+
+async function countFuture() {
+  const transaction = props.transaction
+  if (!transaction) return
+  await run(() => setTransactionCounting(transaction.transaction_id, false, true))
 }
 
 async function resetToAutomatic() {
@@ -159,9 +177,8 @@ function formatDate(date: string) {
       <section
         v-if="isSpending && transaction.payee_key"
         class="editor-section"
-        aria-labelledby="editor-classify"
+        aria-label="Classification"
       >
-        <h3 id="editor-classify" class="section-title">How it counts</h3>
         <label class="field">
           <span class="field-label">Bucket</span>
           <select v-model="bucket" class="field-select" :disabled="saving" aria-label="Bucket">
@@ -180,10 +197,7 @@ function formatDate(date: string) {
             </option>
           </select>
         </label>
-        <p class="hint">
-          Applies to every charge from {{ name }}, including future ones.
-          <template v-if="corrected">You’ve set this yourself, so it won’t be re-sorted.</template>
-        </p>
+        <p class="hint">Applies to past and future transactions with this recipient.</p>
         <div class="actions">
           <Button
             label="Save"
@@ -194,7 +208,7 @@ function formatDate(date: string) {
           />
           <Button
             v-if="corrected"
-            label="Go back to automatic"
+            label="Reset to automatic"
             size="small"
             severity="secondary"
             text
@@ -204,46 +218,46 @@ function formatDate(date: string) {
         </div>
       </section>
 
-      <section v-if="payee" class="editor-section" aria-labelledby="editor-repeats">
-        <h3 id="editor-repeats" class="section-title">
-          {{ transaction.payee_kind === 'PAYCHECK' ? 'Is this your pay?' : 'Does this repeat?' }}
-        </h3>
-        <p v-if="transaction.recurring === 'DETECTED'" class="hint">
-          Plaid already detects this as recurring.
-        </p>
-        <template
+      <section v-if="payee" class="editor-section" aria-label="Recurring">
+        <span v-if="transaction.recurring === 'DETECTED'" class="recurring-status">
+          <Check :size="16" aria-hidden="true" />
+          Marked as recurring
+        </span>
+        <div
           v-else-if="transaction.recurring === 'CONFIRMED' || transaction.recurring === 'DISMISSED'"
+          class="actions"
         >
-          <p class="hint">
+          <span class="recurring-status">
+            <Check v-if="transaction.recurring === 'CONFIRMED'" :size="16" aria-hidden="true" />
             {{
               transaction.recurring === 'CONFIRMED'
-                ? 'You said this repeats; it counts toward your recurring payments.'
-                : 'You said this doesn’t repeat.'
+                ? 'Marked as recurring'
+                : 'Marked as not recurring'
             }}
-          </p>
-          <div class="actions">
-            <Button
-              label="Undo"
-              size="small"
-              severity="secondary"
-              text
-              :disabled="saving"
-              @click="answer(null)"
-            />
-          </div>
-        </template>
+          </span>
+          <Button
+            label="Undo"
+            size="small"
+            severity="secondary"
+            text
+            :disabled="saving"
+            @click="answer(null)"
+          />
+        </div>
         <template v-else>
-          <p v-if="transaction.recurring === 'SUGGESTED'" class="hint">Jev thinks this repeats.</p>
+          <h3 class="section-title">
+            {{ transaction.payee_kind === 'PAYCHECK' ? 'Is this your pay?' : 'Recurring?' }}
+          </h3>
           <div class="actions">
             <Button
-              :label="transaction.payee_kind === 'PAYCHECK' ? 'Yes, it’s my pay' : 'This repeats'"
+              label="Yes"
               size="small"
               severity="secondary"
               :disabled="saving"
               @click="answer(true)"
             />
             <Button
-              :label="transaction.payee_kind === 'PAYCHECK' ? 'No' : 'It doesn’t'"
+              label="No"
               size="small"
               severity="secondary"
               text
@@ -252,6 +266,35 @@ function formatDate(date: string) {
             />
           </div>
         </template>
+      </section>
+
+      <section class="editor-section" aria-label="Transaction inclusion">
+        <span v-if="transaction.future_excluded" class="field-label"
+          >Future transactions excluded</span
+        >
+        <div class="actions">
+          <Button
+            :label="transaction.excluded ? 'Include transaction' : 'Exclude transaction'"
+            severity="secondary"
+            size="small"
+            :disabled="saving"
+            :loading="saving"
+            @click="setCounting"
+          />
+          <Button
+            v-if="transaction.future_excluded"
+            label="Include this and future"
+            size="small"
+            severity="secondary"
+            text
+            :disabled="saving"
+            @click="countFuture"
+          />
+        </div>
+        <label v-if="payee && !transaction.excluded" class="counting-option">
+          <input v-model="future" type="checkbox" :disabled="saving" />
+          <span>Future transactions with this recipient too</span>
+        </label>
       </section>
 
       <Message v-if="error" severity="error">{{ error }}</Message>
@@ -343,5 +386,21 @@ function formatDate(date: string) {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+}
+
+.recurring-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--app-text);
+  font-size: 0.8125rem;
+}
+
+.counting-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--app-text-secondary);
 }
 </style>

@@ -5,6 +5,7 @@ import TransactionEditor from '../TransactionEditor.vue'
 import {
   answerRecurringCandidate,
   correctPayee,
+  setTransactionCounting,
   undoPayeeCorrection,
   undoRecurringAnswer,
   type PlaidTransaction,
@@ -13,6 +14,7 @@ import {
 vi.mock('../../api/PlaidService', () => ({
   answerRecurringCandidate: vi.fn(),
   correctPayee: vi.fn(),
+  setTransactionCounting: vi.fn(),
   undoPayeeCorrection: vi.fn(),
   undoRecurringAnswer: vi.fn(),
 }))
@@ -66,12 +68,58 @@ beforeEach(() => {
 })
 
 describe('transaction editor', () => {
+  it('excludes only this transaction by default', async () => {
+    const wrapper = await mountEditor(rent)
+    await button(wrapper, 'Exclude transaction').trigger('click')
+    await flushPromises()
+    expect(setTransactionCounting).toHaveBeenCalledWith('rent-sep', true, false)
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(wrapper.emitted('update:visible')).toEqual([[false]])
+  })
+
+  it('can also exclude future transactions with this recipient', async () => {
+    const wrapper = await mountEditor(rent)
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await button(wrapper, 'Exclude transaction').trigger('click')
+    await flushPromises()
+    expect(setTransactionCounting).toHaveBeenCalledWith('rent-sep', true, true)
+  })
+
+  it('restores one transaction without removing its future rule', async () => {
+    const wrapper = await mountEditor({ ...rent, excluded: true, future_excluded: true })
+    await button(wrapper, 'Include transaction').trigger('click')
+    await flushPromises()
+    expect(setTransactionCounting).toHaveBeenCalledWith('rent-sep', false, false)
+  })
+
+  it('can stop excluding future transactions', async () => {
+    const wrapper = await mountEditor({ ...rent, excluded: true, future_excluded: true })
+    await button(wrapper, 'Include this and future').trigger('click')
+    await flushPromises()
+    expect(setTransactionCounting).toHaveBeenCalledWith('rent-sep', false, true)
+  })
+
+  it('supports a transaction without a recipient, but offers no future rule', async () => {
+    const wrapper = await mountEditor({ ...rent, payee_key: null, payee_kind: null })
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    await button(wrapper, 'Exclude transaction').trigger('click')
+    await flushPromises()
+    expect(setTransactionCounting).toHaveBeenCalledWith('rent-sep', true, false)
+  })
+
+  it('keeps the editor open when excluding fails', async () => {
+    vi.mocked(setTransactionCounting).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await mountEditor(rent)
+    await button(wrapper, 'Exclude transaction').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('We couldn’t save that. Please try again.')
+    expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
   it('moves every charge from the payee to the bucket and category the user picks', async () => {
     const wrapper = await mountEditor(rent)
 
-    expect(wrapper.text()).toContain(
-      'Applies to every charge from Sterling Group, including future ones.',
-    )
+    expect(wrapper.text()).toContain('Applies to past and future transactions with this recipient.')
     await wrapper.get('[aria-label="Bucket"]').setValue('FIXED_COSTS')
     await wrapper.get('[aria-label="Category"]').setValue('RENT_AND_UTILITIES')
     await button(wrapper, 'Save').trigger('click')
@@ -114,8 +162,7 @@ describe('transaction editor', () => {
   it('goes back to automatic sorting for a payee the user corrected', async () => {
     const wrapper = await mountEditor({ ...rent, bucket: 'FIXED_COSTS', bucket_corrected: true })
 
-    expect(wrapper.text()).toContain('You’ve set this yourself, so it won’t be re-sorted.')
-    await button(wrapper, 'Go back to automatic').trigger('click')
+    await button(wrapper, 'Reset to automatic').trigger('click')
     await flushPromises()
 
     expect(undoPayeeCorrection).toHaveBeenCalledWith('sterling group')
@@ -125,7 +172,7 @@ describe('transaction editor', () => {
   it('lets the user say a payment repeats', async () => {
     const wrapper = await mountEditor(rent)
 
-    await button(wrapper, 'This repeats').trigger('click')
+    await button(wrapper, 'Yes').trigger('click')
     await flushPromises()
 
     expect(answerRecurringCandidate).toHaveBeenCalledWith(
@@ -137,7 +184,7 @@ describe('transaction editor', () => {
   it('undoes an earlier answer', async () => {
     const wrapper = await mountEditor({ ...rent, recurring: 'CONFIRMED' })
 
-    expect(wrapper.text()).toContain('You said this repeats')
+    expect(wrapper.text()).toContain('Marked as recurring')
     await button(wrapper, 'Undo').trigger('click')
     await flushPromises()
 
@@ -150,10 +197,8 @@ describe('transaction editor', () => {
   it('does not ask about a payment Plaid already detects', async () => {
     const wrapper = await mountEditor({ ...rent, recurring: 'DETECTED' })
 
-    expect(wrapper.text()).toContain('Plaid already detects this as recurring.')
-    expect(wrapper.findAll('button').some((element) => element.text() === 'This repeats')).toBe(
-      false,
-    )
+    expect(wrapper.text()).toContain('Marked as recurring')
+    expect(wrapper.findAll('button').some((element) => element.text() === 'Yes')).toBe(false)
   })
 
   it('only asks whether pay is pay', async () => {
