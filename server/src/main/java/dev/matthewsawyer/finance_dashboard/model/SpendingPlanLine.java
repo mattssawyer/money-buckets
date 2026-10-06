@@ -52,7 +52,7 @@ public class SpendingPlanLine {
     private boolean fromPaycheck;
 
     /** Set as a percent of gross pay; the amount is still saved, worked out from it. */
-    @Column(name = "percent_of_gross", precision = 5, scale = 2)
+    @Column(name = "percent_of_gross", columnDefinition = "numeric")
     private BigDecimal percentOfGross;
 
     @OneToMany(mappedBy = "line", cascade = CascadeType.ALL, orphanRemoval = true)

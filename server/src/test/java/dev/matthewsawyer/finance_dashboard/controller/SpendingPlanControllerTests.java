@@ -188,6 +188,33 @@ class SpendingPlanControllerTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void worksOutAPercentLinesAmountFromGrossPayRatherThanTrustingTheOneSent() {
+        ArgumentCaptor<List<SpendingPlanLine>> lines = ArgumentCaptor.forClass(List.class);
+        when(planService.save(eq(USER_ID), eq(null), eq(null), eq(new BigDecimal("8000")),
+                eq(SpendingPlan.DEFAULT_BUFFER_PERCENT), lines.capture(), any())).thenReturn(null);
+
+        controller.saveSpendingPlan(jwt, new SpendingPlanRequest(null, null, new BigDecimal("8000"), null,
+                List.of(new LineRequest(SpendingPlanBucket.INVESTMENTS, "401(k)",
+                        new BigDecimal("1"), true, new BigDecimal("6.125"), List.of()))));
+
+        // Keep the entered precision and derive the dollar amount from it.
+        SpendingPlanLine line = lines.getValue().get(0);
+        assertEquals("6.125", line.getPercentOfGross().toPlainString());
+        assertEquals("490.00", line.getAmount().toPlainString());
+    }
+
+    @Test
+    void needsGrossPayForAPercentOfIt() {
+        assertBadRequest(new SpendingPlanRequest(null, null, null, null, List.of(
+                new LineRequest(SpendingPlanBucket.INVESTMENTS, "401(k)",
+                        new BigDecimal("480"), true, new BigDecimal("6"), List.of()))));
+        assertBadRequest(new SpendingPlanRequest(null, null, BigDecimal.ZERO, null, List.of(
+                new LineRequest(SpendingPlanBucket.INVESTMENTS, "401(k)",
+                        new BigDecimal("480"), true, new BigDecimal("6"), List.of()))));
+    }
+
+    @Test
     void allowsAPercentOfGrossPayOnlyOnPaycheckLinesWithoutItems() {
         assertBadRequest(planWith(new LineRequest(SpendingPlanBucket.INVESTMENTS, "Roth IRA",
                 null, false, new BigDecimal("5"), List.of())));

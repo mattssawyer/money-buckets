@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -77,7 +78,7 @@ public class SpendingPlanController {
         BigDecimal takeHome = checkAmount(request.takeHome(), "take_home");
         BigDecimal grossPay = checkAmount(request.grossPay(), "gross_pay");
         BigDecimal bufferPercent = checkBufferPercent(request.fixedCostBufferPercent());
-        List<SpendingPlanLine> lines = toLines(request.lines());
+        List<SpendingPlanLine> lines = toLines(request.lines(), grossPay);
 
         PlanLines linesBefore = planService.find(user.getId(), PlanLines::of).orElse(PlanLines.NONE);
         SpendingPlanResponse saved = planService.save(
@@ -86,15 +87,15 @@ public class SpendingPlanController {
         return saved;
     }
 
-    private static List<SpendingPlanLine> toLines(List<LineRequest> lines) {
+    private static List<SpendingPlanLine> toLines(List<LineRequest> lines, BigDecimal grossPay) {
         List<LineRequest> requested = Objects.requireNonNullElse(lines, List.of());
         if (requested.size() > MAX_LINES) {
             throw badRequest("A plan can have at most " + MAX_LINES + " lines");
         }
-        return requested.stream().map(SpendingPlanController::toLine).toList();
+        return requested.stream().map(line -> toLine(line, grossPay)).toList();
     }
 
-    private static SpendingPlanLine toLine(LineRequest line) {
+    private static SpendingPlanLine toLine(LineRequest line, BigDecimal grossPay) {
         if (line == null || line.bucket() == null) {
             throw badRequest("Each line needs a bucket");
         }
@@ -106,13 +107,21 @@ public class SpendingPlanController {
             throw badRequest("A line can have at most " + MAX_ITEMS_PER_LINE + " items");
         }
         BigDecimal percentOfGross = checkPercent(line.percentOfGross(), "percent_of_gross");
-        if (percentOfGross != null && (!line.fromPaycheck() || !items.isEmpty())) {
-            throw badRequest("Only paycheck lines without items can be a percent of gross pay");
+        BigDecimal amount = checkAmount(line.amount(), "amount");
+        if (percentOfGross != null) {
+            if (!line.fromPaycheck() || !items.isEmpty()) {
+                throw badRequest("Only paycheck lines without items can be a percent of gross pay");
+            }
+            if (grossPay == null || grossPay.signum() == 0) {
+                throw badRequest("A percent of gross pay needs gross_pay");
+            }
+            // Store the entered percent unchanged and derive dollars rather than trusting the client.
+            amount = grossPay.multiply(percentOfGross).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
         }
         return new SpendingPlanLine(
                 line.bucket(),
                 checkName(line.name()),
-                checkAmount(line.amount(), "amount"),
+                amount,
                 line.fromPaycheck(),
                 percentOfGross,
                 items.stream().map(SpendingPlanController::toItem).toList()

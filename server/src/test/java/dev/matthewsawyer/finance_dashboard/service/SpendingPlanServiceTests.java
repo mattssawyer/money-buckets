@@ -57,7 +57,7 @@ class SpendingPlanServiceTests {
                         new SpendingPlanItem("Netflix", new BigDecimal("15.49"), "stream-netflix"),
                         new SpendingPlanItem("Spotify", new BigDecimal("11.99"), null))),
                 new SpendingPlanLine(SpendingPlanBucket.INVESTMENTS, "401(k)",
-                        new BigDecimal("600"), true, new BigDecimal("7.5"), List.of())
+                        new BigDecimal("600"), true, new BigDecimal("7.5123456789012345"), List.of())
         ), plan -> plan);
         entityManager.clear();
 
@@ -65,7 +65,7 @@ class SpendingPlanServiceTests {
 
         assertEquals("checking", saved.accountId());
         assertEquals(0, new BigDecimal("8000").compareTo(saved.grossPay()));
-        assertEquals(0, new BigDecimal("7.5").compareTo(saved.percentOfGross().get(2)));
+        assertEquals(0, new BigDecimal("7.5123456789012345").compareTo(saved.percentOfGross().get(2)));
         assertNull(saved.percentOfGross().get(0));
         assertEquals(0, new BigDecimal("5200").compareTo(saved.takeHome()));
         assertEquals(0, new BigDecimal("12.5").compareTo(saved.bufferPercent()));

@@ -321,12 +321,28 @@ function defaultAmount(row: PlanRow): number | null {
 
 /** A line set as a percent of gross pay, in dollars; null until both are known. */
 function percentAmount(row: PlanRow): number | null {
-  if (row.percentOfGross == null || grossPay.value == null) return null
+  if (row.percentOfGross == null || !grossPay.value) return null
   return roundCents((grossPay.value * row.percentOfGross) / 100)
 }
 
+/**
+ * A percent line keeps the last amount its percent came to, so clearing gross pay doesn't lose
+ * it: without gross pay it's saved in dollars at that amount.
+ */
+function rememberPercentAmounts() {
+  for (const row of plan.value.investments) {
+    const amount = percentAmount(row)
+    if (amount != null) row.amount = amount
+  }
+}
+
 function filled(row: PlanRow): PlanLineDraft {
-  if (row.percentOfGross != null) return { ...row, amount: percentAmount(row) }
+  if (row.percentOfGross != null) {
+    const amount = percentAmount(row)
+    return amount == null
+      ? { ...row, amount: row.amount, percentOfGross: null }
+      : { ...row, amount }
+  }
   return { ...row, amount: row.amount ?? defaultAmount(row) }
 }
 
@@ -360,6 +376,7 @@ function onGrossPayInput(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLInputElement)) return
   grossPay.value = parseAmount(target.value)
+  rememberPercentAmounts()
 }
 
 /** Only a paycheck line that isn't broken down can be a percent of gross pay. */
@@ -379,10 +396,17 @@ function setPercent(row: PlanRow, percent: boolean) {
   if (percent) {
     if (!grossPay.value) return
     const amount = row.amount ?? defaultAmount(row)
-    row.percentOfGross = amount != null ? roundCents((amount / grossPay.value) * 100) : 0
-    row.amount = null
+    const equivalent = amount != null ? (amount / grossPay.value) * 100 : 0
+    // Keep dollars if this amount cannot round-trip through a valid percentage.
+    if (
+      equivalent > 100 ||
+      (amount != null && roundCents((grossPay.value * equivalent) / 100) !== amount)
+    )
+      return
+    row.percentOfGross = equivalent
+    row.amount = amount
   } else {
-    row.amount = percentAmount(row)
+    row.amount = percentAmount(row) ?? row.amount
     row.percentOfGross = null
   }
 }
@@ -394,10 +418,12 @@ function onPercentInput(row: PlanRow, event: Event) {
   if (percent != null && percent > 100) {
     row.percentOfGross = 100
     target.value = '100'
+    rememberPercentAmounts()
     return
   }
   // A cleared percent stays a percent line, at nothing, rather than turning back into dollars.
   row.percentOfGross = percent ?? 0
+  rememberPercentAmounts()
 }
 
 function onNameInput(entry: PlanRow | PlanItem, event: Event) {
@@ -433,7 +459,9 @@ function addItem(row: PlanRow) {
   // The line's amount, typed or default, becomes the first item so breaking a line down never
   // changes its total. A line set as a percent carries its amount in dollars.
   const amount =
-    row.percentOfGross != null ? percentAmount(row) : (row.amount ?? defaultAmount(row))
+    row.percentOfGross != null
+      ? (percentAmount(row) ?? row.amount)
+      : (row.amount ?? defaultAmount(row))
   row.percentOfGross = null
   const carried = row.items.length === 0 && amount != null
   row.items.push(

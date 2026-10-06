@@ -14,6 +14,8 @@ defineProps<{
 
 /** How far the bubble keeps from the edges of the window. */
 const EDGE = 8
+/** How far the bubble sits from the icon. */
+const GAP = 6
 
 const id = useId()
 const button = useTemplateRef('button')
@@ -23,7 +25,8 @@ const position = ref({ top: 0, left: 0 })
 
 /**
  * The bubble sits on the page itself rather than inside the icon's panel, so a dialog or a
- * scrolling panel can't cut it off. It opens below the icon and moves left to stay in view.
+ * scrolling panel can't cut it off. It opens below the icon, or above it when there's no room
+ * below, and moves left to stay in view.
  */
 async function show() {
   open.value = true
@@ -31,8 +34,11 @@ async function show() {
   if (!button.value || !bubble.value) return
   const anchor = button.value.getBoundingClientRect()
   const width = bubble.value.offsetWidth
+  const height = bubble.value.offsetHeight
+  const below = anchor.bottom + GAP
+  const fitsBelow = below + height <= window.innerHeight - EDGE
   position.value = {
-    top: anchor.bottom + 6,
+    top: fitsBelow ? below : Math.max(EDGE, anchor.top - GAP - height),
     left: Math.max(EDGE, Math.min(anchor.left - EDGE, window.innerWidth - width - EDGE)),
   }
   // Scrolling would leave it behind, so it closes instead.
@@ -44,6 +50,11 @@ function hide() {
   window.removeEventListener('scroll', hide, { capture: true })
 }
 
+/** Keep the bubble open while the button has focus, including pointer-acquired focus. */
+function onMouseLeave() {
+  if (document.activeElement !== button.value) hide()
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') hide()
 }
@@ -52,7 +63,7 @@ onBeforeUnmount(hide)
 </script>
 
 <template>
-  <span class="info-tip" @mouseenter="show" @mouseleave="hide">
+  <span class="info-tip" @mouseenter="show" @mouseleave="onMouseLeave">
     <button
       ref="button"
       type="button"
