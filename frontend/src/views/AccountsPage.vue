@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { UserButton } from '@clerk/vue'
-import { Landmark } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { Landmark, Plus } from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
+  createLinkToken,
+  exchangePublicToken,
   getAccounts,
   updateAccountTracking,
   type AccountTracking,
   type PlaidAccount,
+  type PlaidItem,
 } from '../api/PlaidService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { formatMoney } from '../investments/history'
+import { closePlaidLink, openPlaidLink } from '../plaid/plaidLink'
 
 /** Marking an account as shared starts at an even split. */
 const DEFAULT_SHARED_PERCENT = 50
@@ -53,6 +57,11 @@ const saving = ref(new Set<string>())
 const failedAccountIds = ref(new Set<string>())
 /** What the server last confirmed for each account, to go back to when a save fails. */
 const confirmed = new Map<string, AccountTracking>()
+const linking = ref(false)
+const linkError = ref('')
+// Older connections to the bank just linked, which the user may want to remove.
+const sameInstitution = ref<PlaidItem[]>([])
+let disposed = false
 
 const groups = computed<AccountGroup[]>(() => {
   const listed = GROUPS.map((group) => ({
@@ -74,16 +83,45 @@ const failedAccounts = computed(() =>
 
 onMounted(load)
 
+onUnmounted(() => {
+  disposed = true
+  closePlaidLink()
+})
+
 async function load() {
   loading.value = true
   loadError.value = false
   try {
     accounts.value = await getAccounts()
   } catch {
-    loadError.value = true
+    if (!disposed) loadError.value = true
   } finally {
-    loading.value = false
+    if (!disposed) loading.value = false
   }
+}
+
+/** Connects a bank through Plaid Link, then lists its accounts. */
+async function linkAccount() {
+  if (linking.value) return
+  linking.value = true
+  linkError.value = ''
+  try {
+    const publicToken = await openPlaidLink(await createLinkToken())
+    if (disposed || !publicToken) return
+    const result = await exchangePublicToken(publicToken)
+    if (disposed) return
+    sameInstitution.value = result.same_institution
+    await load()
+  } catch {
+    if (!disposed) linkError.value = 'We couldn’t connect that account. Please try again.'
+  } finally {
+    if (!disposed) linking.value = false
+  }
+}
+
+function onOlderRemoved() {
+  sameInstitution.value = []
+  void load()
 }
 
 function kindLabel(account: PlaidAccount) {
@@ -200,6 +238,14 @@ function onShareChange(account: PlaidAccount, event: Event) {
       </header>
 
       <div class="accounts-content">
+        <SameInstitutionNotice
+          v-if="sameInstitution.length"
+          :items="sameInstitution"
+          @removed="onOlderRemoved"
+          @dismiss="sameInstitution = []"
+        />
+        <Message v-if="linkError" severity="error">{{ linkError }}</Message>
+
         <div v-if="loading" class="page-loading" aria-label="Loading your accounts">
           <Skeleton height="14rem" />
           <Skeleton height="8rem" />
@@ -219,16 +265,38 @@ function onShareChange(account: PlaidAccount, event: Event) {
               <Landmark :size="24" :stroke-width="1.5" />
             </div>
             <h2 id="empty-heading">No accounts yet</h2>
-            <p>Connect your bank on Home, and its accounts will show up here.</p>
-            <RouterLink to="/" class="prompt-link">Go to Home</RouterLink>
+            <p>Connect a bank or credit card account through Plaid to see it here.</p>
+            <Button
+              :label="linking ? 'Connecting…' : 'Add an account'"
+              :loading="linking"
+              :disabled="linking"
+              @click="linkAccount"
+            >
+              <template #icon v-if="!linking">
+                <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+              </template>
+            </Button>
           </div>
         </section>
 
         <template v-else>
-          <p class="page-intro">
-            Choose which accounts count toward your spending and your net worth. For an account you
-            split with someone, set your share, and only your part counts.
-          </p>
+          <div class="intro-row">
+            <p class="page-intro">
+              Choose which accounts count toward your spending and your net worth. For an account
+              you split with someone, set your share, and only your part counts.
+            </p>
+            <Button
+              :label="linking ? 'Connecting…' : 'Add an account'"
+              :loading="linking"
+              :disabled="linking"
+              class="add-account-button"
+              @click="linkAccount"
+            >
+              <template #icon v-if="!linking">
+                <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+              </template>
+            </Button>
+          </div>
 
           <Message
             v-for="failed in failedAccounts"
@@ -386,6 +454,18 @@ h1 {
   max-width: 60rem;
 }
 
+.intro-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+}
+
+.add-account-button {
+  flex: none;
+}
+
 .page-intro {
   max-width: 40rem;
   margin: 0;
@@ -436,11 +516,6 @@ h1 {
   margin: 0.75rem 0 1.5rem;
   color: var(--app-text-secondary);
   line-height: 1.7;
-}
-
-.prompt-link {
-  color: var(--app-text);
-  font-weight: 500;
 }
 
 .account-group {
