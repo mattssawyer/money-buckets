@@ -10,6 +10,7 @@ import {
   type RecurringStream,
 } from '../api/PlaidService'
 import { FREQUENCIES, frequencyLabel, recurringLabel } from '../api/plaidLabels'
+import InfoTip from './InfoTip.vue'
 
 const visible = defineModel<boolean>('visible', { required: true })
 const props = defineProps<{ stream?: RecurringStream }>()
@@ -24,6 +25,12 @@ const error = ref('')
 
 const name = computed(() => (props.stream ? recurringLabel(props.stream) : ''))
 const isPay = computed(() => props.stream?.kind === 'PAYCHECK')
+const frequencyNote = computed(() => {
+  const source = props.stream?.frequency_set
+    ? 'You’ve set this yourself.'
+    : `Worked out from when ${name.value} has been paid.`
+  return `${source} Your spending plan uses it to turn the amount into a monthly one.`
+})
 const payee = computed<PayeeRef | undefined>(() =>
   props.stream?.kind && props.stream.merchant_key
     ? { kind: props.stream.kind, merchant_key: props.stream.merchant_key }
@@ -128,7 +135,6 @@ function formatAmount(stream: RecurringStream) {
             {{ isPay ? 'Is this your pay?' : 'Does this repeat?' }}
           </h3>
           <template v-if="stream.status === 'DISMISSED'">
-            <p class="hint">You said this doesn’t repeat.</p>
             <div class="actions">
               <Button
                 label="Undo"
@@ -140,7 +146,6 @@ function formatAmount(stream: RecurringStream) {
             </div>
           </template>
           <template v-else-if="stream.status === 'SUGGESTED'">
-            <p class="hint">Jev thinks this repeats.</p>
             <div class="actions">
               <Button
                 :label="isPay ? 'Yes, it’s my pay' : 'This repeats'"
@@ -160,14 +165,6 @@ function formatAmount(stream: RecurringStream) {
             </div>
           </template>
           <template v-else>
-            <p class="hint">
-              {{
-                stream.status === 'DETECTED'
-                  ? 'Plaid detects this as recurring.'
-                  : 'You said this repeats.'
-              }}
-              It counts toward your recurring payments and fills in your spending plan.
-            </p>
             <div class="actions">
               <Button
                 :label="isPay ? 'It’s not my pay' : 'It doesn’t repeat'"
@@ -194,7 +191,10 @@ function formatAmount(stream: RecurringStream) {
           class="editor-section"
           aria-labelledby="recurring-editor-frequency"
         >
-          <h3 id="recurring-editor-frequency" class="section-title">How often</h3>
+          <div class="section-heading">
+            <h3 id="recurring-editor-frequency" class="section-title">How often</h3>
+            <InfoTip label="About how often" :text="frequencyNote" />
+          </div>
           <label class="field">
             <span class="field-label">Frequency</span>
             <select
@@ -213,11 +213,6 @@ function formatAmount(stream: RecurringStream) {
               </option>
             </select>
           </label>
-          <p class="hint">
-            <template v-if="stream.frequency_set">You’ve set this yourself.</template>
-            <template v-else>Worked out from when {{ name }} has been paid.</template>
-            Your spending plan uses it to turn the amount into a monthly one.
-          </p>
           <div class="actions">
             <Button
               label="Save"
@@ -281,6 +276,12 @@ function formatAmount(stream: RecurringStream) {
 .editor-section + .editor-section {
   padding-top: 1.25rem;
   border-top: 1px solid var(--app-divider);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .section-title {

@@ -19,7 +19,7 @@ import {
   recurringItem,
   unplacedBills,
 } from '../spendingPlan/fromRecurring'
-import { formatPlanAmount, parseAmount } from '../spendingPlan/money'
+import { formatPlanAmount, parseAmount, roundCents } from '../spendingPlan/money'
 import {
   DEFAULT_BUFFER_PERCENT,
   PLAN_TARGETS,
@@ -35,6 +35,7 @@ import {
 import { BUCKET_IDS, fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
 import { withConfirmed } from '../spending/recurring'
 import { historyRange, lineAverages, spendingHistory } from '../spendingPlan/spendingHistory'
+import InfoTip from './InfoTip.vue'
 import RecurringDialog from './RecurringDialog.vue'
 import SpendingExplorer from './SpendingExplorer.vue'
 
@@ -103,6 +104,8 @@ const loadingEstimates = ref(!editing)
 // blank line would otherwise be saved, or carried into its first item, as nothing.
 const loadingDefaults = ref(editing)
 const takeHome = ref<number | null>(null)
+// What paycheck lines set as a percent are a percent of.
+const grossPay = ref<number | null>(null)
 const bufferPercent = ref<number | null>(DEFAULT_BUFFER_PERCENT)
 const plan = ref<PlanRows>({ fixedCosts: [], investments: [], savings: [] })
 const expandedRows = ref(new Set<string>())
@@ -145,6 +148,7 @@ const guiltFree = computed(() => evaluation.value.guiltFree)
 
 if (props.saved) {
   takeHome.value = props.saved.takeHome
+  grossPay.value = props.saved.grossPay
   bufferPercent.value = props.saved.bufferPercent
   setPlan(props.saved.plan)
 }
@@ -165,7 +169,13 @@ async function save() {
   try {
     // The plan follows whichever accounts are tracked, so it isn't tied to one.
     const saved = await saveSpendingPlan(
-      toSaveRequest(null, takeHome.value, bufferPercent.value ?? 0, filledPlan.value),
+      toSaveRequest(
+        null,
+        takeHome.value,
+        grossPay.value,
+        bufferPercent.value ?? 0,
+        filledPlan.value,
+      ),
     )
     emit('saved', fromSaved(saved))
   } catch {
@@ -309,7 +319,14 @@ function defaultAmount(row: PlanRow): number | null {
   return lineDefaults.value.get(row.name) ?? null
 }
 
+/** A line set as a percent of gross pay, in dollars; null until both are known. */
+function percentAmount(row: PlanRow): number | null {
+  if (row.percentOfGross == null || grossPay.value == null) return null
+  return roundCents((grossPay.value * row.percentOfGross) / 100)
+}
+
 function filled(row: PlanRow): PlanLineDraft {
+  if (row.percentOfGross != null) return { ...row, amount: percentAmount(row) }
   return { ...row, amount: row.amount ?? defaultAmount(row) }
 }
 
@@ -320,6 +337,7 @@ function toRow(draft: PlanLineDraft): PlanRow {
     amount: draft.amount,
     items: draft.items.map(toItem),
     fromPaycheck: draft.fromPaycheck,
+    percentOfGross: draft.percentOfGross ?? null,
   }
 }
 
@@ -336,6 +354,50 @@ function onTakeHomeInput(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLInputElement)) return
   takeHome.value = parseAmount(target.value)
+}
+
+function onGrossPayInput(event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) return
+  grossPay.value = parseAmount(target.value)
+}
+
+/** Only a paycheck line that isn't broken down can be a percent of gross pay. */
+function canUsePercent(bucket: Bucket, row: PlanRow) {
+  return bucket.paycheckOption && row.fromPaycheck && row.items.length === 0
+}
+
+/** A percent needs gross pay to be a percent of, so it can't be set until that's filled in. */
+const hasGrossPay = computed(() => (grossPay.value ?? 0) > 0)
+
+/**
+ * Switches a line between dollars and a percent of gross pay, carrying its amount across so the
+ * line keeps its total.
+ */
+function setPercent(row: PlanRow, percent: boolean) {
+  if (percent === (row.percentOfGross != null)) return
+  if (percent) {
+    if (!grossPay.value) return
+    const amount = row.amount ?? defaultAmount(row)
+    row.percentOfGross = amount != null ? roundCents((amount / grossPay.value) * 100) : 0
+    row.amount = null
+  } else {
+    row.amount = percentAmount(row)
+    row.percentOfGross = null
+  }
+}
+
+function onPercentInput(row: PlanRow, event: Event) {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) return
+  const percent = parseAmount(target.value)
+  if (percent != null && percent > 100) {
+    row.percentOfGross = 100
+    target.value = '100'
+    return
+  }
+  // A cleared percent stays a percent line, at nothing, rather than turning back into dollars.
+  row.percentOfGross = percent ?? 0
 }
 
 function onNameInput(entry: PlanRow | PlanItem, event: Event) {
@@ -369,8 +431,10 @@ function toggleBreakdown(id: string) {
 
 function addItem(row: PlanRow) {
   // The line's amount, typed or default, becomes the first item so breaking a line down never
-  // changes its total.
-  const amount = row.amount ?? defaultAmount(row)
+  // changes its total. A line set as a percent carries its amount in dollars.
+  const amount =
+    row.percentOfGross != null ? percentAmount(row) : (row.amount ?? defaultAmount(row))
+  row.percentOfGross = null
   const carried = row.items.length === 0 && amount != null
   row.items.push(
     toItem({
@@ -438,6 +502,8 @@ function onBufferInput(event: Event) {
 function onFromPaycheckChange(row: PlanRow, event: Event) {
   const target = event.target
   if (!(target instanceof HTMLInputElement)) return
+  // Only paycheck lines can be a percent of gross pay.
+  if (!target.checked) setPercent(row, false)
   row.fromPaycheck = target.checked
 }
 
@@ -531,7 +597,20 @@ function amountValue(amount: number | null) {
           </div>
           <template v-else>
             <div class="sheet-row">
-              <label class="row-label" for="take-home-income">After taxes and deductions</label>
+              <label class="row-label" for="gross-pay-income">Gross pay</label>
+              <div class="amount-field">
+                <span aria-hidden="true">$</span>
+                <input
+                  id="gross-pay-income"
+                  :value="amountValue(grossPay)"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  @input="onGrossPayInput"
+                />
+              </div>
+            </div>
+            <div class="sheet-row">
+              <label class="row-label" for="take-home-income">Take-home pay</label>
               <div class="amount-field">
                 <span aria-hidden="true">$</span>
                 <input
@@ -543,20 +622,6 @@ function amountValue(amount: number | null) {
                 />
               </div>
             </div>
-            <template v-if="evaluation.fromPaycheck > 0">
-              <div class="sheet-row income-addback">
-                <span class="row-label">Investments taken from your paycheck</span>
-                <span class="addback-amount" aria-label="Investments taken from your paycheck">
-                  +{{ formatPlanAmount(evaluation.fromPaycheck) }}
-                </span>
-              </div>
-              <div v-if="evaluation.income != null" class="sheet-row total-row">
-                <span class="row-label">Plan income</span>
-                <div class="total-amount" aria-label="Plan income">
-                  <span>{{ formatPlanAmount(evaluation.income) }}</span>
-                </div>
-              </div>
-            </template>
           </template>
         </section>
 
@@ -608,7 +673,55 @@ function amountValue(amount: number | null) {
                   @input="onNameInput(row, $event)"
                 />
                 <span v-if="row.items.length" class="item-count">{{ row.items.length }}</span>
-                <div v-if="row.items.length" class="amount-field amount-derived">
+                <div
+                  v-if="canUsePercent(bucket, row)"
+                  class="unit-switch"
+                  role="group"
+                  :aria-label="`${row.name || bucket.lineNoun}: set in dollars or percent`"
+                  :title="hasGrossPay ? undefined : 'Enter your gross pay to use a percent'"
+                >
+                  <button
+                    type="button"
+                    :aria-pressed="row.percentOfGross == null"
+                    aria-label="Dollars"
+                    @click="setPercent(row, false)"
+                  >
+                    $
+                  </button>
+                  <button
+                    type="button"
+                    :aria-pressed="row.percentOfGross != null"
+                    aria-label="Percent of gross pay"
+                    :disabled="!hasGrossPay && row.percentOfGross == null"
+                    @click="setPercent(row, true)"
+                  >
+                    %
+                  </button>
+                </div>
+                <template v-if="row.percentOfGross != null">
+                  <div class="percent-field" :class="{ 'percent-field-disabled': !hasGrossPay }">
+                    <input
+                      :value="amountValue(row.percentOfGross)"
+                      :disabled="!hasGrossPay"
+                      :title="hasGrossPay ? undefined : 'Enter your gross pay to use a percent'"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      :aria-label="`${row.name || bucket.lineNoun} percent of gross pay`"
+                      @input="onPercentInput(row, $event)"
+                    />
+                    <span aria-hidden="true">%</span>
+                  </div>
+                  <div class="amount-field amount-derived">
+                    <span aria-hidden="true">$</span>
+                    <span
+                      class="derived-value"
+                      :aria-label="row.name ? `${row.name} amount` : `${bucket.lineNoun} amount`"
+                    >
+                      {{ percentAmount(row) ?? '' }}
+                    </span>
+                  </div>
+                </template>
+                <div v-else-if="row.items.length" class="amount-field amount-derived">
                   <span aria-hidden="true">$</span>
                   <span
                     class="derived-value"
@@ -700,10 +813,13 @@ function amountValue(amount: number | null) {
             </button>
 
             <div v-if="bucket.buffer" class="sheet-row buffer-row">
-              <label class="row-label" for="fixed-cost-buffer">
-                Miscellaneous buffer
-                <span class="row-hint">For costs you forgot and prices that rise</span>
-              </label>
+              <div class="row-label buffer-label">
+                <label for="fixed-cost-buffer">Miscellaneous buffer</label>
+                <InfoTip
+                  label="About the buffer"
+                  text="A percent of fixed costs added on top, for costs you forgot and prices that rise."
+                />
+              </div>
               <div class="percent-field">
                 <input
                   id="fixed-cost-buffer"
@@ -1289,11 +1405,10 @@ h2 {
   border-top: 1px dashed var(--app-divider);
 }
 
-.row-hint {
-  display: block;
-  color: var(--app-text-subdued);
-  font-size: 0.75rem;
-  font-weight: 400;
+.buffer-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* A pill like the line badges, shaded so it reads as the one setting to adjust. */
@@ -1309,6 +1424,46 @@ h2 {
   border-radius: 999px;
   font-size: 0.875rem;
   font-weight: 500;
+}
+
+.unit-switch {
+  display: flex;
+  flex: none;
+  padding: 0.125rem;
+  background: var(--app-inset);
+  border-radius: 999px;
+}
+
+.unit-switch button {
+  min-width: 1.5rem;
+  padding: 0.05rem 0.4rem;
+  color: var(--app-text-subdued);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.unit-switch button:hover:not(:disabled) {
+  color: var(--app-text);
+}
+
+.unit-switch button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.percent-field-disabled {
+  opacity: 0.6;
+}
+
+.unit-switch button[aria-pressed='true'] {
+  color: var(--app-text);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-xs);
 }
 
 .percent-field:hover {
@@ -1355,21 +1510,6 @@ h2 {
 
 .total-share-over {
   color: var(--app-over-target);
-}
-
-.income-addback {
-  min-height: 2rem;
-  color: var(--app-text-secondary);
-  font-size: 0.875rem;
-}
-
-.income-addback .row-label {
-  font-weight: 400;
-}
-
-.addback-amount {
-  flex: none;
-  font-variant-numeric: tabular-nums;
 }
 
 /*

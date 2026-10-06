@@ -88,6 +88,11 @@ export interface PlanLineDraft {
    * excludes it, so it's added back to the income base instead of being subtracted twice.
    */
   fromPaycheck: boolean
+  /**
+   * A paycheck line set as a percent of gross pay, like most 401(k) elections; its amount is
+   * worked out from it. Left out for a line set in dollars.
+   */
+  percentOfGross?: number | null
 }
 
 export type PlanDraft = Record<BucketId, PlanLineDraft[]>
@@ -100,6 +105,7 @@ export function defaultPlan(): PlanDraft {
       amount: null,
       items: [],
       fromPaycheck: bucket === 'investments' && PAYCHECK_LINES.has(name),
+      percentOfGross: null,
     }))
 
   return {

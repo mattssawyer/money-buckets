@@ -9,6 +9,7 @@ import Chart from 'primevue/chart'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -22,7 +23,6 @@ import {
   answerRecurringCandidate,
   getRecurringCandidates,
   getRecurringTransactions,
-  syncRecurringTransactions,
   undoRecurringAnswer,
   type PlaidItem,
   type PlaidTransaction,
@@ -64,9 +64,6 @@ const linkError = ref('')
 const initialLoading = ref(true)
 const loadingTransactions = ref(false)
 const loadingRecurring = ref(false)
-const syncingRecurring = ref(false)
-// Whether the recurring error came from Sync, so trying again syncs rather than just reloading.
-const recurringSyncFailed = ref(false)
 const loadingSpending = ref(false)
 const connectionError = ref('')
 const transactionsError = ref('')
@@ -81,7 +78,6 @@ const editing = ref<PlaidTransaction>()
 const editorVisible = ref(false)
 const recurring = ref<RecurringStream[]>([])
 const candidates = ref<RecurringCandidate[]>([])
-const showDismissed = ref(false)
 // The candidate whose answer is being saved; answers are saved one at a time.
 const answeringKey = ref<string>()
 const answerError = ref('')
@@ -135,9 +131,6 @@ const recurringList = computed(() =>
 const suggestedCandidates = computed(() =>
   candidates.value.filter((candidate) => candidate.status === 'SUGGESTED'),
 )
-const dismissedCandidates = computed(() =>
-  candidates.value.filter((candidate) => candidate.status === 'DISMISSED'),
-)
 const spendingTotal = computed(() => spending.value?.total ?? 0)
 // What the spending card covers; remembered across visits.
 const spendingPeriod = ref<SpendingPeriod>(recallPeriod())
@@ -160,12 +153,6 @@ const guiltFree = computed(() => {
 const needsTakeHome = computed(
   () => showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome == null,
 )
-const guiltFreeSpentPercent = computed(() => {
-  if (!guiltFree.value) return 0
-  const { budget, spent } = guiltFree.value
-  if (budget > 0) return Math.min(100, (spent / budget) * 100)
-  return spent > 0 ? 100 : 0
-})
 // Transactions are sorted into buckets with or without a plan, so spending is always charted by
 // bucket, the same buckets the transactions list shows.
 const spendingLegend = computed(() => {
@@ -465,7 +452,6 @@ async function loadTransactions() {
 async function loadRecurring() {
   loadingRecurring.value = true
   recurringError.value = ''
-  recurringSyncFailed.value = false
   answerError.value = ''
   const accountId = selectedAccountId.value
   const current = startRecurring()
@@ -511,23 +497,6 @@ function setStatus(candidate: RecurringCandidate, status: RecurringCandidate['st
   candidates.value = candidates.value.map((entry) =>
     entry.stream_id === candidate.stream_id ? { ...entry, status } : entry,
   )
-}
-
-async function syncRecurring() {
-  syncingRecurring.value = true
-  recurringError.value = ''
-  recurringSyncFailed.value = false
-  try {
-    await syncRecurringTransactions()
-    if (disposed) return
-    await loadRecurring()
-  } catch {
-    if (disposed) return
-    recurringError.value = 'We couldn’t sync your recurring transactions.'
-    recurringSyncFailed.value = true
-  } finally {
-    if (!disposed) syncingRecurring.value = false
-  }
 }
 
 async function finishLink(publicToken: string) {
@@ -812,18 +781,9 @@ async function openPlaidLink() {
                   severity="secondary"
                   size="small"
                   text
-                  class="view-all-button recurring-see-all"
+                  class="view-all-button"
                   aria-haspopup="dialog"
                   @click="allRecurringVisible = true"
-                />
-                <Button
-                  :label="syncingRecurring ? 'Syncing…' : 'Sync'"
-                  severity="secondary"
-                  size="small"
-                  text
-                  class="view-all-button"
-                  :disabled="syncingRecurring || loadingRecurring"
-                  @click="syncRecurring"
                 />
               </div>
               <div
@@ -841,7 +801,7 @@ async function openPlaidLink() {
                   label="Try again"
                   severity="secondary"
                   class="retry-button"
-                  @click="recurringSyncFailed ? syncRecurring() : loadRecurring()"
+                  @click="loadRecurring"
                 />
               </div>
 
@@ -941,53 +901,6 @@ async function openPlaidLink() {
                     </li>
                   </ul>
                 </div>
-
-                <template v-if="dismissedCandidates.length">
-                  <Button
-                    :label="
-                      showDismissed
-                        ? 'Hide dismissed'
-                        : `Show dismissed (${dismissedCandidates.length})`
-                    "
-                    severity="secondary"
-                    size="small"
-                    text
-                    class="dismissed-toggle"
-                    :aria-expanded="showDismissed"
-                    aria-controls="dismissed-candidates"
-                    @click="showDismissed = !showDismissed"
-                  />
-                  <ul
-                    v-if="showDismissed"
-                    id="dismissed-candidates"
-                    class="transactions-list candidates-list"
-                    tabindex="0"
-                  >
-                    <li
-                      v-for="candidate in dismissedCandidates"
-                      :key="candidate.stream_id"
-                      class="transaction-row"
-                    >
-                      <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
-                        {{ recurringLabel(candidate).charAt(0) }}
-                      </span>
-                      <span class="transaction-details">
-                        <span class="transaction-name">{{ recurringLabel(candidate) }}</span>
-                        <span class="transaction-meta">Not recurring</span>
-                      </span>
-                      <Button
-                        label="Undo"
-                        size="small"
-                        severity="secondary"
-                        text
-                        class="candidate-actions"
-                        :disabled="answeringKey !== undefined"
-                        :aria-label="`Undo dismissing ${recurringLabel(candidate)}`"
-                        @click="answerCandidate(candidate, null)"
-                      />
-                    </li>
-                  </ul>
-                </template>
               </template>
             </section>
           </div>
@@ -1040,47 +953,6 @@ async function openPlaidLink() {
                 <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
                 to set a target for each bucket.
               </p>
-              <div
-                v-else-if="guiltFree"
-                class="guilt-free-left"
-                :class="{ 'guilt-free-over': guiltFree.left < 0 }"
-              >
-                <p class="guilt-free-left-heading">
-                  <span>{{
-                    spendingPeriod === 'THIS_MONTH'
-                      ? 'Guilt-free left this month'
-                      : `Guilt-free in ${spendingPeriodName}`
-                  }}</span>
-                  <span class="guilt-free-left-amount">
-                    {{ formatWholeDollars(Math.abs(guiltFree.left)) }}
-                    {{
-                      guiltFree.left < 0
-                        ? 'over'
-                        : spendingPeriod === 'THIS_MONTH'
-                          ? 'left'
-                          : 'under'
-                    }}
-                  </span>
-                </p>
-                <div class="guilt-free-bar" aria-hidden="true">
-                  <div
-                    class="guilt-free-bar-fill"
-                    :style="{
-                      width: `${guiltFreeSpentPercent}%`,
-                      backgroundColor:
-                        guiltFree.left < 0 ? undefined : BUCKET_STYLES.GUILT_FREE.color,
-                    }"
-                  />
-                </div>
-                <p class="guilt-free-left-detail">
-                  {{ formatWholeDollars(guiltFree.spent) }} of
-                  {{ formatWholeDollars(guiltFree.budget) }} spent<template
-                    v-if="selectedAccountId !== undefined"
-                  >
-                    across all tracked accounts</template
-                  >
-                </p>
-              </div>
               <p v-else-if="needsTakeHome" class="spending-plan-prompt">
                 <RouterLink to="/spending-plan">Add your take-home pay</RouterLink>
                 to your plan to see how much guilt-free spending is left.
@@ -1224,6 +1096,11 @@ async function openPlaidLink() {
                   </div>
                 </li>
               </ul>
+              <GuiltFreeProgress
+                v-if="guiltFree"
+                :guilt-free="guiltFree"
+                :all-accounts="selectedAccountId !== undefined"
+              />
             </div>
           </section>
         </div>
@@ -1672,58 +1549,6 @@ li.spending-legend-row {
   line-height: 1.5;
 }
 
-.guilt-free-left {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.guilt-free-left p {
-  margin: 0;
-}
-
-.guilt-free-left-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  color: var(--app-text-secondary);
-  font-size: 0.875rem;
-}
-
-.guilt-free-left-amount {
-  color: var(--app-text);
-  font-size: 1rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.guilt-free-over .guilt-free-left-amount {
-  color: var(--app-over-target);
-}
-
-.guilt-free-bar {
-  height: 0.375rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--app-inset);
-}
-
-.guilt-free-bar-fill {
-  height: 100%;
-  border-radius: inherit;
-}
-
-.guilt-free-over .guilt-free-bar-fill {
-  background: var(--app-over-target);
-}
-
-.guilt-free-left-detail {
-  color: var(--app-text-subdued);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-}
-
 .spending-plan-prompt a {
   color: var(--app-text);
   font-weight: 500;
@@ -1743,12 +1568,6 @@ li.spending-legend-row {
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 1.75rem;
-}
-
-/* Sits beside Sync at the end of the heading rather than in the middle of it. */
-.recurring-see-all {
-  margin-right: 0;
-  margin-left: auto;
 }
 
 .view-all-button {
@@ -1863,11 +1682,6 @@ li.spending-legend-row {
 
 .candidate-error {
   margin-top: 0.75rem;
-}
-
-.dismissed-toggle {
-  align-self: flex-start;
-  margin: 0.5rem 0 0 -0.5rem;
 }
 
 .transactions-list::-webkit-scrollbar {

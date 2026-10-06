@@ -38,6 +38,10 @@ public class SpendingPlan {
     @Column(name = "take_home", precision = 19, scale = 4)
     private BigDecimal takeHome;
 
+    /** Monthly pay before taxes and deductions, for lines set as a percent of it. */
+    @Column(name = "gross_pay", precision = 19, scale = 4)
+    private BigDecimal grossPay;
+
     /** Percent of fixed costs added on top for forgotten and rising costs. */
     @Column(name = "fixed_cost_buffer_percent", nullable = false, precision = 5, scale = 2)
     private BigDecimal fixedCostBufferPercent = DEFAULT_BUFFER_PERCENT;
@@ -78,11 +82,13 @@ public class SpendingPlan {
     public void replace(
             String accountId,
             BigDecimal takeHome,
+            BigDecimal grossPay,
             BigDecimal fixedCostBufferPercent,
             List<SpendingPlanLine> newLines
     ) {
         this.accountId = accountId;
         this.takeHome = takeHome;
+        this.grossPay = grossPay;
         this.fixedCostBufferPercent = fixedCostBufferPercent;
         this.updatedAt = Instant.now();
         lines.clear();
@@ -107,6 +113,10 @@ public class SpendingPlan {
 
     public BigDecimal getTakeHome() {
         return takeHome;
+    }
+
+    public BigDecimal getGrossPay() {
+        return grossPay;
     }
 
     public BigDecimal getFixedCostBufferPercent() {

@@ -35,7 +35,7 @@ public class SpendingPlanController {
     static final int MAX_NAME_LENGTH = 255;
     /** NUMERIC(19, 4) holds 15 digits before the decimal point. */
     static final BigDecimal MAX_AMOUNT = new BigDecimal("1e15");
-    static final BigDecimal MAX_BUFFER_PERCENT = new BigDecimal("100");
+    static final BigDecimal MAX_PERCENT = new BigDecimal("100");
 
     private final SpendingPlanService planService;
     private final PlaidAccountRepository accountRepository;
@@ -75,12 +75,13 @@ public class SpendingPlanController {
             throw badRequest("Unknown account");
         }
         BigDecimal takeHome = checkAmount(request.takeHome(), "take_home");
+        BigDecimal grossPay = checkAmount(request.grossPay(), "gross_pay");
         BigDecimal bufferPercent = checkBufferPercent(request.fixedCostBufferPercent());
         List<SpendingPlanLine> lines = toLines(request.lines());
 
         PlanLines linesBefore = planService.find(user.getId(), PlanLines::of).orElse(PlanLines.NONE);
         SpendingPlanResponse saved = planService.save(
-                user.getId(), accountId, takeHome, bufferPercent, lines, SpendingPlanResponse::from);
+                user.getId(), accountId, takeHome, grossPay, bufferPercent, lines, SpendingPlanResponse::from);
         bucketSorting.planSaved(user.getId(), linesBefore);
         return saved;
     }
@@ -104,11 +105,16 @@ public class SpendingPlanController {
         if (items.size() > MAX_ITEMS_PER_LINE) {
             throw badRequest("A line can have at most " + MAX_ITEMS_PER_LINE + " items");
         }
+        BigDecimal percentOfGross = checkPercent(line.percentOfGross(), "percent_of_gross");
+        if (percentOfGross != null && (!line.fromPaycheck() || !items.isEmpty())) {
+            throw badRequest("Only paycheck lines without items can be a percent of gross pay");
+        }
         return new SpendingPlanLine(
                 line.bucket(),
                 checkName(line.name()),
                 checkAmount(line.amount(), "amount"),
                 line.fromPaycheck(),
+                percentOfGross,
                 items.stream().map(SpendingPlanController::toItem).toList()
         );
     }
@@ -149,8 +155,15 @@ public class SpendingPlanController {
         if (percent == null) {
             return SpendingPlan.DEFAULT_BUFFER_PERCENT;
         }
-        if (percent.signum() < 0 || percent.compareTo(MAX_BUFFER_PERCENT) > 0) {
-            throw badRequest("fixed_cost_buffer_percent must be between 0 and 100");
+        return checkPercent(percent, "fixed_cost_buffer_percent");
+    }
+
+    private static BigDecimal checkPercent(BigDecimal percent, String field) {
+        if (percent == null) {
+            return null;
+        }
+        if (percent.signum() < 0 || percent.compareTo(MAX_PERCENT) > 0) {
+            throw badRequest(field + " must be between 0 and 100");
         }
         return percent;
     }
@@ -166,6 +179,7 @@ public class SpendingPlanController {
     public record SpendingPlanRequest(
             @JsonProperty("account_id") String accountId,
             @JsonProperty("take_home") BigDecimal takeHome,
+            @JsonProperty("gross_pay") BigDecimal grossPay,
             @JsonProperty("fixed_cost_buffer_percent") BigDecimal fixedCostBufferPercent,
             @JsonProperty("lines") List<LineRequest> lines
     ) {
@@ -176,6 +190,7 @@ public class SpendingPlanController {
             @JsonProperty("name") String name,
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("from_paycheck") boolean fromPaycheck,
+            @JsonProperty("percent_of_gross") BigDecimal percentOfGross,
             @JsonProperty("items") List<ItemRequest> items
     ) {
     }
@@ -190,6 +205,7 @@ public class SpendingPlanController {
     public record SpendingPlanResponse(
             @JsonProperty("account_id") String accountId,
             @JsonProperty("take_home") BigDecimal takeHome,
+            @JsonProperty("gross_pay") BigDecimal grossPay,
             @JsonProperty("fixed_cost_buffer_percent") BigDecimal fixedCostBufferPercent,
             @JsonProperty("lines") List<LineResponse> lines,
             @JsonProperty("updated_at") Instant updatedAt
@@ -198,6 +214,7 @@ public class SpendingPlanController {
             return new SpendingPlanResponse(
                     plan.getAccountId(),
                     stripZeros(plan.getTakeHome()),
+                    stripZeros(plan.getGrossPay()),
                     stripZeros(plan.getFixedCostBufferPercent()),
                     plan.getLines().stream().map(LineResponse::from).toList(),
                     plan.getUpdatedAt()
@@ -210,6 +227,7 @@ public class SpendingPlanController {
             @JsonProperty("name") String name,
             @JsonProperty("amount") BigDecimal amount,
             @JsonProperty("from_paycheck") boolean fromPaycheck,
+            @JsonProperty("percent_of_gross") BigDecimal percentOfGross,
             @JsonProperty("items") List<ItemResponse> items
     ) {
         static LineResponse from(SpendingPlanLine line) {
@@ -218,6 +236,7 @@ public class SpendingPlanController {
                     line.getName(),
                     stripZeros(line.getAmount()),
                     line.isFromPaycheck(),
+                    stripZeros(line.getPercentOfGross()),
                     line.getItems().stream().map(ItemResponse::from).toList()
             );
         }

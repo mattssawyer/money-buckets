@@ -6,6 +6,7 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
   createLinkToken,
@@ -233,7 +234,26 @@ function onShareChange(account: PlaidAccount, event: Event) {
     <AppSidebar />
     <main class="accounts-page" aria-labelledby="accounts-heading">
       <header class="page-heading">
-        <h1 id="accounts-heading">Accounts</h1>
+        <div class="title-row">
+          <div class="page-title">
+            <h1 id="accounts-heading">Accounts</h1>
+            <InfoTip
+              label="About accounts"
+              text="Choose which accounts count toward your spending and your net worth. For an account you split with someone, set your share, and only your part counts."
+            />
+          </div>
+          <Button
+            v-if="accounts.length"
+            :label="linking ? 'Connecting…' : 'Add an account'"
+            :loading="linking"
+            :disabled="linking"
+            @click="linkAccount"
+          >
+            <template #icon v-if="!linking">
+              <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+            </template>
+          </Button>
+        </div>
         <UserButton />
       </header>
 
@@ -280,24 +300,6 @@ function onShareChange(account: PlaidAccount, event: Event) {
         </section>
 
         <template v-else>
-          <div class="intro-row">
-            <p class="page-intro">
-              Choose which accounts count toward your spending and your net worth. For an account
-              you split with someone, set your share, and only your part counts.
-            </p>
-            <Button
-              :label="linking ? 'Connecting…' : 'Add an account'"
-              :loading="linking"
-              :disabled="linking"
-              class="add-account-button"
-              @click="linkAccount"
-            >
-              <template #icon v-if="!linking">
-                <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
-              </template>
-            </Button>
-          </div>
-
           <Message
             v-for="failed in failedAccounts"
             :key="failed.account_id"
@@ -454,23 +456,20 @@ h1 {
   max-width: 60rem;
 }
 
-.intro-row {
+.title-row {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem 2rem;
+  gap: 1rem;
+  /* As wide as the cards, so the button lines up with their right edge. */
+  max-width: 60rem;
 }
 
-.add-account-button {
-  flex: none;
-}
-
-.page-intro {
-  max-width: 40rem;
-  margin: 0;
-  color: var(--app-text-secondary);
-  line-height: 1.6;
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .page-loading {

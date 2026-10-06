@@ -36,13 +36,14 @@ public class SpendingPlanService {
             UUID userId,
             String accountId,
             BigDecimal takeHome,
+            BigDecimal grossPay,
             BigDecimal fixedCostBufferPercent,
             List<SpendingPlanLine> lines,
             Function<SpendingPlan, T> view
     ) {
         SpendingPlan plan = planRepository.findByUserId(userId)
                 .orElseGet(() -> new SpendingPlan(userId));
-        plan.replace(accountId, takeHome, fixedCostBufferPercent, lines);
+        plan.replace(accountId, takeHome, grossPay, fixedCostBufferPercent, lines);
         return view.apply(planRepository.saveAndFlush(plan));
     }
 }

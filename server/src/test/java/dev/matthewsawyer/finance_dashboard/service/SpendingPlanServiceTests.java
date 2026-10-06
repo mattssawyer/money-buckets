@@ -49,20 +49,24 @@ class SpendingPlanServiceTests {
 
     @Test
     void savesAPlanWithLinesAndItemsInOrder() {
-        planService.save(userId, "checking", new BigDecimal("5200"), new BigDecimal("12.5"), List.of(
+        planService.save(userId, "checking", new BigDecimal("5200"), new BigDecimal("8000"), new BigDecimal("12.5"),
+                List.of(
                 new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Rent/mortgage",
-                        new BigDecimal("1450"), false, List.of()),
-                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Subscriptions", null, false, List.of(
+                        new BigDecimal("1450"), false, null, List.of()),
+                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Subscriptions", null, false, null, List.of(
                         new SpendingPlanItem("Netflix", new BigDecimal("15.49"), "stream-netflix"),
                         new SpendingPlanItem("Spotify", new BigDecimal("11.99"), null))),
                 new SpendingPlanLine(SpendingPlanBucket.INVESTMENTS, "401(k)",
-                        new BigDecimal("600"), true, List.of())
+                        new BigDecimal("600"), true, new BigDecimal("7.5"), List.of())
         ), plan -> plan);
         entityManager.clear();
 
         Summary saved = planService.find(userId, Summary::of).orElseThrow();
 
         assertEquals("checking", saved.accountId());
+        assertEquals(0, new BigDecimal("8000").compareTo(saved.grossPay()));
+        assertEquals(0, new BigDecimal("7.5").compareTo(saved.percentOfGross().get(2)));
+        assertNull(saved.percentOfGross().get(0));
         assertEquals(0, new BigDecimal("5200").compareTo(saved.takeHome()));
         assertEquals(0, new BigDecimal("12.5").compareTo(saved.bufferPercent()));
         assertEquals(List.of("Rent/mortgage", "Subscriptions", "401(k)"), saved.lineNames());
@@ -73,17 +77,17 @@ class SpendingPlanServiceTests {
 
     @Test
     void replacesEveryLineOnTheNextSave() {
-        planService.save(userId, "checking", new BigDecimal("5200"), SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
-                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Subscriptions", null, false, List.of(
+        planService.save(userId, "checking", new BigDecimal("5200"), null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
+                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Subscriptions", null, false, null, List.of(
                         new SpendingPlanItem("Netflix", new BigDecimal("15.49"), "stream-netflix"))),
                 new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Vacations",
-                        new BigDecimal("200"), false, List.of())
+                        new BigDecimal("200"), false, null, List.of())
         ), plan -> plan);
         UUID planId = planService.find(userId, SpendingPlan::getId).orElseThrow();
 
-        planService.save(userId, "checking", null, BigDecimal.ZERO, List.of(
+        planService.save(userId, "checking", null, null, BigDecimal.ZERO, List.of(
                 new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Emergency fund",
-                        new BigDecimal("300"), false, List.of())
+                        new BigDecimal("300"), false, null, List.of())
         ), plan -> plan);
         entityManager.clear();
 
@@ -106,9 +110,11 @@ class SpendingPlanServiceTests {
     private record Summary(
             String accountId,
             BigDecimal takeHome,
+            BigDecimal grossPay,
             BigDecimal bufferPercent,
             List<String> lineNames,
             List<Boolean> fromPaycheck,
+            List<BigDecimal> percentOfGross,
             List<List<String>> itemNames,
             List<List<String>> streamIds
     ) {
@@ -116,9 +122,11 @@ class SpendingPlanServiceTests {
             return new Summary(
                     plan.getAccountId(),
                     plan.getTakeHome(),
+                    plan.getGrossPay(),
                     plan.getFixedCostBufferPercent(),
                     plan.getLines().stream().map(SpendingPlanLine::getName).toList(),
                     plan.getLines().stream().map(SpendingPlanLine::isFromPaycheck).toList(),
+                    plan.getLines().stream().map(SpendingPlanLine::getPercentOfGross).toList(),
                     plan.getLines().stream()
                             .map(line -> line.getItems().stream().map(SpendingPlanItem::getName).toList())
                             .toList(),

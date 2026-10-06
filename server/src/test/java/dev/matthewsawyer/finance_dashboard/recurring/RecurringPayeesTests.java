@@ -179,9 +179,9 @@ class RecurringPayeesTests {
         charge("rent", "Sterling Group", "1554.91", TODAY.minusDays(29), "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
         recurringPayees.judge(userId);
 
-        planService.save(userId, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
-                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Rent", null, false, List.of()),
-                new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Japan trip", null, false, List.of())),
+        planService.save(userId, null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
+                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Rent", null, false, null, List.of()),
+                new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Japan trip", null, false, null, List.of())),
                 plan -> plan);
         recurringPayees.judge(userId);
 

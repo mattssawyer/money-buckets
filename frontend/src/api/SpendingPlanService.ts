@@ -15,12 +15,16 @@ export interface SpendingPlanLinePayload {
   /** Only used when the line has no items. */
   amount: number | null
   from_paycheck: boolean
+  /** Set as a percent of gross pay; `amount` is still sent, worked out from it. */
+  percent_of_gross: number | null
   items: SpendingPlanItemPayload[]
 }
 
 export interface SpendingPlanRequest {
   account_id: string | null
   take_home: number | null
+  /** Monthly pay before taxes and deductions, for lines set as a percent of it. */
+  gross_pay: number | null
   /** Percent of fixed costs added on top; the server defaults it to 15 when left out. */
   fixed_cost_buffer_percent: number
   lines: SpendingPlanLinePayload[]
