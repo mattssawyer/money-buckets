@@ -69,6 +69,7 @@ class RecurringPayeesTests {
     @Autowired private RecurringAnswerRepository answers;
     @Autowired private SpendingPlanService planService;
     @Autowired private TrackedAccounts trackedAccounts;
+    @Autowired private dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions exclusions;
     @Autowired private EntityManager entityManager;
 
     private final TypeSafeClient typeSafe = mock(TypeSafeClient.class);
@@ -80,7 +81,7 @@ class RecurringPayeesTests {
     @BeforeEach
     void setUp() {
         recurringPayees = new RecurringPayees(transactions, streams, payees, answers, planService, trackedAccounts,
-                new PayeeJudge(typeSafe, new ObjectMapper()), Runnable::run, Clock.systemDefaultZone());
+                new PayeeJudge(typeSafe, new ObjectMapper()), Runnable::run, Clock.systemDefaultZone(), exclusions);
         when(typeSafe.isConfigured()).thenReturn(true);
         doAnswer(invocation -> answers(invocation.getArgument(0), invocation.getArgument(1)))
                 .when(typeSafe).ask(any(), any());

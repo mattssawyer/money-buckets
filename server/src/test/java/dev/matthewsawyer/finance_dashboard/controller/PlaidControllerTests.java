@@ -37,6 +37,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
+import dev.matthewsawyer.finance_dashboard.repository.TransactionCountingRepository;
 import java.math.BigDecimal;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
 import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
@@ -115,7 +117,8 @@ class PlaidControllerTests {
                 transactionRepository,
                 recurringStreamRepository,
                 trackedAccounts,
-                new Spending(transactionRepository, trackedAccounts),
+                new Spending(transactionRepository, trackedAccounts,
+                        new TransactionExclusions(transactionRepository, org.mockito.Mockito.mock(TransactionCountingRepository.class), Clock.systemUTC())),
                 recurringPayees,
                 payeeLookup,
                 recurringCandidates,
@@ -301,6 +304,27 @@ class PlaidControllerTests {
     }
 
     @Test
+    void keepsExcludedTransactionsInHistoryAndReturnsTheirCountingState() {
+        PlaidTransaction stored = new PlaidTransaction("excluded", "item-id", USER_ID, "account-1",
+                BigDecimal.TEN, TODAY).merchantName("Shop");
+        var choice = new dev.matthewsawyer.finance_dashboard.model.TransactionCounting("excluded", USER_ID);
+        choice.setExcluded(true);
+        choice.excludeFuture(new RecurringMerchant(RecurringKind.BILL, "shop"), Instant.now());
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        track(account("account-1", 100));
+        when(transactionRepository.findRecent(USER_ID, Set.of("account-1"), Pageable.ofSize(5)))
+                .thenReturn(new PageImpl<>(List.of(stored), Pageable.ofSize(5), 1));
+        when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(Map.of(), Map.of(), Map.of(),
+                Set.of(), new TransactionExclusions.Snapshot(List.of(choice))));
+
+        var response = controller.getTransactions(jwt, 5, 0, null);
+        assertEquals(1, response.total());
+        assertTrue(response.transactions().get(0).excluded());
+        assertTrue(response.transactions().get(0).futureExcluded());
+        assertEquals(BigDecimal.TEN, response.transactions().get(0).amount());
+    }
+
+    @Test
     void pagesThroughTransactionsWithTheTotalAcrossPages() {
         PlaidTransaction stored = new PlaidTransaction(
                 "txn-51", "item-id", USER_ID, "account-1",
@@ -335,7 +359,7 @@ class PlaidControllerTests {
                 new RecurringPayee(USER_ID, new RecurringMerchant(RecurringKind.BILL, "whole foods"));
         wholeFoods.judged(null, null, SpendingPlanBucket.FIXED_COSTS, "Groceries", "state", Instant.now());
         when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(
-                Map.of(), Map.of(), Map.of(wholeFoods.payee(), wholeFoods), Set.of()));
+                Map.of(), Map.of(), Map.of(wholeFoods.payee(), wholeFoods), Set.of(), new TransactionExclusions.Snapshot(List.of())));
 
         Map<String, String> lineById = new HashMap<>();
         controller.getSpendingByBucket(jwt, null, null, null).buckets().stream()
@@ -871,6 +895,6 @@ class PlaidControllerTests {
     }
 
     private static PayeeLookup.Payees payees(Map<String, PayeeCorrection> corrections) {
-        return new PayeeLookup.Payees(corrections, Map.of(), Map.of(), Set.of());
+        return new PayeeLookup.Payees(corrections, Map.of(), Map.of(), Set.of(), new TransactionExclusions.Snapshot(List.of()));
     }
 }

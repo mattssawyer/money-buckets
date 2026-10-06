@@ -14,6 +14,7 @@ import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
 import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
+import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -58,6 +59,7 @@ public class RecurringPayees {
     private final PayeeJudge judge;
     private final Executor askExecutor;
     private final Clock clock;
+    private final TransactionExclusions exclusions;
 
     RecurringPayees(
             PlaidTransactionRepository transactionRepository,
@@ -68,7 +70,8 @@ public class RecurringPayees {
             TrackedAccounts trackedAccounts,
             PayeeJudge judge,
             @Qualifier("sortingClassifyExecutor") Executor askExecutor,
-            Clock clock
+            Clock clock,
+            TransactionExclusions exclusions
     ) {
         this.transactionRepository = transactionRepository;
         this.streamRepository = streamRepository;
@@ -79,6 +82,7 @@ public class RecurringPayees {
         this.judge = judge;
         this.askExecutor = askExecutor;
         this.clock = clock;
+        this.exclusions = exclusions;
     }
 
     /**
@@ -164,11 +168,12 @@ public class RecurringPayees {
      * newest first.
      */
     Map<RecurringMerchant, List<PlaidTransaction>> charges(UUID userId, Collection<String> accountIds) {
+        var counting = exclusions.forUser(userId);
         Map<RecurringMerchant, List<PlaidTransaction>> byPayee = new LinkedHashMap<>();
         for (PlaidTransaction transaction : transactionRepository.findPayeeCharges(
                 userId, accountIds, BucketSorting.NOT_PLAN_MONEY)) {
             RecurringMerchant payee = RecurringMerchant.of(transaction);
-            if (payee != null) {
+            if (payee != null && !counting.excluded(transaction)) {
                 byPayee.computeIfAbsent(payee, key -> new ArrayList<>()).add(transaction);
             }
         }

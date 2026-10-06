@@ -400,7 +400,9 @@ public class PlaidController {
             @JsonProperty("bucket_corrected") boolean bucketCorrected,
             @JsonProperty("category_corrected") boolean categoryCorrected,
             /** Whether the payee repeats, as far as Plaid, the user or Jev have said; null when nobody has. */
-            @JsonProperty("recurring") PayeeLookup.Recurring recurring
+            @JsonProperty("recurring") PayeeLookup.Recurring recurring,
+            @JsonProperty("excluded") boolean excluded,
+            @JsonProperty("future_excluded") boolean futureExcluded
     ) {
         static TransactionResponse from(PlaidTransaction transaction, int sharePercent, PayeeLookup.Payees payees) {
             RecurringMerchant payee = RecurringMerchant.of(transaction);
@@ -426,7 +428,9 @@ public class PlaidController {
                     payee == null ? null : payee.kind(),
                     correction != null && correction.getBucket() != null,
                     correction != null && correction.getCategory() != null,
-                    payees.recurring(transaction)
+                    payees.recurring(transaction),
+                    payees.exclusions().excluded(transaction),
+                    payees.exclusions().excludesFuture(transaction)
             );
         }
     }

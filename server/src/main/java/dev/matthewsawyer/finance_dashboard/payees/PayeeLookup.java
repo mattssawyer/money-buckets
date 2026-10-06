@@ -9,6 +9,7 @@ import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
 import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
+import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -24,6 +25,7 @@ import java.util.UUID;
 @Service
 public class PayeeLookup {
 
+    private final TransactionExclusions exclusions;
     private final PayeeCorrections corrections;
     private final RecurringPayees recurringPayees;
     private final RecurringAnswerRepository answerRepository;
@@ -33,8 +35,10 @@ public class PayeeLookup {
             PayeeCorrections corrections,
             RecurringPayees recurringPayees,
             RecurringAnswerRepository answerRepository,
-            TrackedAccounts trackedAccounts
+            TrackedAccounts trackedAccounts,
+            TransactionExclusions exclusions
     ) {
+        this.exclusions = exclusions;
         this.corrections = corrections;
         this.recurringPayees = recurringPayees;
         this.answerRepository = answerRepository;
@@ -50,7 +54,8 @@ public class PayeeLookup {
                 corrections.byPayee(userId),
                 answers,
                 recurringPayees.judged(userId),
-                recurringPayees.detectedByPlaid(userId, trackedAccounts.shares(userId, null).keySet()));
+                recurringPayees.detectedByPlaid(userId, trackedAccounts.shares(userId, null).keySet()),
+                exclusions.forUser(userId));
     }
 
     /** Whether a transaction's payee repeats, as far as anyone has said. */
@@ -69,7 +74,8 @@ public class PayeeLookup {
             Map<String, PayeeCorrection> corrections,
             Map<RecurringMerchant, Boolean> answers,
             Map<RecurringMerchant, RecurringPayee> judged,
-            Set<RecurringMerchant> detected
+            Set<RecurringMerchant> detected,
+            TransactionExclusions.Snapshot exclusions
     ) {
 
         /** The user's correction for the transaction's payee, or null. */

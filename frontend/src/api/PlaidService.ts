@@ -33,6 +33,9 @@ export interface AccountTracking {
 
 export interface PlaidTransaction {
   transaction_id: string
+  /** Explicitly left out of totals by the user; retained in transaction history. */
+  excluded?: boolean
+  future_excluded?: boolean
   account_id: string
   /** Plaid convention: positive when money leaves the account. */
   amount: number
@@ -347,3 +350,12 @@ export async function undoPayeeCorrection(merchantKey: string): Promise<void> {
 
 /** A bucket a transaction's money can count toward. */
 export type SpendingBucket = Exclude<Bucket, 'UNSORTED'> | 'NOT_COUNTED'
+
+/** Count or exclude one transaction, optionally applying the choice to future matching payees. */
+export async function setTransactionCounting(
+  transactionId: string,
+  excluded: boolean,
+  future = false,
+): Promise<void> {
+  await apiClient.put('/transactions/counting', { transaction_id: transactionId, excluded, future })
+}

@@ -3,6 +3,7 @@ package dev.matthewsawyer.finance_dashboard.spending;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
+import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -31,10 +32,16 @@ public class Spending {
 
     private final PlaidTransactionRepository transactionRepository;
     private final TrackedAccounts trackedAccounts;
+    private final TransactionExclusions exclusions;
 
-    public Spending(PlaidTransactionRepository transactionRepository, TrackedAccounts trackedAccounts) {
+    public Spending(
+            PlaidTransactionRepository transactionRepository,
+            TrackedAccounts trackedAccounts,
+            TransactionExclusions exclusions
+    ) {
         this.transactionRepository = transactionRepository;
         this.trackedAccounts = trackedAccounts;
+        this.exclusions = exclusions;
     }
 
     /**
@@ -49,7 +56,9 @@ public class Spending {
         List<PlaidTransaction> found = transactionRepository.findSpending(
                 userId, start, end, inView.keySet(), BucketSorting.NOT_PLAN_MONEY);
         Set<String> sharedTransfers = transfersWithSharedAccounts(userId, found, start, end);
+        var counting = exclusions.forUser(userId);
         return found.stream()
+                .filter(transaction -> !counting.excluded(transaction))
                 .filter(transaction -> !sharedTransfers.contains(transaction.getTransactionId()))
                 .map(transaction -> new Spent(transaction, inView.get(transaction.getAccountId())))
                 .toList();
