@@ -117,6 +117,7 @@ function saveButton(wrapper: ReturnType<typeof mountSetup>) {
 const savedPlan: SavedPlan = {
   accountId: 'checking',
   takeHome: 5200,
+  grossPay: null,
   bufferPercent: 10,
   updatedAt: '2026-09-20T12:00:00Z',
   plan: {
@@ -788,21 +789,209 @@ describe('spending plan setup', () => {
       'checked',
       false,
     )
-    expect(wrapper.find('[aria-label="Plan income"]').exists()).toBe(false)
 
     await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
 
-    expect(wrapper.get('[aria-label="Investments taken from your paycheck"]').text()).toBe('+$600')
-    expect(wrapper.get('[aria-label="Plan income"]').text()).toBe('$5,800')
+    // Percentages are of take-home pay plus the 401(k): 5,800.
     expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$60010%')
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toBe('$1,667.5029%')
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$3,532.5061%')
 
     await wrapper.get('[aria-label="401(k): from paycheck"]').setValue(false)
 
-    expect(wrapper.find('[aria-label="Plan income"]').exists()).toBe(false)
     expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$60012%')
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$2,932.5056%')
+  })
+
+  it('sets a paycheck 401(k) as a percent of gross pay', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    const income = wrapper.get('[aria-labelledby="plan-section-heading-income"]')
+    expect(income.findAll('label').map((label) => label.text())).toEqual([
+      'Gross pay',
+      'Take-home pay',
+    ])
+    expect(income.findAll('.sheet-row')).toHaveLength(2)
+    await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+
+    const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
+    await wrapper.get('#gross-pay-income').setValue('8000')
+    await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+    // The amount carries across: 600 of 8,000.
+    expect(
+      wrapper.get<HTMLInputElement>('[aria-label="401(k) percent of gross pay"]').element.value,
+    ).toBe('7.5')
+
+    await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6')
+
+    expect(wrapper.get('[aria-label="401(k) amount"]').text()).toBe('480')
+    // 480 of take-home pay plus the 401(k), 5,680.
+    expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$4808%')
+
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    const request = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
+    expect(request?.gross_pay).toBe(8000)
+    expect(request?.lines.find((line) => line.name === '401(k)')).toMatchObject({
+      amount: 480,
+      percent_of_gross: 6,
+    })
+    expect(request?.lines.find((line) => line.name === 'Roth IRA')?.percent_of_gross).toBeNull()
+  })
+
+  it('needs gross pay before a line can be a percent of it', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+    const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
+    const toPercent = percent.get('[aria-label="Percent of gross pay"]')
+
+    expect(toPercent.attributes('disabled')).toBeDefined()
+    expect(percent.attributes('title')).toBe('Enter your gross pay to use a percent')
+    await toPercent.trigger('click')
+    expect(wrapper.find('[aria-label="401(k) percent of gross pay"]').exists()).toBe(false)
+
+    await wrapper.get('#gross-pay-income').setValue('8000')
+    expect(toPercent.attributes('disabled')).toBeUndefined()
+    await toPercent.trigger('click')
+
+    // Clearing gross pay afterwards locks the percent until it's filled in again.
+    await wrapper.get('#gross-pay-income').setValue('')
+    const field = wrapper.get('[aria-label="401(k) percent of gross pay"]')
+    expect(field.attributes('disabled')).toBeDefined()
+    expect(percent.get('[aria-label="Dollars"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('keeps a percent line’s amount when gross pay is cleared, and saves it in dollars', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+    await wrapper.get('#gross-pay-income').setValue('8000')
+    const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
+    await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+    await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6')
+
+    await wrapper.get('#gross-pay-income').setValue('')
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(
+      vi.mocked(saveSpendingPlan).mock.calls[0]?.[0].lines.find((line) => line.name === '401(k)'),
+    ).toMatchObject({ amount: 480, percent_of_gross: null })
+
+    await percent.get('[aria-label="Dollars"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe('480')
+  })
+
+  it('retains entered percentage precision', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('#gross-pay-income').setValue('8000')
+    const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
+    await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+
+    await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6.125')
+
+    // 6.125% of 8,000, without rounding the percentage.
+    expect(wrapper.get('[aria-label="401(k) amount"]').text()).toBe('490')
+  })
+
+  it.each(['Dollars', 'From paycheck'])(
+    'keeps the last calculated amount after clearing gross pay and leaving percent via %s',
+    async (exit) => {
+      const wrapper = mountSetup()
+      await flushPromises()
+      await wrapper.get('#gross-pay-income').setValue('8000')
+      await wrapper.get('[aria-label="Percent of gross pay"]').trigger('click')
+      await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6.125')
+      await wrapper.get('#gross-pay-income').setValue('9000')
+      await wrapper.get('#gross-pay-income').setValue('')
+      if (exit === 'Dollars') await wrapper.get('[aria-label="Dollars"]').trigger('click')
+      else await wrapper.get('[aria-label="401(k): from paycheck"]').setValue(false)
+      expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe(
+        '551.25',
+      )
+    },
+  )
+
+  it('preserves cents through a repeating equivalent percentage and saving', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('[aria-label="401(k) amount"]').setValue('123.45')
+    await wrapper.get('#gross-pay-income').setValue('7000')
+    await wrapper.get('[aria-label="Percent of gross pay"]').trigger('click')
+    expect(wrapper.get('[aria-label="401(k) amount"]').text()).toBe('123.45')
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+    const line = vi
+      .mocked(saveSpendingPlan)
+      .mock.calls[0]?.[0].lines.find((line) => line.name === '401(k)')
+    expect(line?.amount).toBe(123.45)
+    expect(line?.percent_of_gross).toBeCloseTo(1.7635714285714286, 14)
+    await wrapper.get('[aria-label="Dollars"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe(
+      '123.45',
+    )
+  })
+
+  it.each(['0.001', '8001'])(
+    'keeps dollars when %s cannot round-trip through an eligible percentage',
+    async (amount) => {
+      const wrapper = mountSetup()
+      await flushPromises()
+      await wrapper.get('[aria-label="401(k) amount"]').setValue(amount)
+      await wrapper.get('#gross-pay-income').setValue('8000')
+      await wrapper.get('[aria-label="Percent of gross pay"]').trigger('click')
+      expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe(
+        amount,
+      )
+      expect(wrapper.find('[aria-label="401(k) percent of gross pay"]').exists()).toBe(false)
+    },
+  )
+
+  it('keeps a paycheck line’s amount when it switches between dollars and percent', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+    const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
+    await wrapper.get('#gross-pay-income').setValue('8000')
+    await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+    await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6')
+
+    await percent.get('[aria-label="Dollars"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe('480')
+
+    await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+    expect(
+      wrapper.get<HTMLInputElement>('[aria-label="401(k) percent of gross pay"]').element.value,
+    ).toBe('6')
+
+    // A line that isn't taken from the paycheck can't be a percent of it.
+    await wrapper.get('[aria-label="401(k): from paycheck"]').setValue(false)
+    expect(wrapper.find('[aria-label="401(k): set in dollars or percent"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[aria-label="401(k) amount"]').element.value).toBe('480')
+    expect(wrapper.find('[aria-label="Roth IRA: set in dollars or percent"]').exists()).toBe(false)
+  })
+
+  it('opens a saved percent line as a percent', async () => {
+    const wrapper = mountSetup({
+      saved: {
+        ...savedPlan,
+        grossPay: 9000,
+        plan: {
+          ...savedPlan.plan,
+          investments: [
+            { name: '401(k)', amount: 450, items: [], fromPaycheck: true, percentOfGross: 5 },
+          ],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('#gross-pay-income').element.value).toBe('9000')
+    expect(
+      wrapper.get<HTMLInputElement>('[aria-label="401(k) percent of gross pay"]').element.value,
+    ).toBe('5')
+    expect(wrapper.get('[aria-label="401(k) amount"]').text()).toBe('450')
   })
 
   it('asks for take-home pay before showing guilt-free spending', async () => {

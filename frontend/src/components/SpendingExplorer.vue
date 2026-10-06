@@ -2,6 +2,7 @@
 import { ChevronRight, Search } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import Skeleton from 'primevue/skeleton'
+import InfoTip from './InfoTip.vue'
 import { getSpendingByBucket } from '../api/PlaidService'
 import { formatPlanAmount } from '../spendingPlan/money'
 import {
@@ -92,7 +93,13 @@ function amount(value: number) {
   <aside class="spending-explorer" aria-labelledby="spending-explorer-heading">
     <header class="explorer-header">
       <div class="explorer-title">
-        <h2 id="spending-explorer-heading">Your spending</h2>
+        <div class="explorer-heading">
+          <h2 id="spending-explorer-heading">Your spending</h2>
+          <InfoTip
+            label="About your spending"
+            text="What you spend in a month on average, by the plan line each payee belongs on, to help you choose each amount."
+          />
+        </div>
         <select
           class="period-select"
           aria-label="How far back"
@@ -104,10 +111,6 @@ function amount(value: number) {
           </option>
         </select>
       </div>
-      <p class="explorer-hint">
-        What you spend in a month on average, by the plan line each payee belongs on, to help you
-        choose each amount.
-      </p>
     </header>
 
     <div v-if="loading" class="explorer-loading" aria-label="Loading your spending">
@@ -210,7 +213,12 @@ h2 {
   letter-spacing: -0.02em;
 }
 
-.explorer-hint,
+.explorer-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .explorer-empty {
   margin: 0;
   color: var(--app-text-secondary);

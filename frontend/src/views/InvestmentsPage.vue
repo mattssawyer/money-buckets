@@ -7,6 +7,7 @@ import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import BalanceChart from '../components/BalanceChart.vue'
+import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
   addInvestments,
@@ -626,11 +627,13 @@ function changeIcon(change: Change) {
           class="panel connections"
           aria-labelledby="connections-heading"
         >
-          <h2 id="connections-heading" class="section-heading">Already connected</h2>
-          <p class="connections-intro">
-            Add investments to a connection you already have instead of linking it again. Linking
-            the same institution twice counts its accounts twice.
-          </p>
+          <div class="connections-heading">
+            <h2 id="connections-heading" class="section-heading">Already connected</h2>
+            <InfoTip
+              label="About adding investments"
+              text="Add investments to a connection you already have instead of linking it again. Linking the same institution twice counts its accounts twice."
+            />
+          </div>
           <Message v-if="addError" severity="error" size="small">{{ addError }}</Message>
           <Message v-else-if="addNote" severity="secondary" size="small">{{ addNote }}</Message>
           <ul class="connection-list">
@@ -1051,9 +1054,10 @@ h1 {
   padding: 1.125rem 1.25rem;
 }
 
-.connections-intro {
-  color: var(--app-text-secondary);
-  line-height: 1.6;
+.connections-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .connection-list {

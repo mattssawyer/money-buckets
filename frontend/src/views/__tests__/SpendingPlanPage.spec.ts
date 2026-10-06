@@ -27,10 +27,18 @@ enableAutoUnmount(afterEach)
 const savedResponse: SpendingPlanResponse = {
   account_id: 'checking',
   take_home: 5200,
+  gross_pay: null,
   fixed_cost_buffer_percent: 15,
   updated_at: '2026-09-22T19:30:00Z',
   lines: [
-    { bucket: 'FIXED_COSTS', name: 'Rent/mortgage', amount: 1450, from_paycheck: false, items: [] },
+    {
+      bucket: 'FIXED_COSTS',
+      name: 'Rent/mortgage',
+      amount: 1450,
+      from_paycheck: false,
+      percent_of_gross: null,
+      items: [],
+    },
   ],
 }
 

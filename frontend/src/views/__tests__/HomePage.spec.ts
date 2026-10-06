@@ -17,7 +17,6 @@ import {
   correctPayee,
   undoRecurringAnswer,
   removeItem,
-  syncRecurringTransactions,
   type PlaidAccount,
   type PlaidTransaction,
   type RecurringCandidate,
@@ -43,7 +42,6 @@ vi.mock('../../api/PlaidService', () => ({
   answerRecurringCandidate:
     vi.fn<(candidate: RecurringCandidate, confirmed: boolean) => Promise<void>>(),
   undoRecurringAnswer: vi.fn<(candidate: RecurringCandidate) => Promise<void>>(),
-  syncRecurringTransactions: vi.fn<() => Promise<void>>(),
   removeItem: vi.fn(),
   correctPayee: vi.fn(),
   undoPayeeCorrection: vi.fn(),
@@ -848,9 +846,17 @@ describe('homepage spending breakdown', () => {
     const plan: SpendingPlanResponse = {
       account_id: null,
       take_home: 4000,
+      gross_pay: null,
       fixed_cost_buffer_percent: 0,
       lines: [
-        { bucket: 'FIXED_COSTS', name: 'Rent', amount: 2000, from_paycheck: false, items: [] },
+        {
+          bucket: 'FIXED_COSTS',
+          name: 'Rent',
+          amount: 2000,
+          from_paycheck: false,
+          percent_of_gross: null,
+          items: [],
+        },
       ],
       updated_at: '2026-10-01T00:00:00Z',
     }
@@ -864,9 +870,11 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      const left = wrapper.get('.guilt-free-left')
-      expect(left.get('.guilt-free-left-amount').text()).toBe('$1,988 left')
-      expect(left.get('.guilt-free-left-detail').text()).toBe('$12 of $2,000 spent')
+      // A bar of its own along the foot of the card, below the legend.
+      const progress = wrapper.get('.spending-body > :last-child')
+      expect(progress.classes()).toContain('guilt-free-progress')
+      expect(progress.get('.guilt-free-title').text()).toBe('Guilt-free spending')
+      expect(progress.get('.guilt-free-summary').text()).toBe('$1,988 left')
       expect(getSpendingByBucket).toHaveBeenCalledOnce()
     })
 
@@ -878,8 +886,8 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-left').classes()).toContain('guilt-free-over')
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$150 over')
+      expect(wrapper.get('.guilt-free-progress').classes()).toContain('guilt-free-over')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$150 over')
     })
 
     it('counts every tracked account, as the plan does, when one account is picked', async () => {
@@ -894,10 +902,8 @@ describe('homepage spending breakdown', () => {
       await flushPromises()
 
       expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('THIS_MONTH'))
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,500 left')
-      expect(wrapper.get('.guilt-free-left-detail').text()).toBe(
-        '$500 of $2,000 spent across all tracked accounts',
-      )
+      expect(wrapper.get('.guilt-free-title').text()).toBe('Guilt-free spending · all accounts')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
     })
 
     it('catches up with sorting when one account is picked', async () => {
@@ -917,13 +923,13 @@ describe('homepage spending breakdown', () => {
       })
       const wrapper = mountHome()
       await flushPromises()
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,500 left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
 
       sorted = true
       await vi.advanceTimersByTimeAsync(4000)
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,400 left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,400 left')
       vi.useRealTimers()
     })
 
@@ -933,7 +939,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$0 left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$0 left')
       expect(wrapper.get('.guilt-free-bar-fill').attributes('style')).toContain('width: 0%')
     })
 
@@ -942,10 +948,18 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-left-heading span').text()).toBe(
-        `Guilt-free in ${periodName('LAST_MONTH')}`,
-      )
-      expect(wrapper.get('.guilt-free-left-amount').text()).toBe('$1,988 under')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
+    })
+
+    it('shows at the foot of the card even when nothing guilt-free was spent', async () => {
+      vi.mocked(getSpendingByBucket).mockResolvedValue({
+        ...spending,
+        buckets: spending.buckets.filter((entry) => entry.bucket !== 'GUILT_FREE'),
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,000 left')
     })
 
     it('counts every tracked account for last month too when one account is picked', async () => {
@@ -963,7 +977,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+      expect(wrapper.find('.guilt-free-progress').exists()).toBe(false)
       expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
     })
 
@@ -972,7 +986,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.find('.guilt-free-left').exists()).toBe(false)
+      expect(wrapper.find('.guilt-free-progress').exists()).toBe(false)
       const prompt = wrapper.get('.spending-plan-prompt')
       expect(prompt.text()).toBe(
         'Add your take-home pay to your plan to see how much guilt-free spending is left.',
@@ -1232,11 +1246,10 @@ describe('homepage recurring candidates', () => {
     expect(meta).toBe('Monthly · Next Oct 19 · Confirmed by you · Undo')
   })
 
-  it('keeps dismissed payments out of the way until asked, and undoes them', async () => {
+  it('leaves dismissed payments off the card, for the full recurring list to show', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
     vi.mocked(answerRecurringCandidate).mockResolvedValue()
-    vi.mocked(undoRecurringAnswer).mockResolvedValue()
     const wrapper = mountHome()
     await flushPromises()
 
@@ -1245,19 +1258,8 @@ describe('homepage recurring candidates', () => {
 
     expect(answerRecurringCandidate).toHaveBeenCalledWith(netflix, false)
     expect(wrapper.find('.candidates').exists()).toBe(false)
-    expect(wrapper.find('#dismissed-candidates').exists()).toBe(false)
-
-    await wrapper.get('.dismissed-toggle').trigger('click')
-    expect(wrapper.get('#dismissed-candidates').text()).toContain('Netflix')
-
-    await wrapper.get('[aria-label="Undo dismissing Netflix"]').trigger('click')
-    await flushPromises()
-
-    expect(undoRecurringAnswer).toHaveBeenCalledWith(
-      expect.objectContaining({ merchant_key: 'netflix' }),
-    )
-    expect(wrapper.get('.candidates .transaction-name').text()).toBe('Netflix')
-    expect(wrapper.find('.dismissed-toggle').exists()).toBe(false)
+    expect(wrapper.get('.recurring-card').text()).not.toContain('Netflix')
+    expect(wrapper.get('.recurring-card').text()).not.toContain('dismissed')
   })
 
   it('puts a payment back when its answer can’t be saved', async () => {
@@ -1353,49 +1355,13 @@ describe('homepage recurring transactions', () => {
     expect(wrapper.text()).toContain('No recurring transactions found yet.')
   })
 
-  it('asks Plaid again for recurring transactions when Sync is pressed', async () => {
+  it('leaves syncing recurring transactions to the background', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
-    vi.mocked(getRecurringTransactions).mockResolvedValueOnce([]).mockResolvedValueOnce([rent])
-    vi.mocked(syncRecurringTransactions).mockResolvedValue()
     const wrapper = mountHome()
     await flushPromises()
 
-    await button(wrapper, 'Sync').trigger('click')
-    await flushPromises()
-
-    expect(syncRecurringTransactions).toHaveBeenCalledOnce()
-    expect(wrapper.findAll('.recurring-card .transaction-row')).toHaveLength(1)
-    expect(wrapper.text()).not.toContain('No recurring transactions found yet.')
-  })
-
-  it('says so when a recurring sync fails', async () => {
-    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
-    vi.mocked(syncRecurringTransactions).mockRejectedValue(new Error('Server unavailable'))
-    const wrapper = mountHome()
-    await flushPromises()
-
-    await button(wrapper, 'Sync').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('We couldn’t sync your recurring transactions.')
-  })
-
-  it('syncs again when trying again after a failed sync', async () => {
-    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
-    vi.mocked(getRecurringTransactions).mockResolvedValueOnce([]).mockResolvedValue([rent])
-    vi.mocked(syncRecurringTransactions)
-      .mockRejectedValueOnce(new Error('Server unavailable'))
-      .mockResolvedValue()
-    const wrapper = mountHome()
-    await flushPromises()
-    await button(wrapper, 'Sync').trigger('click')
-    await flushPromises()
-
-    await button(wrapper, 'Try again').trigger('click')
-    await flushPromises()
-
-    expect(syncRecurringTransactions).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('.recurring-card .transaction-row')).toHaveLength(1)
+    const heading = wrapper.get('.recurring-card .card-heading')
+    expect(heading.findAll('button').map((element) => element.text())).toEqual(['View all'])
   })
 
   it('keeps the rest of the dashboard working when recurring streams fail', async () => {

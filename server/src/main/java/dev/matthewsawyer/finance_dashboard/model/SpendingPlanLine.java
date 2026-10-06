@@ -51,6 +51,10 @@ public class SpendingPlanLine {
     @Column(name = "from_paycheck", nullable = false)
     private boolean fromPaycheck;
 
+    /** Set as a percent of gross pay; the amount is still saved, worked out from it. */
+    @Column(name = "percent_of_gross", columnDefinition = "numeric")
+    private BigDecimal percentOfGross;
+
     @OneToMany(mappedBy = "line", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position")
     private List<SpendingPlanItem> items = new ArrayList<>();
@@ -63,12 +67,14 @@ public class SpendingPlanLine {
             String name,
             BigDecimal amount,
             boolean fromPaycheck,
+            BigDecimal percentOfGross,
             List<SpendingPlanItem> items
     ) {
         this.bucket = bucket;
         this.name = name;
         this.amount = amount;
         this.fromPaycheck = fromPaycheck;
+        this.percentOfGross = percentOfGross;
         for (int position = 0; position < items.size(); position++) {
             SpendingPlanItem item = items.get(position);
             item.attach(this, position);
@@ -103,6 +109,10 @@ public class SpendingPlanLine {
 
     public boolean isFromPaycheck() {
         return fromPaycheck;
+    }
+
+    public BigDecimal getPercentOfGross() {
+        return percentOfGross;
     }
 
     public List<SpendingPlanItem> getItems() {

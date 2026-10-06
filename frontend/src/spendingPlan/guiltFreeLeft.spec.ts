@@ -7,6 +7,7 @@ function savedPlan(takeHome: number | null): SavedPlan {
   return {
     accountId: null,
     takeHome,
+    grossPay: null,
     bufferPercent: 10,
     plan: {
       fixedCosts: [{ name: 'Rent', amount: 2000, items: [], fromPaycheck: false }],

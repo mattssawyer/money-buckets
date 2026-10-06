@@ -165,7 +165,11 @@ function plannedLines(lines: PlanLineDraft[]) {
             <div class="line-row">
               <span class="line-name">
                 {{ line.name || 'Untitled' }}
-                <span v-if="line.fromPaycheck" class="paycheck-tag">From paycheck</span>
+                <span v-if="line.fromPaycheck" class="paycheck-tag">
+                  From paycheck<template v-if="line.percentOfGross != null">
+                    · {{ line.percentOfGross }}% of gross pay</template
+                  >
+                </span>
               </span>
               <span class="line-amount">{{ formatPlanAmount(lineAmount(line) ?? 0) }}</span>
             </div>

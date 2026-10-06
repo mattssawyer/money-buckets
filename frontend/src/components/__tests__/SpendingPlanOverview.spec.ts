@@ -10,6 +10,7 @@ enableAutoUnmount(afterEach)
 const plan: SavedPlan = {
   accountId: 'checking',
   takeHome: 5200,
+  grossPay: null,
   bufferPercent: 15,
   updatedAt: '2026-09-22T19:30:00Z',
   plan: {
@@ -84,6 +85,23 @@ describe('spending plan overview', () => {
     )
     expect(wrapper.get('[aria-labelledby="overview-investments-heading"]').text()).not.toContain(
       'Roth IRA',
+    )
+  })
+
+  it('says when a paycheck line is a percent of gross pay', () => {
+    const wrapper = mountOverview({
+      ...plan,
+      grossPay: 10000,
+      plan: {
+        ...plan.plan,
+        investments: [
+          { name: '401(k)', amount: 600, items: [], fromPaycheck: true, percentOfGross: 6 },
+        ],
+      },
+    })
+
+    expect(wrapper.get('[aria-labelledby="overview-investments-heading"]').text()).toContain(
+      'From paycheck · 6% of gross pay',
     )
   })
 

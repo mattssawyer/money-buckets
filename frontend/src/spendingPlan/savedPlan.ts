@@ -9,6 +9,7 @@ import type { BucketId, PlanDraft } from './plan'
 export interface SavedPlan {
   accountId: string | null
   takeHome: number | null
+  grossPay: number | null
   bufferPercent: number
   plan: PlanDraft
   updatedAt: string
@@ -29,6 +30,7 @@ export const BUCKET_IDS: Record<SpendingPlanBucket, BucketId> = {
 export function toSaveRequest(
   accountId: string | null,
   takeHome: number | null,
+  grossPay: number | null,
   bufferPercent: number,
   plan: PlanDraft,
 ): SpendingPlanRequest {
@@ -36,6 +38,7 @@ export function toSaveRequest(
   return {
     account_id: accountId,
     take_home: takeHome,
+    gross_pay: grossPay,
     fixed_cost_buffer_percent: bufferPercent,
     lines: bucketIds.flatMap((bucket) =>
       plan[bucket].map((line) => ({
@@ -43,6 +46,7 @@ export function toSaveRequest(
         name: line.name,
         amount: line.amount,
         from_paycheck: line.fromPaycheck,
+        percent_of_gross: line.percentOfGross ?? null,
         items: line.items.map((item) => ({
           name: item.name,
           amount: item.amount,
@@ -60,6 +64,7 @@ export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
       name: line.name,
       amount: line.amount,
       fromPaycheck: line.from_paycheck,
+      percentOfGross: line.percent_of_gross,
       items: line.items.map((item) => ({
         name: item.name,
         amount: item.amount,
@@ -70,6 +75,7 @@ export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
   return {
     accountId: saved.account_id,
     takeHome: saved.take_home,
+    grossPay: saved.gross_pay,
     bufferPercent: saved.fixed_cost_buffer_percent,
     plan,
     updatedAt: saved.updated_at,

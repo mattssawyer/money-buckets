@@ -265,8 +265,8 @@ class BucketSortingTests {
     }
 
     private void savePlan(String fixedCostLine) {
-        planService.save(userId, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
-                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, fixedCostLine, null, false, List.of())),
+        planService.save(userId, null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
+                new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, fixedCostLine, null, false, null, List.of())),
                 plan -> plan);
         entityManager.clear();
     }
