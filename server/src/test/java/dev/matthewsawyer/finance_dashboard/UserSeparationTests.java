@@ -1,5 +1,6 @@
 package dev.matthewsawyer.finance_dashboard;
 
+import com.plaid.client.model.ItemPublicTokenExchangeResponse;
 import com.plaid.client.model.LinkTokenCreateRequest;
 import com.plaid.client.model.LinkTokenCreateResponse;
 import com.plaid.client.request.PlaidApi;
@@ -45,6 +46,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
@@ -259,10 +261,12 @@ class UserSeparationTests {
     @ParameterizedTest
     @MethodSource("reads")
     void showsBobNoneOfAlicesData(String path) throws Exception {
-        assertTrue(body(as(ALICE, HttpMethod.GET, path)).contains("alice"),
+        assertTrue(body(as(ALICE, HttpMethod.GET, path), status().isOk()).contains("alice"),
                 "Alice should see her own data at " + path + ", or this test proves nothing");
 
-        String bobSees = body(as(BOB, HttpMethod.GET, path));
+        // Bob has no plan of his own to show.
+        String bobSees = body(as(BOB, HttpMethod.GET, path),
+                path.equals("/spending-plan") ? status().isNotFound() : status().isOk());
 
         assertFalse(bobSees.contains("alice"), "Bob saw Alice's data at " + path + ": " + bobSees);
     }
@@ -319,17 +323,38 @@ class UserSeparationTests {
                 request.getValue().getUser().getClientUserId());
     }
 
-    /**
-     * Linking stores whatever item Plaid hands back for the public token under the signed-in
-     * user. Bob can't name Alice's item: Plaid only issues the token to the browser that went
-     * through Link.
-     */
     @Test
     void refusesALinkWithoutAPublicToken() throws Exception {
         mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/items").content("{}"))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(plaidApi);
+    }
+
+    /**
+     * Linking stores whatever item Plaid hands back for the public token under the signed-in
+     * user. Bob can't name Alice's item: Plaid only issues the token to the browser that went
+     * through Link.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void storesBobsLinkedBankUnderBob() throws Exception {
+        Call<ItemPublicTokenExchangeResponse> call = mock(Call.class);
+        when(plaidApi.itemPublicTokenExchange(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(
+                new ItemPublicTokenExchangeResponse().accessToken("bob-access-token").itemId("bob-item")));
+        // The initial sync's Plaid calls are left unstubbed; their failures don't fail the link.
+
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/items")
+                        .content("""
+                                {"publicToken": "bob-public-token"}
+                                """))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(bobId(), items.findById("bob-item").orElseThrow().getUserId());
+        assertEquals(aliceId, items.findById(ITEM).orElseThrow().getUserId());
     }
 
     @Test
@@ -396,8 +421,9 @@ class UserSeparationTests {
                 .contentType(MediaType.APPLICATION_JSON);
     }
 
-    private String body(MockHttpServletRequestBuilder request) throws Exception {
+    private String body(MockHttpServletRequestBuilder request, ResultMatcher expectedStatus) throws Exception {
         return mockMvc.perform(request)
+                .andExpect(expectedStatus)
                 .andReturn().getResponse().getContentAsString()
                 .toLowerCase(Locale.ROOT);
     }
