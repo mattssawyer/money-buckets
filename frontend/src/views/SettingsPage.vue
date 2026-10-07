@@ -59,28 +59,37 @@ async function deleteAccount() {
         <UserButton />
       </header>
 
-      <section class="panel settings-section" aria-labelledby="sign-in-heading">
-        <div class="section-text">
-          <h2 id="sign-in-heading">Sign-in</h2>
-          <p v-if="email">{{ email }}</p>
+      <section class="panel settings-card" aria-labelledby="account-heading">
+        <h2 id="account-heading" class="card-label">Your account</h2>
+        <div class="setting-row">
+          <div class="setting-text">
+            <span class="setting-name">Email</span>
+            <span class="setting-detail">{{ email || 'No email on file' }}</span>
+          </div>
+          <Button
+            label="Manage"
+            size="small"
+            severity="secondary"
+            outlined
+            @click="clerk?.openUserProfile()"
+          />
         </div>
-        <Button label="Manage sign-in" severity="secondary" @click="clerk?.openUserProfile()" />
-      </section>
-
-      <section class="panel settings-section" aria-labelledby="delete-heading">
-        <div class="section-text">
-          <h2 id="delete-heading">Delete your account</h2>
-          <p>
-            Disconnects your banks and permanently deletes everything Money Buckets has stored about
-            you, including your sign-in.
-          </p>
+        <div class="setting-row">
+          <div class="setting-text">
+            <span class="setting-name">Delete account</span>
+            <span class="setting-detail">
+              Disconnects your banks and permanently deletes your data.
+            </span>
+          </div>
+          <Button
+            label="Delete…"
+            size="small"
+            severity="danger"
+            outlined
+            aria-haspopup="dialog"
+            @click="openDialog"
+          />
         </div>
-        <Button
-          label="Delete account…"
-          severity="danger"
-          aria-haspopup="dialog"
-          @click="openDialog"
-        />
       </section>
     </main>
 
@@ -164,29 +173,48 @@ h1 {
   height: 2rem;
 }
 
-.settings-section {
+.settings-card {
+  width: min(100%, 40rem);
+  padding: 1rem 1.25rem 0.25rem;
+}
+
+.card-label {
+  padding-bottom: 0.5rem;
+  color: var(--app-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
-  max-width: 48rem;
-  padding: 1.25rem 1.5rem;
+  gap: 1rem;
+  padding: 0.875rem 0;
+  border-top: 1px solid var(--app-divider);
 }
 
-.section-text {
+.setting-text {
+  display: grid;
+  gap: 0.125rem;
   min-width: 0;
+  font-size: 0.875rem;
 }
 
-h2 {
-  font-size: 1rem;
-  font-weight: 550;
-  line-height: 1.4;
+.setting-name {
+  font-weight: 500;
 }
 
-.section-text p {
-  margin-top: 0.25rem;
+.setting-detail {
+  overflow: hidden;
   color: var(--app-text-secondary);
-  line-height: 1.6;
+  text-overflow: ellipsis;
+}
+
+.setting-row :deep(.p-button) {
+  flex: none;
+  white-space: nowrap;
 }
 
 .delete-form {
@@ -218,13 +246,6 @@ h2 {
 
   h1 {
     font-size: 1.375rem;
-  }
-}
-
-@media (max-width: 640px) {
-  .settings-section {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 </style>

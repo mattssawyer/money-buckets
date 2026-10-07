@@ -42,7 +42,7 @@ function button(wrapper: VueWrapper, label: string) {
 }
 
 async function openAndType(wrapper: VueWrapper, text: string) {
-  await button(wrapper, 'Delete account…').trigger('click')
+  await button(wrapper, 'Delete…').trigger('click')
   await wrapper.find('#delete-confirmation').setValue(text)
 }
 
@@ -69,7 +69,7 @@ describe('settings page', () => {
   it('opens Clerk to manage the sign-in', async () => {
     const wrapper = mountPage()
 
-    await button(wrapper, 'Manage sign-in').trigger('click')
+    await button(wrapper, 'Manage').trigger('click')
 
     expect(clerk.openUserProfile).toHaveBeenCalled()
   })

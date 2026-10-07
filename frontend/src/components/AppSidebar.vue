@@ -9,7 +9,7 @@ const items = [
   { name: 'Spending Plan', to: '/spending-plan', icon: Wallet },
   { name: 'Investments', to: '/investments', icon: TrendingUp },
   { name: 'Accounts', to: '/accounts', icon: Landmark },
-  { name: 'Settings', to: '/settings', icon: Settings },
+  { name: 'Settings', to: '/settings', icon: Settings, bottom: true },
 ]
 </script>
 
@@ -20,7 +20,7 @@ const items = [
     </RouterLink>
 
     <ul class="rail-items">
-      <li v-for="item in items" :key="item.name">
+      <li v-for="item in items" :key="item.name" :class="{ 'rail-bottom': item.bottom }">
         <RouterLink :to="item.to" class="rail-item" exact-active-class="rail-item-active">
           <span class="rail-indicator" aria-hidden="true" />
           <span class="rail-icon">
@@ -62,12 +62,18 @@ const items = [
 }
 
 .rail-items {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Settings sits apart from the pages, at the foot of the rail. */
+.rail-bottom {
+  margin-top: auto;
 }
 
 .rail-item {
@@ -159,10 +165,13 @@ const items = [
   }
 
   .rail-items {
-    display: flex;
-    flex: 1;
+    flex-direction: row;
     justify-content: space-around;
     gap: 0;
+  }
+
+  .rail-bottom {
+    margin-top: 0;
   }
 
   .rail-item {
