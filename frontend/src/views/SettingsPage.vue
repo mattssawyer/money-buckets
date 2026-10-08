@@ -2,6 +2,7 @@
 import { UserButton, useClerk, useUser } from '@clerk/vue'
 import { isAxiosError } from 'axios'
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -91,6 +92,11 @@ async function deleteAccount() {
           />
         </div>
       </section>
+
+      <nav class="legal-links" aria-label="Legal">
+        <RouterLink to="/privacy">Privacy policy</RouterLink>
+        <RouterLink to="/terms">Terms of service</RouterLink>
+      </nav>
     </main>
 
     <Dialog
@@ -215,6 +221,21 @@ h1 {
 .setting-row :deep(.p-button) {
   flex: none;
   white-space: nowrap;
+}
+
+.legal-links {
+  display: flex;
+  gap: 1.25rem;
+  padding: 0 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.legal-links a {
+  color: var(--app-text-secondary);
+}
+
+.legal-links a:hover {
+  color: var(--app-text);
 }
 
 .delete-form {

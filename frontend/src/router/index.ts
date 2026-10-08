@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Shown to everyone, signed in or not. */
+    public?: boolean
+  }
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -24,6 +31,18 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: () => import('../views/SettingsPage.vue'),
+    },
+    {
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('../views/PrivacyPage.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: () => import('../views/TermsPage.vue'),
+      meta: { public: true },
     },
   ],
 })

@@ -30,7 +30,11 @@ function mountPage() {
     attachTo: document.body,
     global: {
       plugins: [[PrimeVue, { unstyled: true }]],
-      stubs: { AppSidebar: true, teleport: true },
+      stubs: {
+        AppSidebar: true,
+        teleport: true,
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+      },
     },
   })
 }
