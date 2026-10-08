@@ -51,8 +51,7 @@ Systems in scope:
 
 - Secrets (Plaid secret, token-encryption keyset, Clerk secret key, TypeSafe API key) are
   kept only in Railway's sealed variables and in the owner's password manager.
-- Secrets are never committed to Git, put in frontend variables, or sent over chat or
-  email. The public repository is scanned by GitHub secret scanning.
+- Secrets are never committed to Git or put in frontend variables. The public repository is scanned by GitHub secret scanning.
 - A secret that may have been exposed is rotated immediately.
 
 ## Secure development and vulnerability management
