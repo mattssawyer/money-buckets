@@ -1,6 +1,15 @@
+// The Spring Boot plugin pulls in an old, vulnerable commons-lang3 at build time.
+buildscript {
+	dependencies {
+		constraints {
+			classpath 'org.apache.commons:commons-lang3:3.20.0'
+		}
+	}
+}
+
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.1.0'
+	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -16,6 +25,10 @@ java {
 repositories {
 	mavenCentral()
 }
+
+// Patched versions ahead of what Spring Boot 4.1.1 picks, for Dependabot alerts.
+ext['tomcat.version'] = '11.0.26'
+ext['jackson-bom.version'] = '3.1.7'
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -39,6 +52,12 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	// plaid-java 29 pulls in old, vulnerable versions of these.
+	constraints {
+		implementation 'com.squareup.okio:okio:3.18.2'
+		implementation 'org.json:json:20260814'
+	}
 }
 
 tasks.named('test') {
