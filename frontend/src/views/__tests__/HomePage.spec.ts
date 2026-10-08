@@ -393,7 +393,7 @@ describe('homepage balances', () => {
     expect(wrapper.findAll('button').some((element) => element.text() === 'Try again')).toBe(false)
   })
 
-  it("counts a shared account at the user's share and takes card balances away", async () => {
+  it('leaves shared accounts out of the balance and takes card balances away', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([
       checking,
@@ -410,8 +410,13 @@ describe('homepage balances', () => {
     const wrapper = mountHome()
     await flushPromises()
 
-    // 1,250.50 + half of 8,400 - 250.50
-    expect(wrapper.get('.balance-amount').text()).toBe('$5,200.00')
+    // 1,250.50 - 250.50; the joint account's money is set aside for shared bills.
+    expect(wrapper.get('.balance-amount').text()).toBe('$1,000.00')
+    expect(wrapper.find('.balance-card [aria-label="About your balance"]').exists()).toBe(true)
+
+    await wrapper.get('.account-select').setValue('joint')
+    expect(wrapper.get('.balance-amount').text()).toBe('$4,200.00')
+    expect(wrapper.find('.balance-card [aria-label="About your balance"]').exists()).toBe(false)
   })
 
   it('replaces onboarding with the balance after Link succeeds', async () => {

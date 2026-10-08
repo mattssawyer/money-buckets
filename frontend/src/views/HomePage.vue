@@ -10,6 +10,7 @@ import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
+import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -100,6 +101,7 @@ const {
   selectedAccountId,
   selectedAccount,
   balance,
+  leavesOutShared,
   loading: loadingAccounts,
   failed: accountsFailed,
   load: loadAccountList,
@@ -627,7 +629,14 @@ async function openPlaidLink() {
               :aria-busy="loadingAccounts"
             >
               <div class="balance-heading">
-                <h2 id="balance-heading" class="card-label">Balance</h2>
+                <div class="balance-title">
+                  <h2 id="balance-heading" class="card-label">Balance</h2>
+                  <InfoTip
+                    v-if="leavesOutShared"
+                    label="About your balance"
+                    text="Shared accounts aren't included: money in them is set aside for shared bills. Pick a shared account to see your share of it."
+                  />
+                </div>
                 <select
                   v-if="hasMultipleAccounts"
                   class="account-select"
@@ -1580,6 +1589,12 @@ li.spending-legend-row {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.balance-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .account-select {
