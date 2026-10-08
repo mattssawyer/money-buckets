@@ -84,6 +84,7 @@ personal devices except briefly to answer a user's data request, and is deleted 
   everything stored about them, and deletes their Clerk sign-in, right away. Copies in
   logs and hosting backups expire on the providers' schedules.
 - Users can email the owner to ask for a copy of their data, a correction, or deletion.
+- The database is not currently backed up.
 
 ## Incident response
 
