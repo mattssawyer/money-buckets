@@ -24,10 +24,21 @@ export function useSelectedAccount() {
   const selectedAccount = computed(() =>
     accounts.value.find((account) => account.account_id === selectedAccountId.value),
   )
-  /** The user's balance in whatever they're viewing; see {@link yourBalance}. */
-  const balance = computed(() =>
-    yourBalance(selectedAccount.value ? [selectedAccount.value] : accounts.value),
+  /**
+   * Whether the balance of all tracked accounts leaves out shared ones: money moved into a shared
+   * account is already set aside for shared bills, so it isn't the user's to spend.
+   */
+  const leavesOutShared = computed(
+    () => !selectedAccount.value && accounts.value.some((account) => isShared(account)),
   )
+  /** The user's balance in whatever they're viewing; see {@link yourBalance}. */
+  const balance = computed(() => {
+    if (selectedAccount.value) return yourBalance([selectedAccount.value])
+    const own = accounts.value.filter((account) => !isShared(account))
+    // Every tracked account is shared, so none of it counts.
+    if (!own.length && leavesOutShared.value) return 0
+    return yourBalance(own)
+  })
 
   /** Loads accounts and resolves the selection. On failure, keeps what was already loaded. */
   async function load() {
@@ -68,6 +79,7 @@ export function useSelectedAccount() {
     selectedAccountId: readonly(selectedAccountId),
     selectedAccount,
     balance,
+    leavesOutShared,
     loading: readonly(loading),
     failed: readonly(failed),
     load,
@@ -94,6 +106,10 @@ export function yourBalance(accounts: readonly PlaidAccount[]): number | null {
     total = (total ?? 0) + (signed * account.share_percent) / 100
   }
   return total == null ? null : Math.round(total * 100) / 100
+}
+
+function isShared(account: PlaidAccount): boolean {
+  return account.share_percent < 100
 }
 
 function chooseAccount(accounts: PlaidAccount[], current: string | undefined): string | undefined {

@@ -172,7 +172,7 @@ describe('useSelectedAccount', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
-  it('gives the balance of what is selected', async () => {
+  it('leaves shared accounts out of the balance of all tracked accounts', async () => {
     vi.mocked(getAccounts).mockResolvedValue([
       account('checking', {}, 1000),
       account('joint', { share_percent: 50 }, 3000),
@@ -180,9 +180,28 @@ describe('useSelectedAccount', () => {
     const selection = useSelectedAccount()
     await selection.load()
 
-    expect(selection.balance.value).toBe(2500)
+    expect(selection.balance.value).toBe(1000)
+    expect(selection.leavesOutShared.value).toBe(true)
     selection.select('joint')
     expect(selection.balance.value).toBe(1500)
+    expect(selection.leavesOutShared.value).toBe(false)
+  })
+
+  it('leaves nothing out without a shared account', async () => {
+    vi.mocked(getAccounts).mockResolvedValue([account('checking', {}, 1000)])
+    const selection = useSelectedAccount()
+    await selection.load()
+
+    expect(selection.balance.value).toBe(1000)
+    expect(selection.leavesOutShared.value).toBe(false)
+  })
+
+  it('has a zero balance when every tracked account is shared', async () => {
+    vi.mocked(getAccounts).mockResolvedValue([account('joint', { share_percent: 50 }, 3000)])
+    const selection = useSelectedAccount()
+    await selection.load()
+
+    expect(selection.balance.value).toBe(0)
   })
 })
 

@@ -10,6 +10,7 @@ import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
+import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -100,6 +101,7 @@ const {
   selectedAccountId,
   selectedAccount,
   balance,
+  leavesOutShared,
   loading: loadingAccounts,
   failed: accountsFailed,
   load: loadAccountList,
@@ -113,6 +115,13 @@ const sameInstitution = ref<PlaidItem[]>([])
 const { user } = useUser()
 const hasConnections = computed(() => itemIds.value.length > 0)
 const hasMultipleAccounts = computed(() => accounts.value.length > 1)
+/**
+ * Whether Home offers a choice of account. A lone shared account still gets one, since all
+ * tracked accounts leave it out of the balance and picking it shows the user's share.
+ */
+const offersAccountChoice = computed(
+  () => hasMultipleAccounts.value || accounts.value.some((account) => account.share_percent < 100),
+)
 const greeting = computed(() => {
   const hour = new Date().getHours()
   const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
@@ -627,9 +636,16 @@ async function openPlaidLink() {
               :aria-busy="loadingAccounts"
             >
               <div class="balance-heading">
-                <h2 id="balance-heading" class="card-label">Balance</h2>
+                <div class="balance-title">
+                  <h2 id="balance-heading" class="card-label">Balance</h2>
+                  <InfoTip
+                    v-if="leavesOutShared"
+                    label="About your balance"
+                    text="Shared accounts aren't included: money in them is set aside for shared bills. Pick a shared account to see your share of it."
+                  />
+                </div>
                 <select
-                  v-if="hasMultipleAccounts"
+                  v-if="offersAccountChoice"
                   class="account-select"
                   aria-label="Account"
                   :value="selectedAccountId ?? ''"
@@ -658,7 +674,7 @@ async function openPlaidLink() {
                 >
                   {{ formatBalance(balance) }}
                 </p>
-                <p v-if="!hasMultipleAccounts && selectedAccountLabel" class="balance-account">
+                <p v-if="!offersAccountChoice && selectedAccountLabel" class="balance-account">
                   {{ selectedAccountLabel }}
                 </p>
               </template>
@@ -1580,6 +1596,12 @@ li.spending-legend-row {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.balance-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .account-select {

@@ -31,7 +31,7 @@ A bank account or credit card the user counts spending from. Checking, cash mana
 _Avoid_: Spending account, included account
 
 **Shared account**:
-An account the user splits with someone else, such as a joint account for rent and household bills. Only the user's share of it counts, in spending and in net worth. A transfer between it and another tracked account isn't spending; that money counts when it's spent from the shared account.
+An account the user splits with someone else, such as a joint account for rent and household bills. Only the user's share of it counts, in spending and in net worth. Home's balance of all tracked accounts leaves it out, since its money is already set aside for shared bills; picking it on its own shows the user's share. A transfer between it and another tracked account isn't spending; that money counts when it's spent from the shared account.
 _Avoid_: Joint account (in code), split account
 
 **Investment account**:
