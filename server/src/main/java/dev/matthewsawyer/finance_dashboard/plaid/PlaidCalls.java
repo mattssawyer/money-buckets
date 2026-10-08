@@ -26,28 +26,39 @@ final class PlaidCalls {
             throw new PlaidRequestException("Plaid " + action + " failed", e);
         }
         if (!response.isSuccessful() || response.body() == null) {
-            log.warn("Plaid {} failed with HTTP {}: {}", action, response.code(), plaidError(response));
-            throw new PlaidRequestException("Plaid " + action + " failed");
+            JsonObject error = errorBody(response);
+            log.warn("Plaid {} failed with HTTP {}: {}", action, response.code(), describe(error));
+            throw new PlaidRequestException("Plaid " + action + " failed",
+                    error == null ? null : nullableField(error, "error_code"));
         }
         return response.body();
     }
 
-    /** Plaid's error type, code and message; never tokens or secrets. */
-    private static String plaidError(Response<?> response) {
+    /** Plaid's error body, or null when there's none or it isn't JSON. */
+    private static JsonObject errorBody(Response<?> response) {
         try (ResponseBody body = response.errorBody()) {
-            if (body == null) {
-                return "no error body";
-            }
-            JsonObject error = JsonParser.parseString(body.string()).getAsJsonObject();
-            return String.join(" / ", field(error, "error_type"), field(error, "error_code"),
-                    field(error, "error_message"));
+            return body == null ? null : JsonParser.parseString(body.string()).getAsJsonObject();
         } catch (IOException | RuntimeException e) {
-            return "unreadable error body";
+            return null;
         }
     }
 
+    /** Plaid's error type, code and message; never tokens or secrets. */
+    private static String describe(JsonObject error) {
+        if (error == null) {
+            return "no readable error body";
+        }
+        return String.join(" / ", field(error, "error_type"), field(error, "error_code"),
+                field(error, "error_message"));
+    }
+
+    private static String nullableField(JsonObject error, String name) {
+        return error.has(name) && !error.get(name).isJsonNull() ? error.get(name).getAsString() : null;
+    }
+
     private static String field(JsonObject error, String name) {
-        return error.has(name) && !error.get(name).isJsonNull() ? error.get(name).getAsString() : "-";
+        String value = nullableField(error, name);
+        return value == null ? "-" : value;
     }
 
     private PlaidCalls() {

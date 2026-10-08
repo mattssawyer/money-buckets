@@ -3,6 +3,7 @@ package dev.matthewsawyer.finance_dashboard.users;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
+import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemSync;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidRequestException;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import jakarta.persistence.EntityManager;
@@ -48,6 +49,7 @@ public class UserDeletion {
 
     private final PlaidItemRepository plaidItemRepository;
     private final PlaidItemLinking itemLinking;
+    private final PlaidItemSync itemSync;
     private final ClerkUsers clerkUsers;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -56,6 +58,7 @@ public class UserDeletion {
     public UserDeletion(
             PlaidItemRepository plaidItemRepository,
             PlaidItemLinking itemLinking,
+            PlaidItemSync itemSync,
             ClerkUsers clerkUsers,
             JdbcTemplate jdbcTemplate,
             TransactionTemplate transactionTemplate,
@@ -63,6 +66,7 @@ public class UserDeletion {
     ) {
         this.plaidItemRepository = plaidItemRepository;
         this.itemLinking = itemLinking;
+        this.itemSync = itemSync;
         this.clerkUsers = clerkUsers;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
@@ -78,7 +82,8 @@ public class UserDeletion {
      * Removes the user's items from Plaid first, so Plaid stops holding their bank access, then
      * deletes their rows, then their Clerk user. A failure stops it there and it can be run again:
      * items already removed stay removed, and a user whose rows are gone but whose sign-in
-     * remains gets an empty user again on their next request.
+     * remains gets an empty user again on their next request. An item Plaid no longer has counts
+     * as removed.
      *
      * @throws IllegalStateException when users can't be deleted here (see {@link #isAvailable});
      *         nothing is touched
@@ -92,7 +97,14 @@ public class UserDeletion {
             throw new IllegalStateException("CLERK_SECRET_KEY is not set");
         }
         for (PlaidItem item : plaidItemRepository.findAllByUserIdAndRemovedOnIsNullOrderByItemIdAsc(user.getId())) {
-            itemLinking.remove(user.getId(), item.getItemId());
+            try {
+                itemLinking.remove(user.getId(), item.getItemId());
+            } catch (PlaidRequestException e) {
+                if (!"ITEM_NOT_FOUND".equals(e.getErrorCode())) {
+                    throw e;
+                }
+                itemSync.removed(item.getItemId());
+            }
         }
         transactionTemplate.executeWithoutResult(status -> {
             // The deletes bypass Hibernate, so nothing it still holds may be written after them.

@@ -37,6 +37,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import okhttp3.MediaType;
+import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -160,6 +162,35 @@ class UserDeletionTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void goesAheadWhenPlaidNoLongerHasABank() throws Exception {
+        Call<ItemRemoveResponse> call = mock(Call.class);
+        when(plaidApi.itemRemove(any())).thenReturn(call);
+        when(call.execute()).thenReturn(plaidError("ITEM_NOT_FOUND"));
+
+        mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
+                .andExpect(status().isNoContent());
+
+        rowsOf(aliceId).forEach((table, count) -> assertEquals(0, count, "Alice still has rows in " + table));
+        verify(clerkUsers).delete(ALICE);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsEverythingWhenPlaidRefusesForAnotherReason() throws Exception {
+        Call<ItemRemoveResponse> call = mock(Call.class);
+        when(plaidApi.itemRemove(any())).thenReturn(call);
+        when(call.execute()).thenReturn(plaidError("INVALID_ACCESS_TOKEN"));
+        Map<String, Integer> alicesRows = rowsOf(aliceId);
+
+        mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
+                .andExpect(status().isBadGateway());
+
+        assertEquals(alicesRows, rowsOf(aliceId));
+        verify(clerkUsers, never()).delete(any());
+    }
+
+    @Test
     void refusesWithoutClerksSecretKey() throws Exception {
         when(clerkUsers.canDelete()).thenReturn(false);
         Map<String, Integer> alicesRows = rowsOf(aliceId);
@@ -188,6 +219,12 @@ class UserDeletionTests {
         mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
                 .andExpect(status().isNoContent());
         assertEquals(0, count("SELECT COUNT(*) FROM users WHERE clerk_user_id = ?", ALICE));
+    }
+
+    private static Response<ItemRemoveResponse> plaidError(String code) {
+        return Response.error(400, ResponseBody.create("""
+                {"error_type": "ITEM_ERROR", "error_code": "%s", "error_message": "test"}
+                """.formatted(code), MediaType.get("application/json")));
     }
 
     /** Rows per table with a user_id column, keyed by table. */
