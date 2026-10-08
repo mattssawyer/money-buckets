@@ -66,8 +66,8 @@ Systems in scope:
 
 ## Devices
 
-Admin credentials are kept in a password manager. Production data is not downloaded to personal devices except
-briefly to answer a user's data request, and is deleted afterwards.
+Admin credentials are kept in a password manager. Production data is not downloaded to
+personal devices except briefly to answer a user's data request, and is deleted afterwards.
 
 ## Logging and monitoring
 
