@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { SignInButton, SignUpButton, useAuth } from '@clerk/vue'
 import Button from 'primevue/button'
+import { RouterLink } from 'vue-router'
 
 const { isLoaded } = useAuth()
 const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
@@ -34,6 +35,12 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
           </SignUpButton>
         </div>
       </section>
+
+      <p class="sign-in-legal">
+        By creating an account, you agree to the
+        <RouterLink to="/terms">terms of service</RouterLink> and
+        <RouterLink to="/privacy">privacy policy</RouterLink>.
+      </p>
     </div>
   </main>
 </template>
@@ -104,6 +111,20 @@ h1 {
   color: var(--app-text-secondary);
   font-size: 0.8125rem;
   text-align: center;
+}
+
+.sign-in-legal {
+  margin-top: 1.25rem;
+  color: var(--app-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.sign-in-legal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .sign-in-secondary::before,
