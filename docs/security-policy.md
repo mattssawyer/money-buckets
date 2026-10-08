@@ -37,8 +37,7 @@ Systems in scope:
   keeps users' data apart.
 - Plaid webhooks are accepted only with a valid Plaid signature.
 - The production database has no public network address.
-- Access is reviewed every quarter: unused dashboard accounts, API keys and team members
-  are removed.
+- API keys and dashboard access that are no longer needed are revoked.
 
 ## Encryption
 
@@ -59,16 +58,15 @@ Systems in scope:
 ## Secure development and vulnerability management
 
 - Changes go through pull requests to `main`, which is the only branch that deploys.
-- The test suite, including the user-separation tests, is run before each change is
-  merged.
+- GitHub Actions runs the test suite, including the user-separation tests, and the
+  frontend type check on every pull request and every push to `main`.
 - GitHub Dependabot and CodeQL scan dependencies and code. Critical and high-severity
   findings are fixed within 7 days, others within 30 days.
 - Production runs on Railway's managed platform, which patches the underlying hosts.
 
 ## Devices
 
-The owner's work computer uses full-disk encryption, a screen lock, automatic OS updates
-and a password manager. Production data is not downloaded to personal devices except
+Admin credentials are kept in a password manager. Production data is not downloaded to personal devices except
 briefly to answer a user's data request, and is deleted afterwards.
 
 ## Logging and monitoring
