@@ -28,6 +28,7 @@ import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.repository.SpendingPlanRepository;
 import dev.matthewsawyer.finance_dashboard.repository.TransactionCountingRepository;
 import dev.matthewsawyer.finance_dashboard.repository.UserRepository;
+import dev.matthewsawyer.finance_dashboard.users.ClerkUsers;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,7 @@ class UserSeparationTests {
      */
     private static final Set<String> ENDPOINTS = Set.of(
             "GET /users/me",
+            "DELETE /users/me",
             "POST /plaid/create-link-token",
             "POST /plaid/items",
             "GET /plaid/items",
@@ -142,6 +144,7 @@ class UserSeparationTests {
     }
 
     @MockitoBean private PlaidApi plaidApi;
+    @MockitoBean private ClerkUsers clerkUsers;
 
     @Autowired private MockMvc mockMvc;
     @Autowired @Qualifier("requestMappingHandlerMapping") private RequestMappingHandlerMapping handlerMapping;
@@ -269,6 +272,24 @@ class UserSeparationTests {
                 path.equals("/spending-plan") ? status().isNotFound() : status().isOk());
 
         assertFalse(bobSees.contains("alice"), "Bob saw Alice's data at " + path + ": " + bobSees);
+    }
+
+    @Test
+    void deletesOnlyBobWhenBobDeletesHimself() throws Exception {
+        when(clerkUsers.canDelete()).thenReturn(true);
+
+        mockMvc.perform(as(BOB, HttpMethod.DELETE, "/users/me")).andExpect(status().isNoContent());
+        entityManager.clear();
+
+        org.mockito.Mockito.verify(clerkUsers).delete(BOB);
+        verifyNoInteractions(plaidApi);
+        assertTrue(users.findByClerkUserId(BOB).isEmpty());
+        assertTrue(users.findById(aliceId).isPresent());
+        assertFalse(items.findById(ITEM).orElseThrow().isRemoved());
+        assertTrue(transactions.findById(TRANSACTION).isPresent());
+        assertTrue(plans.findByUserId(aliceId).isPresent());
+        assertTrue(corrections.findByUserIdAndMerchantKey(aliceId, PAYEE).isPresent());
+        assertTrue(countings.findById(TRANSACTION).isPresent());
     }
 
     @Test

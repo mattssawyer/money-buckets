@@ -20,6 +20,11 @@ const router = createRouter({
       name: 'investments',
       component: () => import('../views/InvestmentsPage.vue'),
     },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('../views/SettingsPage.vue'),
+    },
   ],
 })
 

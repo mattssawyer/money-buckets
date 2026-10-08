@@ -604,9 +604,7 @@ describe('homepage transaction editing', () => {
 
     await wrapper.get('.transactions-card .transaction-button').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain(
-      'Applies to every charge from Coffee Shop, including future ones.',
-    )
+    expect(wrapper.text()).toContain('Applies to past and future transactions with this recipient.')
 
     vi.mocked(getTransactions).mockClear()
     await wrapper.get('[aria-label="Bucket"]').setValue('FIXED_COSTS')

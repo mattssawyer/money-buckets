@@ -121,6 +121,7 @@ it up somewhere safe, such as a password manager.
 | `POSTGRES_PASSWORD` | Yes | Any strong password you make up. The database is created with it on first start, so don't change it afterwards. |
 | `CLERK_PUBLISHABLE_KEY` | Yes | [Clerk dashboard](https://dashboard.clerk.com) → your application → **API keys**. Starts with `pk_`. |
 | `CLERK_FRONTEND_API_URL` | Yes | Same page, the **Frontend API URL**, such as `https://your-app.clerk.accounts.dev`. The API uses it to check sign-ins, so it must come from the same Clerk application as the publishable key. |
+| `CLERK_SECRET_KEY` | No | Same page, the **Secret key**. Starts with `sk_`. Lets people delete their account from Settings, which deletes their Clerk sign-in too; without it, deleting an account is refused. |
 | `PLAID_CLIENT_ID` | Yes | [Plaid dashboard](https://dashboard.plaid.com) → **Developers** → **Keys**. |
 | `PLAID_ENV` | Yes | Starts as `sandbox`, for Plaid's test banks, or `production` for real accounts once Plaid has approved production access for you. |
 | `PLAID_SECRET` | Yes | Same page, the secret for the environment in `PLAID_ENV`. |
