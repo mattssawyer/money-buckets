@@ -393,6 +393,19 @@ describe('homepage balances', () => {
     expect(wrapper.findAll('button').some((element) => element.text() === 'Try again')).toBe(false)
   })
 
+  it('offers a lone shared account so its share can be seen', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getAccounts).mockResolvedValue([
+      { ...checking, account_id: 'joint', name: 'Joint', share_percent: 50 },
+    ])
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(wrapper.get('.balance-amount').text()).toBe('$0.00')
+    await wrapper.get('.account-select').setValue('joint')
+    expect(wrapper.get('.balance-amount').text()).toBe('$625.25')
+  })
+
   it('leaves shared accounts out of the balance and takes card balances away', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     vi.mocked(getAccounts).mockResolvedValue([

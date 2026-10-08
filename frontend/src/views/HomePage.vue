@@ -115,6 +115,13 @@ const sameInstitution = ref<PlaidItem[]>([])
 const { user } = useUser()
 const hasConnections = computed(() => itemIds.value.length > 0)
 const hasMultipleAccounts = computed(() => accounts.value.length > 1)
+/**
+ * Whether Home offers a choice of account. A lone shared account still gets one, since all
+ * tracked accounts leave it out of the balance and picking it shows the user's share.
+ */
+const offersAccountChoice = computed(
+  () => hasMultipleAccounts.value || accounts.value.some((account) => account.share_percent < 100),
+)
 const greeting = computed(() => {
   const hour = new Date().getHours()
   const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
@@ -638,7 +645,7 @@ async function openPlaidLink() {
                   />
                 </div>
                 <select
-                  v-if="hasMultipleAccounts"
+                  v-if="offersAccountChoice"
                   class="account-select"
                   aria-label="Account"
                   :value="selectedAccountId ?? ''"
@@ -667,7 +674,7 @@ async function openPlaidLink() {
                 >
                   {{ formatBalance(balance) }}
                 </p>
-                <p v-if="!hasMultipleAccounts && selectedAccountLabel" class="balance-account">
+                <p v-if="!offersAccountChoice && selectedAccountLabel" class="balance-account">
                   {{ selectedAccountLabel }}
                 </p>
               </template>
