@@ -65,8 +65,9 @@ Systems in scope:
 
 ## Devices
 
-Admin credentials are kept in a password manager. Production data is not downloaded to
-personal devices except briefly to answer a user's data request, and is deleted afterwards.
+The owner's computer uses full-disk encryption (FileVault), and admin credentials are kept
+in a password manager. Production data is not downloaded to personal devices except briefly
+to answer a user's data request, and is deleted afterwards.
 
 ## Logging and monitoring
 
@@ -84,6 +85,7 @@ personal devices except briefly to answer a user's data request, and is deleted 
   everything stored about them, and deletes their Clerk sign-in, right away. Copies in
   logs and hosting backups expire on the providers' schedules.
 - Users can email the owner to ask for a copy of their data, a correction, or deletion.
+- The database is not currently backed up.
 
 ## Incident response
 
