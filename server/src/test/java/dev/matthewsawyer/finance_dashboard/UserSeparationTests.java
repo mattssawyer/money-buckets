@@ -28,7 +28,7 @@ import dev.matthewsawyer.finance_dashboard.repository.RecurringAnswerRepository;
 import dev.matthewsawyer.finance_dashboard.repository.SpendingPlanRepository;
 import dev.matthewsawyer.finance_dashboard.repository.TransactionCountingRepository;
 import dev.matthewsawyer.finance_dashboard.repository.UserRepository;
-import dev.matthewsawyer.finance_dashboard.users.ClerkUsers;
+import dev.matthewsawyer.finance_dashboard.users.WorkosUsers;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -131,7 +131,7 @@ class UserSeparationTests {
 
     @TestConfiguration
     static class Tokens {
-        /** Accepts any token as the user it names, in place of Clerk checking real ones. */
+        /** Accepts any token as the user it names, in place of WorkOS checking real ones. */
         @Bean
         JwtDecoder jwtDecoder() {
             return token -> Jwt.withTokenValue(token)
@@ -144,7 +144,7 @@ class UserSeparationTests {
     }
 
     @MockitoBean private PlaidApi plaidApi;
-    @MockitoBean private ClerkUsers clerkUsers;
+    @MockitoBean private WorkosUsers workosUsers;
 
     @Autowired private MockMvc mockMvc;
     @Autowired @Qualifier("requestMappingHandlerMapping") private RequestMappingHandlerMapping handlerMapping;
@@ -276,14 +276,14 @@ class UserSeparationTests {
 
     @Test
     void deletesOnlyBobWhenBobDeletesHimself() throws Exception {
-        when(clerkUsers.canDelete()).thenReturn(true);
+        when(workosUsers.canDelete()).thenReturn(true);
 
         mockMvc.perform(as(BOB, HttpMethod.DELETE, "/users/me")).andExpect(status().isNoContent());
         entityManager.clear();
 
-        org.mockito.Mockito.verify(clerkUsers).delete(BOB);
+        org.mockito.Mockito.verify(workosUsers).delete(BOB);
         verifyNoInteractions(plaidApi);
-        assertTrue(users.findByClerkUserId(BOB).isEmpty());
+        assertTrue(users.findByAuthUserId(BOB).isEmpty());
         assertTrue(users.findById(aliceId).isPresent());
         assertFalse(items.findById(ITEM).orElseThrow().isRemoved());
         assertTrue(transactions.findById(TRANSACTION).isPresent());
@@ -340,7 +340,7 @@ class UserSeparationTests {
 
         ArgumentCaptor<LinkTokenCreateRequest> request = ArgumentCaptor.forClass(LinkTokenCreateRequest.class);
         org.mockito.Mockito.verify(plaidApi).linkTokenCreate(request.capture());
-        assertEquals(users.findByClerkUserId(BOB).orElseThrow().getId().toString(),
+        assertEquals(users.findByAuthUserId(BOB).orElseThrow().getId().toString(),
                 request.getValue().getUser().getClientUserId());
     }
 
@@ -450,6 +450,6 @@ class UserSeparationTests {
     }
 
     private UUID bobId() {
-        return users.findByClerkUserId(BOB).map(User::getId).orElseThrow();
+        return users.findByAuthUserId(BOB).map(User::getId).orElseThrow();
     }
 }

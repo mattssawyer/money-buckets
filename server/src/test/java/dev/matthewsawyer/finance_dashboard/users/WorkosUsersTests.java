@@ -14,45 +14,45 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-class ClerkUsersTests {
+class WorkosUsersTests {
 
     private final RestClient.Builder builder = RestClient.builder();
-    private final MockRestServiceServer clerk = MockRestServiceServer.bindTo(builder).build();
-    private final ClerkUsers clerkUsers = new ClerkUsers(builder, "sk_test_secret");
+    private final MockRestServiceServer workos = MockRestServiceServer.bindTo(builder).build();
+    private final WorkosUsers workosUsers = new WorkosUsers(builder, "sk_test_key");
 
     @Test
-    void deletesTheUserWithTheSecretKey() {
-        clerk.expect(requestTo("https://api.clerk.com/v1/users/user_alice"))
+    void deletesTheUserWithTheApiKey() {
+        workos.expect(requestTo("https://api.workos.com/user_management/users/user_alice"))
                 .andExpect(method(HttpMethod.DELETE))
-                .andExpect(header("Authorization", "Bearer sk_test_secret"))
+                .andExpect(header("Authorization", "Bearer sk_test_key"))
                 .andRespond(withSuccess());
 
-        clerkUsers.delete("user_alice");
+        workosUsers.delete("user_alice");
 
-        clerk.verify();
+        workos.verify();
     }
 
     @Test
-    void treatsAUserClerkDoesNotHaveAsDeleted() {
-        clerk.expect(requestTo("https://api.clerk.com/v1/users/user_alice"))
+    void treatsAUserWorkosDoesNotHaveAsDeleted() {
+        workos.expect(requestTo("https://api.workos.com/user_management/users/user_alice"))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-        clerkUsers.delete("user_alice");
+        workosUsers.delete("user_alice");
 
-        clerk.verify();
+        workos.verify();
     }
 
     @Test
-    void throwsWhenClerkRefuses() {
-        clerk.expect(requestTo("https://api.clerk.com/v1/users/user_alice"))
+    void throwsWhenWorkosRefuses() {
+        workos.expect(requestTo("https://api.workos.com/user_management/users/user_alice"))
                 .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
-        assertThrows(ClerkUsers.ClerkRequestException.class, () -> clerkUsers.delete("user_alice"));
+        assertThrows(WorkosUsers.WorkosRequestException.class, () -> workosUsers.delete("user_alice"));
     }
 
     @Test
-    void cannotDeleteWithoutASecretKey() {
-        ClerkUsers unconfigured = new ClerkUsers(RestClient.builder(), "");
+    void cannotDeleteWithoutAnApiKey() {
+        WorkosUsers unconfigured = new WorkosUsers(RestClient.builder(), "");
 
         assertFalse(unconfigured.canDelete());
         assertThrows(IllegalStateException.class, () -> unconfigured.delete("user_alice"));

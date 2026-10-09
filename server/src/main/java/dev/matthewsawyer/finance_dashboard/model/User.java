@@ -20,8 +20,8 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "clerk_user_id", length = 255)
-    private String clerkUserId;
+    @Column(name = "auth_user_id", length = 255)
+    private String authUserId;
 
     @Column(unique = true, length = 320)
     private String email;
@@ -38,8 +38,8 @@ public class User {
     protected User() {
     }
 
-    public User(String clerkUserId) {
-        this.clerkUserId = clerkUserId;
+    public User(String authUserId) {
+        this.authUserId = authUserId;
     }
 
     @PrePersist
@@ -58,8 +58,8 @@ public class User {
         return id;
     }
 
-    public String getClerkUserId() {
-        return clerkUserId;
+    public String getAuthUserId() {
+        return authUserId;
     }
 
     public String getEmail() {

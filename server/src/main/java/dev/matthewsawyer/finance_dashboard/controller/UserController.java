@@ -2,7 +2,7 @@ package dev.matthewsawyer.finance_dashboard.controller;
 
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
-import dev.matthewsawyer.finance_dashboard.users.ClerkUsers;
+import dev.matthewsawyer.finance_dashboard.users.WorkosUsers;
 import dev.matthewsawyer.finance_dashboard.users.UserDeletion;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,7 +32,7 @@ public class UserController {
     @GetMapping("/me")
     public UserResponse getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         User user = userService.getOrCreateUser(jwt);
-        return new UserResponse(user.getId(), user.getClerkUserId(), user.getEmail(),
+        return new UserResponse(user.getId(), user.getAuthUserId(), user.getEmail(),
                 user.getDisplayName(), user.getCreatedAt(), user.getUpdatedAt());
     }
 
@@ -42,18 +42,18 @@ public class UserController {
     public void deleteCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         if (!userDeletion.isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Deleting users needs CLERK_SECRET_KEY on the server");
+                    "Deleting users needs WORKOS_API_KEY on the server");
         }
         try {
             userDeletion.delete(userService.getOrCreateUser(jwt));
-        } catch (ClerkUsers.ClerkRequestException e) {
+        } catch (WorkosUsers.WorkosRequestException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
         }
     }
 
     public record UserResponse(
             UUID id,
-            String clerkUserId,
+            String authUserId,
             String email,
             String displayName,
             Instant createdAt,

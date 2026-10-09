@@ -34,6 +34,10 @@
 	header {
 		# Prevent some browsers from MIME-sniffing a response away from the declared Content-Type
 		X-Content-Type-Options "nosniff"
+		# The rest of the policy is a <meta> tag in index.html; a <meta> can't stop framing.
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000"
 		# Remove Server header
 		-Server
 	}

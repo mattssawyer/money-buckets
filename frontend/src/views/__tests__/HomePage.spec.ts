@@ -46,16 +46,13 @@ vi.mock('../../api/PlaidService', () => ({
   correctPayee: vi.fn(),
   undoPayeeCorrection: vi.fn(),
 }))
-const clerk = vi.hoisted(() => ({
-  user: null as {
-    firstName?: string | null
-    primaryEmailAddress?: { emailAddress: string } | null
-  } | null,
+const auth = vi.hoisted(() => ({
+  user: null as { firstName: string | null; email: string } | null,
 }))
-vi.mock('@clerk/vue', () => ({
-  UserButton: { template: '<div />' },
-  useUser: () => ({ user: computed(() => clerk.user) }),
+vi.mock('../../auth', () => ({
+  useAuth: () => ({ user: computed(() => auth.user) }),
 }))
+vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 enableAutoUnmount(afterEach)
 
 const checking: PlaidAccount = {
@@ -232,7 +229,7 @@ function button(wrapper: VueWrapper, label: string) {
 beforeEach(() => {
   vi.resetAllMocks()
   localStorage.clear()
-  clerk.user = { firstName: 'Ada' }
+  auth.user = { firstName: 'Ada', email: 'ada@example.com' }
   vi.stubGlobal(
     'matchMedia',
     vi.fn((query: string) => ({
@@ -528,20 +525,20 @@ describe('homepage greeting', () => {
     expect(evening.get('h1').text()).toBe('Good evening, Ada')
   })
 
-  it('drops the name rather than guessing when Clerk has no first name', async () => {
+  it('drops the name rather than guessing when the sign-in has no first name', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 18, 9, 0))
-    clerk.user = { firstName: null, primaryEmailAddress: { emailAddress: 'a.b@example.com' } }
+    auth.user = { firstName: null, email: 'a.b@example.com' }
     const wrapper = mountHome()
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('Good morning')
   })
 
-  it('greets without a name while Clerk is still loading', async () => {
+  it('greets without a name while the sign-in is still loading', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 18, 14, 0))
-    clerk.user = null
+    auth.user = null
     const wrapper = mountHome()
     await flushPromises()
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { UserButton } from '@clerk/vue'
 import { Landmark, Plus } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import UserMenu from '../components/UserMenu.vue'
 import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
@@ -254,7 +254,7 @@ function onShareChange(account: PlaidAccount, event: Event) {
             </template>
           </Button>
         </div>
-        <UserButton />
+        <UserMenu />
       </header>
 
       <div class="accounts-content">

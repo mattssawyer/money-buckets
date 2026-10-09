@@ -4,9 +4,7 @@ import PrimeVue from 'primevue/config'
 import SpendingPlanPage from '../SpendingPlanPage.vue'
 import { getSpendingPlan, type SpendingPlanResponse } from '../../api/SpendingPlanService'
 
-vi.mock('@clerk/vue', () => ({
-  UserButton: { template: '<div />' },
-}))
+vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('../../api/SpendingPlanService', () => ({
   getSpendingPlan: vi.fn(),

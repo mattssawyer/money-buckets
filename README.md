@@ -26,7 +26,7 @@ Plaid production access, your real accounts.
 - **Frontend:** Vue 3, TypeScript, Vite, Tailwind CSS, PrimeVue 5
 - **Backend:** Java 17, Spring Boot, Spring Security, Spring Data JPA
 - **Database:** PostgreSQL 16 with Flyway migrations
-- **Integrations:** Clerk for authentication and Plaid for financial account data
+- **Integrations:** WorkOS AuthKit for sign-in and Plaid for financial account data
 
 ## Getting started
 
@@ -35,7 +35,7 @@ Plaid production access, your real accounts.
 - Node.js 22.18+ within v22, or 24.12+; npm
 - Java 17
 - Docker with Docker Compose
-- Clerk and Plaid Sandbox credentials
+- WorkOS and Plaid Sandbox credentials
 
 ### 1. Start the database
 
@@ -52,7 +52,7 @@ cd server
 cp .env.example .env
 ```
 
-Fill in the Clerk and Plaid values in `.env`. Configure the token encryption keyset
+Fill in the WorkOS and Plaid values in `.env`. Configure the token encryption keyset
 using the [encryption setup guide](docs/plaid-token-encryption.md). Add a
 [TypeSafe](https://docs.typesafe.ai) API key as `TYPESAFE_API_KEY` to sort transactions
 into spending plan buckets on the home page; without one, they show as not sorted yet.
@@ -80,11 +80,11 @@ volume and its tables.
 In a separate terminal, create `frontend/.env` with:
 
 ```dotenv
-VITE_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+VITE_WORKOS_CLIENT_ID=your_workos_client_id
 VITE_API_BASE_URL=http://localhost:8080/api
 ```
 
-Use the same Clerk application configured for the backend, then run:
+Use the same WorkOS client ID as the backend, then run:
 
 ```sh
 cd frontend
@@ -101,7 +101,7 @@ the web app. Every push to `main` publishes
 `ghcr.io/mattssawyer/money-buckets-server` and `ghcr.io/mattssawyer/money-buckets-frontend`
 for amd64 and arm64, and they can be pulled without logging in.
 
-You need Docker with Docker Compose and two accounts: Clerk for sign-in and Plaid for bank
+You need Docker with Docker Compose and two accounts: WorkOS for sign-in and Plaid for bank
 data. Both are free to start with. A TypeSafe key is optional.
 
 ### 1. Create the settings file
@@ -119,9 +119,8 @@ it up somewhere safe, such as a password manager.
 | Setting | Required | Where it comes from |
 | --- | --- | --- |
 | `POSTGRES_PASSWORD` | Yes | Any strong password you make up. The database is created with it on first start, so don't change it afterwards. |
-| `CLERK_PUBLISHABLE_KEY` | Yes | [Clerk dashboard](https://dashboard.clerk.com) → your application → **API keys**. Starts with `pk_`. |
-| `CLERK_FRONTEND_API_URL` | Yes | Same page, the **Frontend API URL**, such as `https://your-app.clerk.accounts.dev`. The API uses it to check sign-ins, so it must come from the same Clerk application as the publishable key. |
-| `CLERK_SECRET_KEY` | No | Same page, the **Secret key**. Starts with `sk_`. Lets people delete their account from Settings, which deletes their Clerk sign-in too; without it, deleting an account is refused. |
+| `WORKOS_CLIENT_ID` | Yes | [WorkOS dashboard](https://dashboard.workos.com) → **API Keys**. Starts with `client_`. In the dashboard, also add the app's address (such as `http://localhost:3000/`) as a redirect URI, sign-out redirect and CORS origin. |
+| `WORKOS_API_KEY` | No | Same page, the **API key**. Starts with `sk_`. Lets people delete their account from Settings, which deletes their WorkOS sign-in too; without it, deleting an account is refused. |
 | `PLAID_CLIENT_ID` | Yes | [Plaid dashboard](https://dashboard.plaid.com) → **Developers** → **Keys**. |
 | `PLAID_ENV` | Yes | Starts as `sandbox`, for Plaid's test banks, or `production` for real accounts once Plaid has approved production access for you. |
 | `PLAID_SECRET` | Yes | Same page, the secret for the environment in `PLAID_ENV`. |
@@ -186,8 +185,8 @@ linking accounts and keep the same domain afterwards.
 
 The web app passes `/api` through to the API, so browsers never reach the API directly;
 the API's own port listens only on `127.0.0.1:8080`. To use the app away from home, put
-port 3000 behind a reverse proxy that serves HTTPS. A Clerk production instance only
-works on the domain it's set up for, so give it that address.
+port 3000 behind a reverse proxy that serves HTTPS. Add that address to WorkOS as a
+redirect URI, sign-out redirect and CORS origin.
 
 ## Development commands
 

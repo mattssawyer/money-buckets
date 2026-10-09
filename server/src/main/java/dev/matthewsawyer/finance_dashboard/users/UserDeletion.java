@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * Deletes a user and everything stored about them: their Plaid items are removed from Plaid, every
- * row of theirs is deleted, and so is their Clerk sign-in. Nothing is kept for undoing it.
+ * row of theirs is deleted, and so is their WorkOS sign-in. Nothing is kept for undoing it.
  */
 @Service
 public class UserDeletion {
@@ -50,7 +50,7 @@ public class UserDeletion {
     private final PlaidItemRepository plaidItemRepository;
     private final PlaidItemLinking itemLinking;
     private final PlaidItemSync itemSync;
-    private final ClerkUsers clerkUsers;
+    private final WorkosUsers workosUsers;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final EntityManager entityManager;
@@ -59,7 +59,7 @@ public class UserDeletion {
             PlaidItemRepository plaidItemRepository,
             PlaidItemLinking itemLinking,
             PlaidItemSync itemSync,
-            ClerkUsers clerkUsers,
+            WorkosUsers workosUsers,
             JdbcTemplate jdbcTemplate,
             TransactionTemplate transactionTemplate,
             EntityManager entityManager
@@ -67,20 +67,20 @@ public class UserDeletion {
         this.plaidItemRepository = plaidItemRepository;
         this.itemLinking = itemLinking;
         this.itemSync = itemSync;
-        this.clerkUsers = clerkUsers;
+        this.workosUsers = workosUsers;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.entityManager = entityManager;
     }
 
-    /** Whether users can be deleted here, which needs Clerk's secret key. */
+    /** Whether users can be deleted here, which needs the WorkOS API key. */
     public boolean isAvailable() {
-        return clerkUsers.canDelete();
+        return workosUsers.canDelete();
     }
 
     /**
      * Removes the user's items from Plaid first, so Plaid stops holding their bank access, then
-     * deletes their rows, then their Clerk user. A failure stops it there and it can be run again:
+     * deletes their rows, then their WorkOS user. A failure stops it there and it can be run again:
      * items already removed stay removed, and a user whose rows are gone but whose sign-in
      * remains gets an empty user again on their next request. An item Plaid no longer has counts
      * as removed.
@@ -89,12 +89,12 @@ public class UserDeletion {
      *         nothing is touched
      * @throws PlaidRequestException when Plaid can't remove an item; items removed before it stay
      *         removed, and nothing is deleted
-     * @throws ClerkUsers.ClerkRequestException when Clerk can't delete the sign-in; the rows are
+     * @throws WorkosUsers.WorkosRequestException when WorkOS can't delete the sign-in; the rows are
      *         already gone
      */
     public void delete(User user) {
         if (!isAvailable()) {
-            throw new IllegalStateException("CLERK_SECRET_KEY is not set");
+            throw new IllegalStateException("WORKOS_API_KEY is not set");
         }
         for (PlaidItem item : plaidItemRepository.findAllByUserIdAndRemovedOnIsNullOrderByItemIdAsc(user.getId())) {
             try {
@@ -113,6 +113,6 @@ public class UserDeletion {
             entityManager.clear();
         });
         log.info("Deleted user {} and their data", user.getId());
-        clerkUsers.delete(user.getClerkUserId());
+        workosUsers.delete(user.getAuthUserId());
     }
 }

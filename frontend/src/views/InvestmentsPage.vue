@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { UserButton } from '@clerk/vue'
 import { Landmark, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import UserMenu from '../components/UserMenu.vue'
 import BalanceChart from '../components/BalanceChart.vue'
 import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
@@ -376,7 +376,7 @@ function changeIcon(change: Change) {
               <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
             </template>
           </Button>
-          <UserButton />
+          <UserMenu />
         </div>
       </header>
 

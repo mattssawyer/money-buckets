@@ -29,8 +29,8 @@ class UserServiceTests {
         UserRepository clashing = mock(UserRepository.class);
         User storedFirst = new User("user_new");
         // Nothing is stored when this request looks, but another request adds the user before it saves.
-        when(clashing.findByClerkUserId("user_new")).thenReturn(Optional.empty(), Optional.of(storedFirst));
-        when(clashing.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_clerk_user_id_unique"));
+        when(clashing.findByAuthUserId("user_new")).thenReturn(Optional.empty(), Optional.of(storedFirst));
+        when(clashing.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_auth_user_id_unique"));
         UserService users = new UserService(clashing, new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         assertSame(storedFirst, users.getOrCreateUser(JWT));

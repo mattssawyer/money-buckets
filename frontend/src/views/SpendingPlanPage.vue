@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { UserButton } from '@clerk/vue'
 import { ArrowRight, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -7,6 +6,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import UserMenu from '../components/UserMenu.vue'
 import SpendingPlanOverview from '../components/SpendingPlanOverview.vue'
 import SpendingPlanSetup from '../components/SpendingPlanSetup.vue'
 import { getSpendingPlan } from '../api/SpendingPlanService'
@@ -62,7 +62,7 @@ function onSaved(plan: SavedPlan) {
         <h1 id="spending-plan-heading">Spending Plan</h1>
         <div class="page-actions">
           <RouterLink to="/accounts" class="accounts-link">Tracked accounts</RouterLink>
-          <UserButton />
+          <UserMenu />
         </div>
       </header>
 

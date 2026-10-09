@@ -1,19 +1,22 @@
+import { installTrustedTypesPolicy } from './trustedTypes'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { clerkPlugin } from '@clerk/vue'
 import PrimeVue from 'primevue/config'
 import theme from './theme'
 
 import App from './App.vue'
 import router from './router'
+import { startAuth } from './auth'
 
 import '@fontsource-variable/geist/wght.css'
 import './assets/main.css'
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+installTrustedTypesPolicy()
 
-if (!publishableKey) {
-  throw new Error('VITE_CLERK_PUBLISHABLE_KEY is not set')
+const workosClientId = import.meta.env.VITE_WORKOS_CLIENT_ID
+
+if (!workosClientId) {
+  throw new Error('VITE_WORKOS_CLIENT_ID is not set')
 }
 
 const app = createApp(App)
@@ -27,6 +30,6 @@ app.use(PrimeVue, {
 })
 app.use(createPinia())
 app.use(router)
-app.use(clerkPlugin, { publishableKey })
-
 app.mount('#app')
+
+void startAuth(workosClientId)

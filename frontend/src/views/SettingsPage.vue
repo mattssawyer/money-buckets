@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { UserButton, useClerk, useUser } from '@clerk/vue'
 import { isAxiosError } from 'axios'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -7,14 +6,15 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import AppSidebar from '../components/AppSidebar.vue'
+import UserMenu from '../components/UserMenu.vue'
 import { deleteCurrentUser } from '../api/UserService'
+import { useAuth } from '../auth'
 
 const CONFIRMATION = 'delete'
 
-const clerk = useClerk()
-const { user } = useUser()
+const { user, signOut } = useAuth()
 
-const email = computed(() => user.value?.primaryEmailAddress?.emailAddress ?? '')
+const email = computed(() => user.value?.email ?? '')
 const dialogVisible = ref(false)
 const typed = ref('')
 const deleting = ref(false)
@@ -43,11 +43,7 @@ async function deleteAccount() {
     return
   }
   // The sign-in is already gone; this only clears it from the browser.
-  try {
-    await clerk.value?.signOut()
-  } catch {
-    window.location.assign('/')
-  }
+  signOut()
 }
 </script>
 
@@ -57,7 +53,7 @@ async function deleteAccount() {
     <main class="settings-page" aria-labelledby="settings-heading">
       <header class="page-heading">
         <h1 id="settings-heading">Settings</h1>
-        <UserButton />
+        <UserMenu />
       </header>
 
       <section class="panel settings-card" aria-labelledby="account-heading">
@@ -67,13 +63,7 @@ async function deleteAccount() {
             <span class="setting-name">Email</span>
             <span class="setting-detail">{{ email || 'No email on file' }}</span>
           </div>
-          <Button
-            label="Manage"
-            size="small"
-            severity="secondary"
-            outlined
-            @click="clerk?.openUserProfile()"
-          />
+          <Button label="Sign out" size="small" severity="secondary" outlined @click="signOut" />
         </div>
         <div class="setting-row">
           <div class="setting-text">

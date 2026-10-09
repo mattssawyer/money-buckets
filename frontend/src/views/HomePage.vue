@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { UserButton, useUser } from '@clerk/vue'
 import { ChevronDown, Landmark, Plus } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -15,6 +14,7 @@ import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
+import UserMenu from '../components/UserMenu.vue'
 import {
   createLinkToken,
   exchangePublicToken,
@@ -32,6 +32,7 @@ import {
   type SpendingByBucket,
 } from '../api/PlaidService'
 import { getSpendingPlan } from '../api/SpendingPlanService'
+import { useAuth } from '../auth'
 import { guiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 import {
@@ -112,7 +113,7 @@ const balanceError = computed(() =>
 )
 const pendingPublicToken = ref<string>()
 const sameInstitution = ref<PlaidItem[]>([])
-const { user } = useUser()
+const { user } = useAuth()
 const hasConnections = computed(() => itemIds.value.length > 0)
 const hasMultipleAccounts = computed(() => accounts.value.length > 1)
 /**
@@ -594,7 +595,7 @@ async function openPlaidLink() {
                 <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
               </template>
             </Button>
-            <UserButton />
+            <UserMenu />
           </div>
         </div>
 

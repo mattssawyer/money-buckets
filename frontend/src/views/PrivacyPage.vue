@@ -15,9 +15,9 @@ import { CONTACT_EMAIL, PLAID_PRIVACY_URL, UPDATED } from '../legal/legal'
     <h2>What we collect</h2>
     <ul>
       <li>
-        <strong>Your sign-in.</strong> Clerk runs sign-in for us. We get your email address, your
-        name if you give one, and an ID for your sign-in. Clerk handles your password; we never see
-        it.
+        <strong>Your sign-in.</strong> WorkOS runs sign-in for us. We get your email address, your
+        name if you give one, and an ID for your sign-in. WorkOS handles your password and your
+        second sign-in step (an authenticator app); we never see either.
       </li>
       <li>
         <strong>Your bank data.</strong> When you connect a bank through Plaid, we get the names and
@@ -37,9 +37,8 @@ import { CONTACT_EMAIL, PLAID_PRIVACY_URL, UPDATED } from '../legal/legal'
       </li>
       <li>
         <strong>Technical data.</strong> Our hosting provider keeps standard server logs, which can
-        include your IP address and the pages your browser requests. Clerk sets cookies to keep you
-        signed in. Your browser’s local storage remembers display choices, such as which account you
-        last picked. The app has no analytics or advertising trackers.
+        include your IP address and the pages your browser requests. Your browser’s local storage
+        keeps you signed in and remembers display choices, such as which account you last picked. The app has no analytics or advertising trackers.
       </li>
     </ul>
 
@@ -59,7 +58,7 @@ import { CONTACT_EMAIL, PLAID_PRIVACY_URL, UPDATED } from '../legal/legal'
         <a :href="PLAID_PRIVACY_URL" target="_blank" rel="noopener">Plaid End User Privacy Policy</a
         >.
       </li>
-      <li><strong>Clerk</strong> runs sign-in and stores your sign-in details.</li>
+      <li><strong>WorkOS</strong> runs sign-in and stores your sign-in details.</li>
       <li><strong>Railway</strong> hosts the app and its database.</li>
       <li>
         <strong>TypeSafe</strong> runs the AI model that sorts transactions and spots recurring

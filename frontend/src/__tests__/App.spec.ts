@@ -5,11 +5,11 @@ import App from '../App.vue'
 
 const auth = vi.hoisted(() => ({ isLoaded: false, isSignedIn: false }))
 
-vi.mock('@clerk/vue', async () => {
+vi.mock('../auth', async () => {
   const { ref } = await import('vue')
   return {
     useAuth: () => ({
-      getToken: ref(async () => null),
+      getAccessToken: async () => null,
       isLoaded: ref(auth.isLoaded),
       isSignedIn: ref(auth.isSignedIn),
     }),
@@ -37,7 +37,7 @@ async function mountAt(path: string) {
 }
 
 describe('app', () => {
-  it('shows a public page to someone signed out, before Clerk loads', async () => {
+  it('shows a public page to someone signed out, before the sign-in loads', async () => {
     auth.isLoaded = false
     auth.isSignedIn = false
 
