@@ -9,7 +9,7 @@ COPY frontend/ ./
 # Placeholders, swapped for the container's environment when it starts (see frontend-env.sh),
 # so one image works for any deployment.
 ENV VITE_API_BASE_URL=__VITE_API_BASE_URL__ \
-    VITE_CLERK_PUBLISHABLE_KEY=__VITE_CLERK_PUBLISHABLE_KEY__ \
+    VITE_WORKOS_CLIENT_ID=__VITE_WORKOS_CLIENT_ID__ \
     VITE_PRIMEUI_LICENSE_KEY=__VITE_PRIMEUI_LICENSE_KEY__
 RUN npm run build-only
 

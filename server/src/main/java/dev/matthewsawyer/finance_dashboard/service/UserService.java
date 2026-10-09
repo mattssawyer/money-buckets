@@ -24,13 +24,13 @@ public class UserService {
      * failed insert spoiled.
      */
     public User getOrCreateUser(Jwt jwt) {
-        String clerkUserId = jwt.getSubject();
+        String authUserId = jwt.getSubject();
         try {
-            return transactionTemplate.execute(status -> userRepository.findByClerkUserId(clerkUserId)
+            return transactionTemplate.execute(status -> userRepository.findByAuthUserId(authUserId)
                     // Flushed here so a clashing insert fails inside the transaction rather than at commit.
-                    .orElseGet(() -> userRepository.saveAndFlush(new User(clerkUserId))));
+                    .orElseGet(() -> userRepository.saveAndFlush(new User(authUserId))));
         } catch (DataIntegrityViolationException e) {
-            return userRepository.findByClerkUserId(clerkUserId).orElseThrow(() -> e);
+            return userRepository.findByAuthUserId(authUserId).orElseThrow(() -> e);
         }
     }
 }

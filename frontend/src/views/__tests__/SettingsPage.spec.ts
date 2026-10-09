@@ -2,22 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { AxiosError, AxiosHeaders } from 'axios'
 import PrimeVue from 'primevue/config'
-import { computed, shallowRef } from 'vue'
+import { computed } from 'vue'
 import SettingsPage from '../SettingsPage.vue'
 import { deleteCurrentUser } from '../../api/UserService'
 
-const clerk = vi.hoisted(() => ({
-  signOut: vi.fn(),
-  openUserProfile: vi.fn(),
-}))
+const auth = vi.hoisted(() => ({ signOut: vi.fn<() => void>() }))
 
-vi.mock('@clerk/vue', () => ({
-  UserButton: { template: '<div />' },
-  useClerk: () => shallowRef(clerk),
-  useUser: () => ({
-    user: computed(() => ({ primaryEmailAddress: { emailAddress: 'ada@example.com' } })),
+vi.mock('../../auth', () => ({
+  useAuth: () => ({
+    user: computed(() => ({ email: 'ada@example.com' })),
+    signOut: auth.signOut,
   }),
 }))
+vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('../../api/UserService', () => ({
   deleteCurrentUser: vi.fn(),
@@ -70,12 +67,12 @@ describe('settings page', () => {
     expect(mountPage().text()).toContain('ada@example.com')
   })
 
-  it('opens Clerk to manage the sign-in', async () => {
+  it('signs out', async () => {
     const wrapper = mountPage()
 
-    await button(wrapper, 'Manage').trigger('click')
+    await button(wrapper, 'Sign out').trigger('click')
 
-    expect(clerk.openUserProfile).toHaveBeenCalled()
+    expect(auth.signOut).toHaveBeenCalled()
   })
 
   it('deletes nothing until the user types delete', async () => {
@@ -95,7 +92,7 @@ describe('settings page', () => {
     await flushPromises()
 
     expect(deleteCurrentUser).toHaveBeenCalledTimes(1)
-    expect(clerk.signOut).toHaveBeenCalled()
+    expect(auth.signOut).toHaveBeenCalled()
   })
 
   it('stays signed in and lets the user try again when deleting fails', async () => {
@@ -107,7 +104,7 @@ describe('settings page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('We couldn’t finish deleting your account. Try again.')
-    expect(clerk.signOut).not.toHaveBeenCalled()
+    expect(auth.signOut).not.toHaveBeenCalled()
     expect(button(wrapper, 'Delete everything').attributes('disabled')).toBeUndefined()
   })
 

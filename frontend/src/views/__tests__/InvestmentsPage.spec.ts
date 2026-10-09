@@ -13,9 +13,7 @@ import {
 } from '../../api/PlaidService'
 import { getBalanceHistory, type BalanceHistory } from '../../api/InvestmentsService'
 
-vi.mock('@clerk/vue', () => ({
-  UserButton: { template: '<div />' },
-}))
+vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('../../api/PlaidService', () => ({
   addInvestments: vi.fn(),

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { useAuth } from '@clerk/vue'
 import { ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import SignInPage from './views/SignInPage.vue'
 import { setAccessTokenProvider } from './api/client'
+import { useAuth } from './auth'
 
-const { getToken, isSignedIn, isLoaded } = useAuth()
+const { getAccessToken, isSignedIn, isLoaded } = useAuth()
 const route = useRoute()
 // The first route isn't known until the router resolves it, so a public page doesn't flash
 // the sign-in page first.
@@ -14,7 +14,7 @@ useRouter()
   .isReady()
   .then(() => (routerReady.value = true))
 
-setAccessTokenProvider(async () => (await getToken.value()) ?? null)
+setAccessTokenProvider(getAccessToken)
 </script>
 
 <template>

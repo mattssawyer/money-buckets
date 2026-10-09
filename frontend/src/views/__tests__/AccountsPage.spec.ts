@@ -12,9 +12,7 @@ import {
   type PlaidAccount,
 } from '../../api/PlaidService'
 
-vi.mock('@clerk/vue', () => ({
-  UserButton: { template: '<div />' },
-}))
+vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../../api/PlaidService', () => ({
   createLinkToken: vi.fn<() => Promise<string>>(),
   exchangePublicToken: vi.fn<(publicToken: string) => Promise<LinkResult>>(),

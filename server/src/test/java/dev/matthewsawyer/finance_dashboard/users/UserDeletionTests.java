@@ -83,7 +83,7 @@ class UserDeletionTests {
 
     @TestConfiguration
     static class Tokens {
-        /** Accepts any token as the user it names, in place of Clerk checking real ones. */
+        /** Accepts any token as the user it names, in place of WorkOS checking real ones. */
         @Bean
         JwtDecoder jwtDecoder() {
             return token -> Jwt.withTokenValue(token)
@@ -96,7 +96,7 @@ class UserDeletionTests {
     }
 
     @MockitoBean private PlaidApi plaidApi;
-    @MockitoBean private ClerkUsers clerkUsers;
+    @MockitoBean private WorkosUsers workosUsers;
 
     @Autowired private MockMvc mockMvc;
     @Autowired private EntityManager entityManager;
@@ -109,7 +109,7 @@ class UserDeletionTests {
 
     @BeforeEach
     void seed() {
-        when(clerkUsers.canDelete()).thenReturn(true);
+        when(workosUsers.canDelete()).thenReturn(true);
         aliceId = seedEverything(ALICE, "alice");
         bobId = seedEverything(BOB, "bob");
         // Alice removed a bank before, which Plaid no longer has.
@@ -137,7 +137,7 @@ class UserDeletionTests {
         ArgumentCaptor<ItemRemoveRequest> removed = ArgumentCaptor.forClass(ItemRemoveRequest.class);
         verify(plaidApi).itemRemove(removed.capture());
         assertEquals("alice-access-token", removed.getValue().getAccessToken());
-        verify(clerkUsers).delete(ALICE);
+        verify(workosUsers).delete(ALICE);
 
         rowsOf(aliceId).forEach((table, count) -> assertEquals(0, count, "Alice still has rows in " + table));
         assertEquals(0, count("SELECT COUNT(*) FROM users WHERE id = ?", aliceId));
@@ -158,7 +158,7 @@ class UserDeletionTests {
                 .andExpect(status().isBadGateway());
 
         assertEquals(alicesRows, rowsOf(aliceId));
-        verify(clerkUsers, never()).delete(any());
+        verify(workosUsers, never()).delete(any());
     }
 
     @Test
@@ -172,7 +172,7 @@ class UserDeletionTests {
                 .andExpect(status().isNoContent());
 
         rowsOf(aliceId).forEach((table, count) -> assertEquals(0, count, "Alice still has rows in " + table));
-        verify(clerkUsers).delete(ALICE);
+        verify(workosUsers).delete(ALICE);
     }
 
     @Test
@@ -187,12 +187,12 @@ class UserDeletionTests {
                 .andExpect(status().isBadGateway());
 
         assertEquals(alicesRows, rowsOf(aliceId));
-        verify(clerkUsers, never()).delete(any());
+        verify(workosUsers, never()).delete(any());
     }
 
     @Test
-    void refusesWithoutClerksSecretKey() throws Exception {
-        when(clerkUsers.canDelete()).thenReturn(false);
+    void refusesWithoutTheWorkosApiKey() throws Exception {
+        when(workosUsers.canDelete()).thenReturn(false);
         Map<String, Integer> alicesRows = rowsOf(aliceId);
 
         mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
@@ -200,25 +200,25 @@ class UserDeletionTests {
 
         assertEquals(alicesRows, rowsOf(aliceId));
         verifyNoInteractions(plaidApi);
-        verify(clerkUsers, never()).delete(any());
+        verify(workosUsers, never()).delete(any());
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void canBeRunAgainWhenClerkFails() throws Exception {
+    void canBeRunAgainWhenWorkosFails() throws Exception {
         Call<ItemRemoveResponse> call = mock(Call.class);
         when(plaidApi.itemRemove(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(new ItemRemoveResponse()));
-        doThrow(new ClerkUsers.ClerkRequestException("Clerk down", null)).when(clerkUsers).delete(ALICE);
+        doThrow(new WorkosUsers.WorkosRequestException("WorkOS down", null)).when(workosUsers).delete(ALICE);
 
         mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
                 .andExpect(status().isBadGateway());
         rowsOf(aliceId).forEach((table, count) -> assertEquals(0, count, "Alice still has rows in " + table));
 
-        doNothing().when(clerkUsers).delete(ALICE);
+        doNothing().when(workosUsers).delete(ALICE);
         mockMvc.perform(delete("/users/me").header("Authorization", "Bearer " + ALICE))
                 .andExpect(status().isNoContent());
-        assertEquals(0, count("SELECT COUNT(*) FROM users WHERE clerk_user_id = ?", ALICE));
+        assertEquals(0, count("SELECT COUNT(*) FROM users WHERE auth_user_id = ?", ALICE));
     }
 
     private static Response<ItemRemoveResponse> plaidError(String code) {
@@ -245,8 +245,8 @@ class UserDeletionTests {
     }
 
     /** One of everything the app stores for a user, with IDs starting with {@code prefix}. */
-    private UUID seedEverything(String clerkUserId, String prefix) {
-        User user = new User(clerkUserId);
+    private UUID seedEverything(String authUserId, String prefix) {
+        User user = new User(authUserId);
         entityManager.persist(user);
         entityManager.flush();
         UUID userId = user.getId();

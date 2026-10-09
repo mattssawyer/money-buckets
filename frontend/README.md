@@ -1,7 +1,7 @@
 # Money Buckets (frontend)
 
 The Money Buckets frontend uses Vue 3, TypeScript, Vite, Tailwind CSS, and PrimeVue 5.
-Clerk handles authentication.
+WorkOS AuthKit handles sign-in.
 
 ## UI components
 

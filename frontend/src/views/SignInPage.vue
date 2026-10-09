@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { SignInButton, SignUpButton, useAuth } from '@clerk/vue'
 import Button from 'primevue/button'
 import { RouterLink } from 'vue-router'
+import { useAuth } from '../auth'
 
-const { isLoaded } = useAuth()
+const { isLoaded, signIn, signUp } = useAuth()
 const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
 </script>
 
@@ -19,20 +19,24 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
         <h1 id="sign-in-title">Your finances, together.</h1>
         <p class="sign-in-subtitle">Sign in or create an account to get started</p>
         <div class="sign-in-actions" :aria-busy="!isLoaded">
-          <SignInButton>
-            <Button label="Sign in" size="large" fluid :disabled="!isLoaded" :loading="!isLoaded" />
-          </SignInButton>
+          <Button
+            label="Sign in"
+            size="large"
+            fluid
+            :disabled="!isLoaded"
+            :loading="!isLoaded"
+            @click="signIn"
+          />
           <p class="sign-in-secondary">New to Money Buckets?</p>
-          <SignUpButton>
-            <Button
-              label="Create an account"
-              severity="secondary"
-              variant="outlined"
-              size="large"
-              fluid
-              :disabled="!isLoaded"
-            />
-          </SignUpButton>
+          <Button
+            label="Create an account"
+            severity="secondary"
+            variant="outlined"
+            size="large"
+            fluid
+            :disabled="!isLoaded"
+            @click="signUp"
+          />
         </div>
       </section>
 

@@ -128,9 +128,9 @@ class PlaidControllerTests {
         lenient().when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of()));
         jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
-                .subject("clerk-user")
+                .subject("auth-user")
                 .build();
-        user = new User("clerk-user");
+        user = new User("auth-user");
         ReflectionTestUtils.setField(user, "id", USER_ID);
     }
 
