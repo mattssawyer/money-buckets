@@ -23,6 +23,11 @@ updates:
     directory: /docker
     schedule:
       interval: weekly
+    # The Java version is set by the toolchain in server/build.gradle, so a new major
+    # Temurin image breaks the build until both move together.
+    ignore:
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker-compose
     directories: [/, /docker]

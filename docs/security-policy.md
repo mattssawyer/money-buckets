@@ -128,7 +128,7 @@ support ends where a supported version exists.
 
 | Software | Version in use | Support ends |
 |---|---|---|
-| Java (Eclipse Temurin) | 17 | 2027-10-31; move to 21 or 25 by April 2027 |
+| Java (Eclipse Temurin) | 25 | 2031-09-30 |
 | Spring Boot | 4.1 | 2027-07-31 |
 | Node.js (builds only) | 24 | 2028-04-30 |
 | PostgreSQL | 16 locally; prod version checked at each review | 16: 2028-11-09 |

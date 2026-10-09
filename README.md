@@ -24,7 +24,7 @@ Plaid production access, your real accounts.
 ## Tech stack
 
 - **Frontend:** Vue 3, TypeScript, Vite, Tailwind CSS, PrimeVue 5
-- **Backend:** Java 17, Spring Boot, Spring Security, Spring Data JPA
+- **Backend:** Java 25, Spring Boot, Spring Security, Spring Data JPA
 - **Database:** PostgreSQL 16 with Flyway migrations
 - **Integrations:** WorkOS AuthKit for sign-in and Plaid for financial account data
 
@@ -33,7 +33,7 @@ Plaid production access, your real accounts.
 ### Prerequisites
 
 - Node.js 22.18+ within v22, or 24.12+; npm
-- Java 17
+- Java 25
 - Docker with Docker Compose
 - WorkOS and Plaid Sandbox credentials
 
