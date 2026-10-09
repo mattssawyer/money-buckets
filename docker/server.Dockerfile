@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build from the repository root: docker build -f docker/server.Dockerfile .
 # The jar is the same on every CPU, so it is built once on the build machine's platform.
-FROM --platform=$BUILDPLATFORM eclipse-temurin:17-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 COPY server/gradlew server/settings.gradle server/build.gradle ./
 COPY server/gradle gradle
@@ -9,7 +9,7 @@ RUN ./gradlew dependencies --no-daemon -q > /dev/null
 COPY server/src src
 RUN ./gradlew bootJar --no-daemon && cp build/libs/*.jar app.jar
 
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --from=build /app/app.jar app.jar
 # Where the server keeps files of its own, such as a generated Plaid token keyset.
