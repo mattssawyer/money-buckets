@@ -84,7 +84,10 @@ VITE_WORKOS_CLIENT_ID=your_workos_client_id
 VITE_API_BASE_URL=http://localhost:8080/api
 ```
 
-Use the same WorkOS client ID as the backend, then run:
+Use the same WorkOS client ID as the backend. In the WorkOS dashboard, in the environment
+that client ID belongs to (Staging, for local work), set the redirect URI, sign-out
+redirect and Initiate login URI to `http://localhost:5173/`, and add
+`http://localhost:5173` as an allowed CORS origin. Then run:
 
 ```sh
 cd frontend

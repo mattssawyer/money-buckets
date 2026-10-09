@@ -6,7 +6,7 @@ const workos = vi.hoisted(() => {
     getUser: vi.fn<() => { email: string; firstName: string | null } | null>(),
     getAccessToken: vi.fn<() => Promise<string>>(),
     signIn: vi.fn<(options?: { invitationToken?: string }) => Promise<void>>(),
-    signUp: vi.fn<() => Promise<void>>(),
+    signUp: vi.fn<(options?: { invitationToken?: string }) => Promise<void>>(),
     signOut: vi.fn<(options?: { returnTo?: string }) => void>(),
   }
   return {
@@ -78,6 +78,15 @@ describe('auth', () => {
     await auth.signIn()
 
     expect(workos.client.signIn).toHaveBeenCalledWith({ invitationToken: 'inv_123' })
+  })
+
+  it('passes an invitation along when creating an account', async () => {
+    window.history.replaceState({}, '', '/?invitation_token=inv_123')
+    const auth = await loadAuth()
+
+    await auth.signUp()
+
+    expect(workos.client.signUp).toHaveBeenCalledWith({ invitationToken: 'inv_123' })
   })
 
   it('signs out at WorkOS and comes back to the app', async () => {

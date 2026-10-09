@@ -36,17 +36,20 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-/**
- * Sends the user to WorkOS to sign in. An invitation link from WorkOS lands on the app first,
- * so its token is passed along.
- */
-async function signIn(): Promise<void> {
+/** An invitation link from WorkOS lands on the app first; its token goes along to WorkOS. */
+function invitation(): { invitationToken?: string } {
   const invitationToken = new URLSearchParams(window.location.search).get('invitation_token')
-  await client?.signIn(invitationToken ? { invitationToken } : {})
+  return invitationToken ? { invitationToken } : {}
 }
 
+/** Sends the user to WorkOS to sign in. */
+async function signIn(): Promise<void> {
+  await client?.signIn(invitation())
+}
+
+/** Sends the user to WorkOS to create an account, which needs an invitation. */
 async function signUp(): Promise<void> {
-  await client?.signUp()
+  await client?.signUp(invitation())
 }
 
 /** Ends the session at WorkOS and comes back to the sign-in page. */
