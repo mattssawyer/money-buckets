@@ -1,0 +1,46 @@
+# Opens the quarterly access review as an issue; closing it records that the review was done.
+name: Access review
+
+on:
+  schedule:
+    - cron: '0 14 1 1,4,7,10 *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  open-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open the review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create access-review --color 0b5fff \
+            --description "Quarterly access review (docs/security-policy.md)" 2>/dev/null || true
+          gh issue create \
+            --title "Access review: $(date -u +%Y) Q$(( ($(date -u +%-m) + 2) / 3 ))" \
+            --label access-review \
+            --body "$(cat <<'BODY'
+          See *Access reviews* in docs/security-policy.md. Note anything removed or changed in a
+          comment, then close this issue.
+
+          **Who has access**
+          - [ ] Railway: project members, and tokens under account settings
+          - [ ] GitHub: repository collaborators, deploy keys, Actions secrets, personal access tokens
+          - [ ] WorkOS: dashboard members, API keys, and the Production user list (only invited people)
+          - [ ] Plaid: team members and API keys
+          - [ ] Vercel and the domain registrar: members and tokens
+          - [ ] TypeSafe: API keys
+
+          **Revoke**
+          - [ ] Any key, token or member that is no longer needed
+
+          **Audit**
+          - [ ] Skim the admin sign-in and change logs in Railway, GitHub, WorkOS and Plaid for anything unexpected
+          - [ ] No open Dependabot or CodeQL alerts past their fix deadline
+          - [ ] Check the *End-of-life software* table; plan upgrades for anything ending within 6 months
+          BODY
+          )"

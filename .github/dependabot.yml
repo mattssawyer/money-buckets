@@ -1,0 +1,38 @@
+# Version updates, alongside the security updates turned on in the repository settings, so
+# dependencies, base images and actions don't drift toward end of life. Minor and patch
+# bumps come as one pull request per ecosystem each week.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /server
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directories: [/, /docker]
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
