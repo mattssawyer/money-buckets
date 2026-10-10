@@ -1,3 +1,5 @@
+import { createLinkToken, exchangePublicToken, type LinkResult } from '../api/PlaidService'
+
 type LinkHandler = ReturnType<Window['Plaid']['create']>
 
 let handler: LinkHandler | undefined
@@ -32,4 +34,15 @@ export function openPlaidLink(token: string): Promise<string | null> {
 export function closePlaidLink(): void {
   handler?.destroy()
   handler = undefined
+}
+
+/**
+ * Connects a new Plaid item through Link and saves it. Resolves with what the server says about
+ * it, or null when the user closes Link without finishing.
+ */
+export async function linkItem(
+  options: { investments?: boolean } = {},
+): Promise<LinkResult | null> {
+  const publicToken = await openPlaidLink(await createLinkToken(options))
+  return publicToken ? exchangePublicToken(publicToken) : null
 }

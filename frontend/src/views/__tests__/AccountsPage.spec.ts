@@ -314,7 +314,7 @@ describe('accounts page', () => {
 
     await button(wrapper, 'Add an account').trigger('click')
     await flushPromises()
-    expect(createLinkToken).toHaveBeenCalledWith()
+    expect(createLinkToken).toHaveBeenCalledWith({})
     expect(button(wrapper, 'Connecting…').attributes('disabled')).toBeDefined()
 
     vi.mocked(getAccounts).mockResolvedValue([checking, joint, card, ira, account('Savings')])

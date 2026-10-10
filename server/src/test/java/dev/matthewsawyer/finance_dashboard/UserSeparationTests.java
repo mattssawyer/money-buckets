@@ -105,6 +105,7 @@ class UserSeparationTests {
     private static final Set<String> ENDPOINTS = Set.of(
             "GET /users/me",
             "DELETE /users/me",
+            "PUT /users/me/onboarded",
             "POST /plaid/create-link-token",
             "POST /plaid/items",
             "GET /plaid/items",
@@ -293,6 +294,17 @@ class UserSeparationTests {
         assertTrue(plans.findByUserId(aliceId).isPresent());
         assertTrue(corrections.findByUserIdAndMerchantKey(aliceId, PAYEE).isPresent());
         assertTrue(countings.findById(TRANSACTION).isPresent());
+    }
+
+    @Test
+    void finishesOnboardingForBobAlone() throws Exception {
+        assertTrue(body(as(BOB, HttpMethod.PUT, "/users/me/onboarded"), status().isOk())
+                .contains("\"onboarded\":true"));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertTrue(users.findByAuthUserId(BOB).orElseThrow().isOnboarded());
+        assertFalse(users.findById(aliceId).orElseThrow().isOnboarded());
     }
 
     @Test

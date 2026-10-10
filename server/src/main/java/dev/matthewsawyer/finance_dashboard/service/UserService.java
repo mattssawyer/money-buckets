@@ -7,15 +7,19 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
+
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
     private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
 
-    public UserService(UserRepository userRepository, TransactionTemplate transactionTemplate) {
+    public UserService(UserRepository userRepository, TransactionTemplate transactionTemplate, Clock clock) {
         this.userRepository = userRepository;
         this.transactionTemplate = transactionTemplate;
+        this.clock = clock;
     }
 
     /**
@@ -32,5 +36,12 @@ public class UserService {
         } catch (DataIntegrityViolationException e) {
             return userRepository.findByAuthUserId(authUserId).orElseThrow(() -> e);
         }
+    }
+
+    /** Records that the user finished onboarding, so they go straight to Home from now on. */
+    public User finishOnboarding(Jwt jwt) {
+        User user = getOrCreateUser(jwt);
+        user.finishOnboarding(clock.instant());
+        return userRepository.save(user);
     }
 }

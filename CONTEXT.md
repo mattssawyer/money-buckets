@@ -4,6 +4,12 @@ A personal finance dashboard that pulls a user's bank data from Plaid and helps 
 
 ## Language
 
+### Getting started
+
+**Onboarding**:
+The steps a new user goes through before the app opens on Home: connecting at least one bank, choosing which accounts count, making a spending plan, and linking investment accounts. Only connecting a bank is required; the plan and investments can be skipped and done later from their own pages. Once finished it isn't shown again, and users who had already linked a bank before it existed skip it.
+_Avoid_: Setup wizard, first run
+
 ### Bank data
 
 **Plaid item**:
@@ -70,7 +76,7 @@ _Avoid_: Inactive (Plaid's word for its own streams), stale
 
 **Item linking**:
 Connecting a new Plaid item, or reconnecting an existing one, and storing its access for later syncs.
-_Avoid_: Onboarding, token exchange
+_Avoid_: Onboarding (the new-user steps it's one part of), token exchange
 
 **Item sync**:
 Bringing a Plaid item's stored accounts, transactions and recurring streams up to date with Plaid, and recording a balance snapshot. It runs when an item is linked and when Plaid notifies us of changes. While Plaid has found no recurring streams for an item yet, they are checked again a few times over the next hours, and the user can ask for a check at any time.

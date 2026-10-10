@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,9 +32,13 @@ public class UserController {
 
     @GetMapping("/me")
     public UserResponse getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
-        User user = userService.getOrCreateUser(jwt);
-        return new UserResponse(user.getId(), user.getAuthUserId(), user.getEmail(),
-                user.getDisplayName(), user.getCreatedAt(), user.getUpdatedAt());
+        return UserResponse.of(userService.getOrCreateUser(jwt));
+    }
+
+    /** Marks onboarding done; doing it again changes nothing. */
+    @PutMapping("/me/onboarded")
+    public UserResponse finishOnboarding(@AuthenticationPrincipal Jwt jwt) {
+        return UserResponse.of(userService.finishOnboarding(jwt));
     }
 
     /** Deletes the signed-in user, their data and their sign-in. A failed Plaid request is a 502. */
@@ -56,8 +61,14 @@ public class UserController {
             String authUserId,
             String email,
             String displayName,
+            /** Whether the user has finished onboarding; until then the app opens on it. */
+            boolean onboarded,
             Instant createdAt,
             Instant updatedAt
     ) {
+        static UserResponse of(User user) {
+            return new UserResponse(user.getId(), user.getAuthUserId(), user.getEmail(),
+                    user.getDisplayName(), user.isOnboarded(), user.getCreatedAt(), user.getUpdatedAt());
+        }
     }
 }
