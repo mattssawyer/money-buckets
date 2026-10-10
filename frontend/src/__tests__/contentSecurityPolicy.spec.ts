@@ -23,6 +23,12 @@ describe('content security policy', () => {
     expect(directive(policy, 'trusted-types')).toBe('trusted-types vue default')
   })
 
+  it('shows Plaid’s merchant logos', () => {
+    expect(directive(contentSecurityPolicy('/api'), 'img-src')).toBe(
+      "img-src 'self' data: https://plaid-merchant-logos.plaid.com",
+    )
+  })
+
   it('lets the page reach an API on another origin', () => {
     const connect = directive(contentSecurityPolicy('https://api.example.com/api'), 'connect-src')
 

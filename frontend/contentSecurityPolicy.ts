@@ -13,7 +13,8 @@ function apiSource(apiBaseUrl: string): string | undefined {
  * The built app's Content-Security-Policy. The WorkOS refresh token is kept in localStorage, so
  * this is what stops injected scripts from reading it: only the app's own bundles and Plaid Link
  * run, Trusted Types keeps markup out of the DOM except through Vue (see src/trustedTypes.ts),
- * and the page can only talk to the API, WorkOS and Plaid.
+ * and the page can only talk to the API, WorkOS and Plaid. Images may also come from Plaid's
+ * merchant logo host, which transactions' logo_url points at.
  */
 export function contentSecurityPolicy(apiBaseUrl: string): string {
   const connect = [
@@ -28,7 +29,7 @@ export function contentSecurityPolicy(apiBaseUrl: string): string {
     "script-src 'self' https://cdn.plaid.com/link/v2/stable/link-initialize.js",
     // PrimeVue adds its theme as <style> elements.
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
+    "img-src 'self' data: https://plaid-merchant-logos.plaid.com",
     "font-src 'self'",
     `connect-src ${connect.filter(Boolean).join(' ')}`,
     'frame-src https://cdn.plaid.com/',
