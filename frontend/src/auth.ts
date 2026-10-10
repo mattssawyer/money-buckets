@@ -67,6 +67,7 @@ export function useAuth() {
     isLoaded: readonly(isLoaded),
     isSignedIn: computed(() => user.value !== null),
     getAccessToken,
+    hasInvitation: () => invitation().invitationToken !== undefined,
     signIn,
     signUp,
     signOut,
