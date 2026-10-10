@@ -1,10 +1,24 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
+import Message from 'primevue/message'
+import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuth } from '../auth'
 
-const { isLoaded, signIn, signUp } = useAuth()
+const { isLoaded, hasInvitation, signIn, signUp } = useAuth()
+const inviteOnly = import.meta.env.VITE_INVITE_ONLY === 'true'
+const needsInvitation = ref(false)
 const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
+
+// With sign-up turned off, WorkOS answers a sign-up without an invitation with a bare
+// "Page not found", so say why here instead of sending people there.
+async function createAccount() {
+  if (inviteOnly && !hasInvitation()) {
+    needsInvitation.value = true
+    return
+  }
+  await signUp()
+}
 </script>
 
 <template>
@@ -35,8 +49,12 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
             size="large"
             fluid
             :disabled="!isLoaded"
-            @click="signUp"
+            @click="createAccount"
           />
+          <Message v-if="needsInvitation" severity="info" role="status">
+            Money Buckets is invite-only right now. If you've been invited, open the link in your
+            invitation email to create your account.
+          </Message>
         </div>
       </section>
 

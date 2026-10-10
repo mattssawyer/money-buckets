@@ -85,9 +85,12 @@ VITE_API_BASE_URL=http://localhost:8080/api
 ```
 
 Use the same WorkOS client ID as the backend. In the WorkOS dashboard, in the environment
-that client ID belongs to (Staging, for local work), set the redirect URI, sign-out
-redirect and Initiate login URI to `http://localhost:5173/`, and add
-`http://localhost:5173` as an allowed CORS origin. Then run:
+that client ID belongs to (Staging, for local work), set the redirect URI and sign-out
+redirect to `http://localhost:5173/`, the Initiate login URI to `http://localhost:5173/login`
+(invitation links need it), and add
+`http://localhost:5173` as an allowed CORS origin. If you turn off sign-up in WorkOS, also
+set `VITE_INVITE_ONLY=true`, so **Create an account** explains that an invitation is
+needed instead of opening WorkOS's "Page not found". Then run:
 
 ```sh
 cd frontend
@@ -122,7 +125,7 @@ it up somewhere safe, such as a password manager.
 | Setting | Required | Where it comes from |
 | --- | --- | --- |
 | `POSTGRES_PASSWORD` | Yes | Any strong password you make up. The database is created with it on first start, so don't change it afterwards. |
-| `WORKOS_CLIENT_ID` | Yes | [WorkOS dashboard](https://dashboard.workos.com) → **API Keys**. Starts with `client_`. In the dashboard, also add the app's address (such as `http://localhost:3000/`) as a redirect URI, sign-out redirect and CORS origin. |
+| `WORKOS_CLIENT_ID` | Yes | [WorkOS dashboard](https://dashboard.workos.com) → **API Keys**. Starts with `client_`. In the dashboard, also add the app's address (such as `http://localhost:3000/`) as a redirect URI, sign-out redirect and CORS origin, and set the Initiate login URI to its `/login` page (such as `http://localhost:3000/login`) so invitation links work. |
 | `WORKOS_API_KEY` | No | Same page, the **API key**. Starts with `sk_`. Lets people delete their account from Settings, which deletes their WorkOS sign-in too; without it, deleting an account is refused. |
 | `PLAID_CLIENT_ID` | Yes | [Plaid dashboard](https://dashboard.plaid.com) → **Developers** → **Keys**. |
 | `PLAID_ENV` | Yes | Starts as `sandbox`, for Plaid's test banks, or `production` for real accounts once Plaid has approved production access for you. |
@@ -189,7 +192,7 @@ linking accounts and keep the same domain afterwards.
 The web app passes `/api` through to the API, so browsers never reach the API directly;
 the API's own port listens only on `127.0.0.1:8080`. To use the app away from home, put
 port 3000 behind a reverse proxy that serves HTTPS. Add that address to WorkOS as a
-redirect URI, sign-out redirect and CORS origin.
+redirect URI, sign-out redirect and CORS origin, and its `/login` page as the Initiate login URI.
 
 ## Development commands
 

@@ -89,6 +89,13 @@ describe('auth', () => {
     expect(workos.client.signUp).toHaveBeenCalledWith({ invitationToken: 'inv_123' })
   })
 
+  it('knows when the app was opened from an invitation', async () => {
+    expect((await loadAuth()).hasInvitation()).toBe(false)
+
+    window.history.replaceState({}, '', '/?invitation_token=inv_123')
+    expect((await loadAuth()).hasInvitation()).toBe(true)
+  })
+
   it('signs out at WorkOS and comes back to the app', async () => {
     const auth = await loadAuth()
 

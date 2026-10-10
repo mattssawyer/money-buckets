@@ -33,6 +33,12 @@ const router = createRouter({
       component: () => import('../views/SettingsPage.vue'),
     },
     {
+      path: '/login',
+      name: 'login',
+      component: () => import('../views/LoginPage.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/privacy',
       name: 'privacy',
       component: () => import('../views/PrivacyPage.vue'),
