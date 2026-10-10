@@ -176,7 +176,7 @@ class PlaidControllerTests {
                 jwt, new PlaidController.ExchangePublicTokenRequest("public-token"));
 
         assertEquals("item-id", result.itemId());
-        assertEquals(List.of(new PlaidController.ItemResponse("older-item", "Fidelity", false, null)),
+        assertEquals(List.of(new PlaidController.ItemResponse("older-item", "Fidelity", false, null, null)),
                 result.sameInstitution());
     }
 
@@ -194,7 +194,7 @@ class PlaidControllerTests {
         PlaidController.ItemsResponse result = controller.getLinkedItems(jwt);
 
         assertEquals(List.of("item-one", "item-two"), result.itemIds());
-        assertEquals(new PlaidController.ItemResponse("item-two", "Fidelity", true, null), result.items().get(1));
+        assertEquals(new PlaidController.ItemResponse("item-two", "Fidelity", true, null, null), result.items().get(1));
     }
 
     @Test

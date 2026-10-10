@@ -10,6 +10,10 @@ A personal finance dashboard that pulls a user's bank data from Plaid and helps 
 One login at one institution that a user has connected through Plaid. It holds one or more accounts.
 _Avoid_: Connection, link, institution
 
+**Reconnect**:
+What a Plaid item needs when the bank stops accepting its login, or will soon: the user signs in to the bank again through Plaid Link, and the same item carries on syncing with its history. Until then a broken login's accounts stop updating.
+_Avoid_: Relink (adding the bank again, which can make a second item), re-authenticate
+
 **Account**:
 A single bank, card or investment account within a Plaid item, with its latest balances.
 _Avoid_: Plaid account (outside code that talks to Plaid directly)

@@ -8,6 +8,7 @@ import dev.matthewsawyer.finance_dashboard.model.BalanceSnapshot;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.PayeeCorrection;
 import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
+import dev.matthewsawyer.finance_dashboard.model.Reconnect;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
@@ -108,6 +109,8 @@ class UserSeparationTests {
             "POST /plaid/items",
             "GET /plaid/items",
             "POST /plaid/items/{itemId}/investments",
+            "POST /plaid/items/{itemId}/reconnect",
+            "POST /plaid/items/{itemId}/reconnected",
             "DELETE /plaid/items/{itemId}",
             "GET /plaid/accounts",
             "PUT /plaid/accounts/{accountId}/tracking",
@@ -305,6 +308,20 @@ class UserSeparationTests {
         mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/items/" + ITEM + "/investments"))
                 .andExpect(status().isNotFound());
 
+        verifyNoInteractions(plaidApi);
+    }
+
+    @Test
+    void doesNotLetBobReconnectAlicesBank() throws Exception {
+        items.markReconnect(ITEM, Reconnect.LOGIN_REQUIRED);
+
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/items/" + ITEM + "/reconnect"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/items/" + ITEM + "/reconnected"))
+                .andExpect(status().isNotFound());
+
+        entityManager.clear();
+        assertEquals(Reconnect.LOGIN_REQUIRED, items.findById(ITEM).orElseThrow().getReconnect());
         verifyNoInteractions(plaidApi);
     }
 

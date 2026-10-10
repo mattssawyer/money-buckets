@@ -2,6 +2,7 @@ package dev.matthewsawyer.finance_dashboard.plaid;
 
 import dev.matthewsawyer.finance_dashboard.history.BalanceHistory;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
+import dev.matthewsawyer.finance_dashboard.model.Reconnect;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import org.slf4j.Logger;
@@ -41,6 +42,12 @@ public class PlaidItemSync {
     private static final String RECURRING_TRANSACTIONS_UPDATE = "RECURRING_TRANSACTIONS_UPDATE";
     private static final String HOLDINGS = "HOLDINGS";
     private static final String DEFAULT_UPDATE = "DEFAULT_UPDATE";
+    private static final String ITEM = "ITEM";
+    private static final String ERROR = "ERROR";
+    private static final String LOGIN_REPAIRED = "LOGIN_REPAIRED";
+    /** Plaid's newer name for an upcoming loss of access; PENDING_EXPIRATION is the older one. */
+    private static final String PENDING_DISCONNECT = "PENDING_DISCONNECT";
+    private static final String PENDING_EXPIRATION = "PENDING_EXPIRATION";
 
     /**
      * Waits between checks for an item's recurring streams while Plaid has none yet. Plaid
@@ -152,11 +159,19 @@ public class PlaidItemSync {
 
     /**
      * Handles a Plaid webhook for an item. Syncs run off the calling thread so webhook responses
-     * stay fast; webhooks that need no sync, and items we don't store, are ignored.
+     * stay fast; webhooks that need no sync, and items we don't store, are ignored. Item webhooks
+     * record whether the user needs to sign in to the bank again. {@code errorCode} is the
+     * webhook's error_code, if it has one.
      */
-    public void notified(String itemId, String webhookType, String webhookCode) {
+    public void notified(String itemId, String webhookType, String webhookCode, String errorCode) {
+        if (itemId != null && ITEM.equals(webhookType) && updatedReconnect(itemId, webhookCode, errorCode)) {
+            return;
+        }
         Scope scope;
-        if (TRANSACTIONS.equals(webhookType) && SYNC_UPDATES_AVAILABLE.equals(webhookCode)) {
+        if (ITEM.equals(webhookType) && LOGIN_REPAIRED.equals(webhookCode)) {
+            // Plaid stopped updating the item while its login was broken.
+            scope = Scope.EVERYTHING;
+        } else if (TRANSACTIONS.equals(webhookType) && SYNC_UPDATES_AVAILABLE.equals(webhookCode)) {
             scope = Scope.EVERYTHING;
         } else if (RECURRING_TRANSACTIONS.equals(webhookType) && RECURRING_TRANSACTIONS_UPDATE.equals(webhookCode)) {
             scope = Scope.RECURRING;
@@ -174,6 +189,28 @@ public class PlaidItemSync {
 
         log.info("Queuing sync for item {} after Plaid webhook {}/{}", itemId, webhookType, webhookCode);
         executor.execute(() -> syncUnderLock(itemId, scope));
+    }
+
+    /**
+     * Records what an item webhook says about the item's login. Returns whether the webhook was
+     * one of those, and so needs nothing more; a repaired login also needs a sync.
+     */
+    private boolean updatedReconnect(String itemId, String webhookCode, String errorCode) {
+        if (ERROR.equals(webhookCode) && PlaidRequestException.ITEM_LOGIN_REQUIRED.equals(errorCode)) {
+            log.info("Item {} needs a new login", itemId);
+            plaidItemRepository.markReconnect(itemId, Reconnect.LOGIN_REQUIRED);
+            return true;
+        }
+        if (PENDING_DISCONNECT.equals(webhookCode) || PENDING_EXPIRATION.equals(webhookCode)) {
+            log.info("Item {} loses access soon", itemId);
+            plaidItemRepository.markExpiring(itemId);
+            return true;
+        }
+        if (LOGIN_REPAIRED.equals(webhookCode)) {
+            log.info("Item {} login repaired", itemId);
+            plaidItemRepository.clearReconnect(itemId);
+        }
+        return false;
     }
 
     /**
@@ -210,13 +247,24 @@ public class PlaidItemSync {
     }
 
     /**
-     * Returns whether the item has the transactions product. When Plaid can't list the accounts,
-     * this assumes it does and lets the transactions sync find out.
+     * Returns whether the item has the transactions product, and so should sync transactions.
+     * When Plaid can't list the accounts, this assumes it does and lets the transactions sync
+     * find out, unless the item needs a new login: then nothing else can sync either. Listing
+     * them shows the bank accepts the login again.
      */
     private boolean syncAccounts(PlaidItem item, LocalDate today) {
         try {
-            return accountsSync.sync(item, today);
+            boolean hasTransactions = accountsSync.sync(item, today);
+            if (item.getReconnect() == Reconnect.LOGIN_REQUIRED) {
+                plaidItemRepository.clearLoginRequired(item.getItemId());
+            }
+            return hasTransactions;
         } catch (RuntimeException e) {
+            if (e instanceof PlaidRequestException plaidError && plaidError.isLoginRequired()) {
+                log.info("Item {} needs a new login; skipping the rest of its sync", item.getItemId());
+                plaidItemRepository.markReconnect(item.getItemId(), Reconnect.LOGIN_REQUIRED);
+                return false;
+            }
             log.warn("Accounts sync failed for item {}", item.getItemId(), e);
             return true;
         }

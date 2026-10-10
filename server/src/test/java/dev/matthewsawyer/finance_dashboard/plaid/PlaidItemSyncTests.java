@@ -6,6 +6,7 @@ import com.plaid.client.model.AccountType;
 import com.plaid.client.model.AccountsGetRequest;
 import com.plaid.client.model.AccountsGetResponse;
 import com.plaid.client.model.Item;
+import com.plaid.client.model.PlaidError;
 import com.plaid.client.model.Products;
 import com.plaid.client.model.RecurringTransactionFrequency;
 import com.plaid.client.model.Transaction;
@@ -20,6 +21,7 @@ import dev.matthewsawyer.finance_dashboard.history.BalanceHistory;
 import dev.matthewsawyer.finance_dashboard.history.BalanceHistory.Point;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
 import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
+import dev.matthewsawyer.finance_dashboard.model.Reconnect;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -57,6 +59,7 @@ import java.util.concurrent.ScheduledFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -159,7 +162,7 @@ class PlaidItemSyncTests {
 
     @Test
     void syncsOnlyAccountsAndBalancesWhenPlaidReportsNewHoldings() throws IOException {
-        itemSync.notified(ITEM_ID, "HOLDINGS", "DEFAULT_UPDATE");
+        itemSync.notified(ITEM_ID, "HOLDINGS", "DEFAULT_UPDATE", null);
         runQueued();
 
         assertEquals(List.of("checking"), accountIds());
@@ -200,7 +203,7 @@ class PlaidItemSyncTests {
     void ignoresWebhooksForARemovedItem() throws IOException {
         itemSync.removed(ITEM_ID);
 
-        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         runQueued();
 
         verifyNoInteractions(plaidApi);
@@ -222,7 +225,7 @@ class PlaidItemSyncTests {
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurring(recurringResponse());
 
-        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         verifyNoInteractions(plaidApi);
         runQueued();
 
@@ -234,7 +237,7 @@ class PlaidItemSyncTests {
     void syncsOnlyStreamsWhenPlaidReportsARecurringUpdate() throws IOException {
         stubRecurring(recurringResponse());
 
-        itemSync.notified(ITEM_ID, "RECURRING_TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE");
+        itemSync.notified(ITEM_ID, "RECURRING_TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null);
         runQueued();
 
         assertEquals(List.of("rent"), streamIds());
@@ -244,17 +247,17 @@ class PlaidItemSyncTests {
 
     @Test
     void ignoresWebhooksThatNeedNoSync() {
-        itemSync.notified(ITEM_ID, "ITEM", "ERROR");
+        itemSync.notified(ITEM_ID, "ITEM", "ERROR", null);
         // The legacy /transactions/get integration; this app uses /transactions/sync.
-        itemSync.notified(ITEM_ID, "TRANSACTIONS", "DEFAULT_UPDATE");
-        itemSync.notified(null, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "DEFAULT_UPDATE", null);
+        itemSync.notified(null, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
 
         assertTrue(queued.isEmpty());
     }
 
     @Test
     void ignoresWebhooksForItemsWeDoNotStore() {
-        itemSync.notified("unknown-item", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        itemSync.notified("unknown-item", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         runQueued();
 
         verifyNoInteractions(plaidApi);
@@ -341,7 +344,7 @@ class PlaidItemSyncTests {
         stubRecurring(noStreams());
 
         itemSync.linked(storedItem());
-        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         runQueued();
 
         assertEquals(1, retries.size());
@@ -379,6 +382,95 @@ class PlaidItemSyncTests {
         itemSync.recheckRecurring(ITEM_ID);
 
         verify(retryFutures.get(0)).cancel(false);
+    }
+
+    @Test
+    void marksAnItemThatNeedsANewLoginWithoutSyncingIt() {
+        itemSync.notified(ITEM_ID, "ITEM", "ERROR", "ITEM_LOGIN_REQUIRED");
+
+        assertEquals(Reconnect.LOGIN_REQUIRED, storedItem().getReconnect());
+        assertTrue(queued.isEmpty());
+    }
+
+    @Test
+    void marksAnItemThatLosesAccessSoonUnlessItAlreadyNeedsANewLogin() {
+        itemSync.notified(ITEM_ID, "ITEM", "PENDING_DISCONNECT", null);
+        assertEquals(Reconnect.EXPIRING, storedItem().getReconnect());
+
+        itemSync.notified(ITEM_ID, "ITEM", "ERROR", "ITEM_LOGIN_REQUIRED");
+        itemSync.notified(ITEM_ID, "ITEM", "PENDING_EXPIRATION", null);
+
+        assertEquals(Reconnect.LOGIN_REQUIRED, storedItem().getReconnect());
+        assertTrue(queued.isEmpty());
+    }
+
+    @Test
+    void syncsAnItemOnceItsLoginIsRepaired() throws IOException {
+        items.markReconnect(ITEM_ID, Reconnect.LOGIN_REQUIRED);
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+
+        itemSync.notified(ITEM_ID, "ITEM", "LOGIN_REPAIRED", null);
+        assertNull(storedItem().getReconnect());
+        runQueued();
+
+        assertEquals(List.of("txn-1"), transactionIds());
+    }
+
+    @Test
+    void marksAnItemWhoseLoginPlaidRefusesAndSyncsNothingElse() throws IOException {
+        stubAccountsError("ITEM_LOGIN_REQUIRED");
+
+        itemSync.linked(storedItem());
+
+        assertEquals(Reconnect.LOGIN_REQUIRED, storedItem().getReconnect());
+        verify(plaidApi, never()).transactionsSync(any());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
+    }
+
+    @Test
+    void marksAnItemWhenPlaidListsItsAccountsAlongsideALoginError() throws IOException {
+        stubAccounts(new Item().itemId(ITEM_ID).products(List.of(Products.TRANSACTIONS))
+                .error(new PlaidError().errorCode("ITEM_LOGIN_REQUIRED")));
+
+        itemSync.linked(storedItem());
+
+        assertEquals(Reconnect.LOGIN_REQUIRED, storedItem().getReconnect());
+        verify(plaidApi, never()).transactionsSync(any());
+    }
+
+    @Test
+    void otherAccountErrorsLeaveTheItemConnected() throws IOException {
+        stubAccountsError("INTERNAL_SERVER_ERROR");
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+
+        itemSync.linked(storedItem());
+
+        assertNull(storedItem().getReconnect());
+        assertEquals(List.of("txn-1"), transactionIds());
+    }
+
+    @Test
+    void aSuccessfulSyncClearsANeededLogin() throws IOException {
+        items.markReconnect(ITEM_ID, Reconnect.LOGIN_REQUIRED);
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+
+        itemSync.linked(storedItem());
+
+        assertNull(storedItem().getReconnect());
+    }
+
+    @Test
+    void aSuccessfulSyncKeepsAnUpcomingExpiry() throws IOException {
+        items.markReconnect(ITEM_ID, Reconnect.EXPIRING);
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+
+        itemSync.linked(storedItem());
+
+        assertEquals(Reconnect.EXPIRING, storedItem().getReconnect());
     }
 
     private void runQueued() {
@@ -461,8 +553,12 @@ class PlaidItemSyncTests {
                 .inflowStreams(List.of());
     }
 
-    @SuppressWarnings("unchecked")
     private void stubAccounts(List<Products> products) throws IOException {
+        stubAccounts(new Item().itemId(ITEM_ID).products(products));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubAccounts(Item item) throws IOException {
         Call<AccountsGetResponse> call = mock(Call.class);
         when(call.execute()).thenReturn(Response.success(new AccountsGetResponse()
                 .accounts(List.of(new AccountBase()
@@ -470,7 +566,16 @@ class PlaidItemSyncTests {
                         .name("Checking")
                         .type(AccountType.DEPOSITORY)
                         .balances(new AccountBalance().current(2500.0).isoCurrencyCode("USD"))))
-                .item(new Item().itemId(ITEM_ID).products(products))));
+                .item(item)));
+        when(plaidApi.accountsGet(any(AccountsGetRequest.class))).thenReturn(call);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubAccountsError(String errorCode) throws IOException {
+        Call<AccountsGetResponse> call = mock(Call.class);
+        when(call.execute()).thenReturn(Response.error(400, ResponseBody.create(
+                "{\"error_type\":\"ITEM_ERROR\",\"error_code\":\"" + errorCode + "\"}",
+                MediaType.get("application/json"))));
         when(plaidApi.accountsGet(any(AccountsGetRequest.class))).thenReturn(call);
     }
 

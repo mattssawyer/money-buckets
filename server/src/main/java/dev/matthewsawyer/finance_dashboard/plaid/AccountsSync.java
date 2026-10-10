@@ -69,13 +69,20 @@ class AccountsSync {
      * whether the item has the transactions product. Failure to look up the institution name
      * leaves it null without stopping the account sync.
      *
-     * @throws PlaidRequestException when Plaid cannot list the item's accounts
+     * @throws PlaidRequestException when Plaid cannot list the item's accounts, or lists them
+     *         but says the item needs a new login; then nothing is stored
      */
     boolean sync(PlaidItem item, LocalDate today) {
         String accessToken = tokenEncryption.decrypt(
                 item.getEncryptedAccessToken(), item.getUserId(), item.getItemId());
         AccountsGetResponse response = PlaidCalls.execute(
                 plaidApi.accountsGet(new AccountsGetRequest().accessToken(accessToken)), "accounts get");
+        // Plaid can answer with what it last saw while reporting the item's error alongside.
+        if (response.getItem() != null && response.getItem().getError() != null
+                && PlaidRequestException.ITEM_LOGIN_REQUIRED.equals(response.getItem().getError().getErrorCode())) {
+            throw new PlaidRequestException("Plaid accounts get reported an item error",
+                    PlaidRequestException.ITEM_LOGIN_REQUIRED);
+        }
         List<AccountBase> plaidAccounts = Objects.requireNonNullElse(response.getAccounts(), List.of());
         List<Products> products = response.getItem() == null || response.getItem().getProducts() == null
                 ? List.of() : response.getItem().getProducts();

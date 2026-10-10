@@ -7,6 +7,7 @@ import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import UserMenu from '../components/UserMenu.vue'
 import InfoTip from '../components/InfoTip.vue'
+import ReconnectNotice from '../components/ReconnectNotice.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
   createLinkToken,
@@ -258,6 +259,7 @@ function onShareChange(account: PlaidAccount, event: Event) {
       </header>
 
       <div class="accounts-content">
+        <ReconnectNotice @reconnected="load" />
         <SameInstitutionNotice
           v-if="sameInstitution.length"
           :items="sameInstitution"

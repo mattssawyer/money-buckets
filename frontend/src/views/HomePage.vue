@@ -13,6 +13,7 @@ import InfoTip from '../components/InfoTip.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
+import ReconnectNotice from '../components/ReconnectNotice.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
 import UserMenu from '../components/UserMenu.vue'
 import {
@@ -598,6 +599,8 @@ async function openPlaidLink() {
             <UserMenu />
           </div>
         </div>
+
+        <ReconnectNotice class="reconnect-notice" @reconnected="loadConnections" />
 
         <SameInstitutionNotice
           v-if="sameInstitution.length"
@@ -1217,6 +1220,7 @@ h1 {
   letter-spacing: -0.04em;
 }
 
+.reconnect-notice,
 .same-institution-notice {
   margin-bottom: 1.125rem;
 }

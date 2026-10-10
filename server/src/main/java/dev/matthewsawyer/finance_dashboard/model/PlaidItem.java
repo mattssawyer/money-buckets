@@ -2,6 +2,8 @@ package dev.matthewsawyer.finance_dashboard.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -49,6 +51,11 @@ public class PlaidItem {
     /** The day the user removed the item; its data stays for balance history but it no longer syncs. */
     @Column(name = "removed_on")
     private LocalDate removedOn;
+
+    /** Why the user needs to sign in to the bank again; null while the item is connected. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private Reconnect reconnect;
 
     protected PlaidItem() {
     }
@@ -101,5 +108,9 @@ public class PlaidItem {
 
     public boolean isRemoved() {
         return removedOn != null;
+    }
+
+    public Reconnect getReconnect() {
+        return reconnect;
     }
 }

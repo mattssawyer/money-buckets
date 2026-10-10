@@ -105,6 +105,7 @@ beforeEach(() => {
       institution_name: 'Fidelity',
       investments: true,
       investments_available: true,
+      reconnect: null,
     },
   ])
   vi.mocked(getAccounts).mockResolvedValue([ira])
@@ -368,6 +369,7 @@ describe('investments page', () => {
           institution_name: 'Fidelity',
           investments: true,
           investments_available: true,
+          reconnect: null,
         },
       ],
     })
@@ -388,6 +390,7 @@ describe('investments page', () => {
         institution_name: 'Chase',
         investments: false,
         investments_available: true,
+        reconnect: null,
       },
     ])
     vi.mocked(addInvestments).mockResolvedValue({ outcome: 'added', link_token: null })
@@ -410,6 +413,7 @@ describe('investments page', () => {
         institution_name: 'Chase',
         investments: false,
         investments_available: true,
+        reconnect: null,
       },
     ])
     vi.mocked(addInvestments)
@@ -438,6 +442,7 @@ describe('investments page', () => {
           institution_name: null,
           investments: false,
           investments_available: null,
+          reconnect: null,
         },
       ])
       .mockResolvedValueOnce([
@@ -446,6 +451,7 @@ describe('investments page', () => {
           institution_name: 'Regions Bank',
           investments: false,
           investments_available: false,
+          reconnect: null,
         },
       ])
     vi.mocked(addInvestments).mockResolvedValue({ outcome: 'not_offered', link_token: null })
@@ -469,6 +475,7 @@ describe('investments page', () => {
         institution_name: 'Regions Bank',
         investments: false,
         investments_available: false,
+        reconnect: null,
       },
     ])
     const wrapper = mountPage()
@@ -484,6 +491,7 @@ describe('investments page', () => {
         institution_name: 'Chase',
         investments: false,
         investments_available: true,
+        reconnect: null,
       },
     ])
     vi.mocked(addInvestments).mockResolvedValue({

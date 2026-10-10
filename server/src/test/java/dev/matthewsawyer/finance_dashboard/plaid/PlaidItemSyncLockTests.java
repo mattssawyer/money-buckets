@@ -59,7 +59,7 @@ class PlaidItemSyncLockTests {
                 new TransactionTemplate(mock(PlatformTransactionManager.class)), executor, mock(TaskScheduler.class, RETURNS_MOCKS));
 
         for (int i = 0; i < 4; i++) {
-            itemSync.notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+            itemSync.notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         }
         itemSync.linked(item);
         executor.shutdown();
