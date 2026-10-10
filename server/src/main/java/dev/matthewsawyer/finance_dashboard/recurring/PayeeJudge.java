@@ -23,13 +23,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.UnaryOperator;
+import java.util.stream.IntStream;
 
 import static dev.matthewsawyer.finance_dashboard.sorting.TypeSafeClient.ordered;
 
 /**
- * Asks Jev about one payee from all of its charges at once: whether the user pays it (or is paid
- * by it) regularly, how often, and which plan line a bill belongs under. The questions are the
- * ones evals/recurring_payees.py measures; change them there first.
+ * Asks Jev about payees, each from all of its charges at once: whether the user pays it (or is
+ * paid by it) regularly, how often, and which plan line a bill belongs under. Several payees go
+ * in one request. The questions are the ones evals/recurring_payees.py measures; change them
+ * there first.
  */
 @Component
 class PayeeJudge {
@@ -39,6 +42,12 @@ class PayeeJudge {
     static final String LINE = "line";
 
     private static final String NO_LINE = "none";
+
+    /**
+     * Payees asked about in one request. A payee with a full year of charges and all three
+     * questions is about 2,000 tokens, so 15 stay well under the request limit.
+     */
+    static final int PER_REQUEST = 15;
 
     private static final Map<String, Object> BILL = ordered(
             "type", "noul",
@@ -140,23 +149,57 @@ class PayeeJudge {
         }
 
         List<Charge> shown = charges.stream().map(Charge::of).toList();
-        String name = displayName(charges.get(0));
-        Object state = pay ? new PayState(name, shown) : new BillState(name, shown);
+        Map<String, Object> state = ordered("payee", displayName(charges.get(0)), pay ? "deposits" : "charges", shown);
         return new Request(payee, state, questions, lineByOption, fingerprint(state, questions));
     }
 
-    Judgment ask(Request request) {
-        TypeSafeClient.Answers answers = typeSafe.ask(request.state(), request.questions());
+    /**
+     * What Jev said about each payee, in the same order, from one request. Each question carries
+     * its payee and charges ahead of its own instructions, and the state is empty, so questions
+     * about one payee can't be read as being about another.
+     */
+    List<Judgment> ask(List<Request> requests) {
+        Map<String, Map<String, Object>> questions = new LinkedHashMap<>();
+        for (int i = 0; i < requests.size(); i++) {
+            Request request = requests.get(i);
+            for (Map.Entry<String, Map<String, Object>> question : request.questions().entrySet()) {
+                questions.put(questionId(i, question.getKey()), contained(request.state(), question.getValue()));
+            }
+        }
+        TypeSafeClient.Answers answers = typeSafe.ask(Map.of(), questions);
+        return IntStream.range(0, requests.size())
+                .mapToObj(i -> judgment(requests.get(i), id -> questionId(i, id), answers))
+                .toList();
+    }
+
+    private static String questionId(int payee, String question) {
+        return payee + "." + question;
+    }
+
+    // The payee's state goes first, then the question, as if it were asked about that state alone.
+    private static Map<String, Object> contained(Map<String, Object> state, Map<String, Object> question) {
+        Map<String, Object> instructions = new LinkedHashMap<>(state);
+        if (question.get("instructions") instanceof Map<?, ?> own) {
+            own.forEach((key, value) -> instructions.put((String) key, value));
+        } else {
+            instructions.put("question", question.get("instructions"));
+        }
+        Map<String, Object> contained = new LinkedHashMap<>(question);
+        contained.put("instructions", instructions);
+        return contained;
+    }
+
+    private static Judgment judgment(Request request, UnaryOperator<String> id, TypeSafeClient.Answers answers) {
         boolean askedRepeats = request.questions().containsKey(REPEATS);
         Line line = request.questions().containsKey(LINE)
-                ? request.lineByOption().get(answers.choice(LINE))
+                ? request.lineByOption().get(answers.choice(id.apply(LINE)))
                 : null;
         return new Judgment(
                 askedRepeats
-                        ? BigDecimal.valueOf(answers.noul(REPEATS)).setScale(4, RoundingMode.HALF_UP)
+                        ? BigDecimal.valueOf(answers.noul(id.apply(REPEATS))).setScale(4, RoundingMode.HALF_UP)
                         : null,
                 askedRepeats
-                        ? RecurringFrequency.valueOf(answers.choice(USUAL_FREQUENCY).toUpperCase(Locale.ROOT))
+                        ? RecurringFrequency.valueOf(answers.choice(id.apply(USUAL_FREQUENCY)).toUpperCase(Locale.ROOT))
                         : null,
                 line);
     }
@@ -188,7 +231,7 @@ class PayeeJudge {
      * in it keeps its order: Map.of's changes between JVM runs, which would re-ask every payee on
      * each restart.
      */
-    private String fingerprint(Object state, Map<String, Map<String, Object>> questions) {
+    private String fingerprint(Map<String, Object> state, Map<String, Map<String, Object>> questions) {
         try {
             byte[] shown = objectMapper.writeValueAsBytes(ordered("state", state, "questions", questions));
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(shown));
@@ -199,7 +242,7 @@ class PayeeJudge {
 
     record Request(
             RecurringMerchant payee,
-            Object state,
+            Map<String, Object> state,
             Map<String, Map<String, Object>> questions,
             Map<String, Line> lineByOption,
             String fingerprint
@@ -216,13 +259,7 @@ class PayeeJudge {
     record Line(SpendingPlanBucket bucket, String name) {
     }
 
-    record BillState(@JsonProperty("payee") String payee, @JsonProperty("charges") List<Charge> charges) {
-    }
-
-    record PayState(@JsonProperty("payee") String payee, @JsonProperty("deposits") List<Charge> deposits) {
-    }
-
-    // The model reads amounts better without a sign; the state's name says which way money moved.
+    // The model reads amounts better without a sign; "charges" or "deposits" says which way money moved.
     record Charge(
             @JsonProperty("date") String date,
             @JsonProperty("description") String description,

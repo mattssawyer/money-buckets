@@ -36,9 +36,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -83,13 +83,13 @@ class RecurringPayeesTests {
         recurringPayees = new RecurringPayees(transactions, streams, payees, answers, planService, trackedAccounts,
                 new PayeeJudge(typeSafe, new ObjectMapper()), Runnable::run, Clock.systemDefaultZone(), exclusions);
         when(typeSafe.isConfigured()).thenReturn(true);
-        doAnswer(invocation -> answers(invocation.getArgument(0), invocation.getArgument(1)))
+        doAnswer(invocation -> answers(invocation.getArgument(1)))
                 .when(typeSafe).ask(any(), any());
         account("checking", true);
     }
 
     @Test
-    void judgesEachPayeeOnceFromAllItsCharges() {
+    void judgesEachPayeeOnceFromAllItsChargesInOneRequest() {
         // Rent Plaid calls home improvement: its repeating amount is what gives it away.
         charge("rent-sep", "Sterling Group", "1554.91", TODAY.minusDays(29), "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
         charge("rent-aug", "Sterling Group", "1554.91", TODAY.minusDays(60), "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
@@ -98,14 +98,12 @@ class RecurringPayeesTests {
 
         recurringPayees.judge(userId);
 
-        verify(typeSafe, times(2)).ask(any(), any());
-        PayeeJudge.BillState rent = billStates().stream()
-                .filter(state -> state.payee().equals("Sterling Group"))
-                .findFirst().orElseThrow();
+        verify(typeSafe, times(1)).ask(any(), any());
+        List<PayeeJudge.Charge> rent = charges("Sterling Group");
         assertEquals(List.of(TODAY.minusDays(29).toString(), TODAY.minusDays(60).toString()),
-                rent.charges().stream().map(PayeeJudge.Charge::date).toList());
-        assertEquals("home improvement: repair and maintenance", rent.charges().get(0).plaidCategory());
-        assertEquals(new BigDecimal("1554.91"), rent.charges().get(0).amountUsd());
+                rent.stream().map(PayeeJudge.Charge::date).toList());
+        assertEquals("home improvement: repair and maintenance", rent.get(0).plaidCategory());
+        assertEquals(new BigDecimal("1554.91"), rent.get(0).amountUsd());
 
         RecurringPayee sterling = stored(RecurringKind.BILL, "sterling group");
         assertEquals(new BigDecimal("0.9000"), sterling.getProbability());
@@ -113,6 +111,34 @@ class RecurringPayeesTests {
         assertEquals(SpendingPlanBucket.FIXED_COSTS, sterling.getPlanBucket());
         assertEquals("Rent/mortgage", sterling.getPlanLine());
         assertNull(stored(RecurringKind.BILL, "starbucks").getPlanLine(), "Jev put coffee on no line");
+    }
+
+    @Test
+    void putsEachPayeeInItsOwnQuestionsWithAnEmptyState() {
+        charge("netflix", "Netflix", "15.49", TODAY.minusDays(5), "ENTERTAINMENT_TV_AND_MOVIES");
+
+        recurringPayees.judge(userId);
+
+        ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
+        verify(typeSafe).ask(state.capture(), any());
+        assertEquals(Map.of(), state.getValue());
+        Map<String, Map<String, Object>> asked = askedQuestions().get(0);
+        assertEquals(List.of("payee", "charges", "question", "guidance"),
+                List.copyOf(instructions(asked.get("0." + PayeeJudge.REPEATS)).keySet()));
+        assertEquals(List.of("payee", "charges", "question"),
+                List.copyOf(instructions(asked.get("0." + PayeeJudge.USUAL_FREQUENCY)).keySet()));
+    }
+
+    @Test
+    void asksAboutManyPayeesInSeveralRequests() {
+        for (int i = 0; i <= PayeeJudge.PER_REQUEST; i++) {
+            charge("shop-" + i, "Shop " + i, "20", TODAY.minusDays(i), "FOOD_AND_DRINK_COFFEE");
+        }
+
+        recurringPayees.judge(userId);
+
+        verify(typeSafe, times(2)).ask(any(), any());
+        assertEquals(PayeeJudge.PER_REQUEST + 1, payees.findAllByUserId(userId).size());
     }
 
     @Test
@@ -153,10 +179,9 @@ class RecurringPayeesTests {
         recurringPayees.judge(userId);
 
         assertEquals(List.of(Set.of(PayeeJudge.REPEATS, PayeeJudge.USUAL_FREQUENCY)), askedQuestionIds());
-        ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
-        verify(typeSafe).ask(state.capture(), any());
-        PayeeJudge.PayState pay = assertInstanceOf(PayeeJudge.PayState.class, state.getValue());
-        assertEquals(new BigDecimal("2400.00"), pay.deposits().get(0).amountUsd());
+        @SuppressWarnings("unchecked")
+        List<PayeeJudge.Charge> deposits = (List<PayeeJudge.Charge>) shown("ACME CORP PAYROLL").get("deposits");
+        assertEquals(new BigDecimal("2400.00"), deposits.get(0).amountUsd());
         assertEquals(new BigDecimal("0.9000"), stored(RecurringKind.PAYCHECK, "acme corp payroll").getProbability());
     }
 
@@ -175,7 +200,6 @@ class RecurringPayeesTests {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void offersTheSavedPlansLinesOrTheSpreadsheetsBeforeThereIsOne() {
         charge("rent", "Sterling Group", "1554.91", TODAY.minusDays(29), "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE");
         recurringPayees.judge(userId);
@@ -186,10 +210,9 @@ class RecurringPayeesTests {
                 plan -> plan);
         recurringPayees.judge(userId);
 
-        ArgumentCaptor<Map<String, Map<String, Object>>> questions = ArgumentCaptor.forClass(Map.class);
-        verify(typeSafe, times(2)).ask(any(), questions.capture());
-        Set<String> before = ((Map<String, Object>) questions.getAllValues().get(0).get(PayeeJudge.LINE).get("criteria")).keySet();
-        Set<String> after = ((Map<String, Object>) questions.getAllValues().get(1).get(PayeeJudge.LINE).get("criteria")).keySet();
+        verify(typeSafe, times(2)).ask(any(), any());
+        Set<String> before = lineOptions(askedQuestions().get(0));
+        Set<String> after = lineOptions(askedQuestions().get(1));
         assertTrue(before.contains("fixed costs: Rent/mortgage"));
         assertTrue(before.contains("savings: Emergency fund"));
         assertEquals(List.of("fixed costs: Rent", "savings: Japan trip", "none"), List.copyOf(after));
@@ -232,7 +255,7 @@ class RecurringPayeesTests {
 
         recurringPayees.judge(userId);
 
-        List<PayeeJudge.Charge> shown = billStates().get(0).charges();
+        List<PayeeJudge.Charge> shown = charges("Planet Fitness");
         assertEquals(RecurringPayees.MAX_CHARGES, shown.size());
         assertEquals(TODAY.toString(), shown.get(0).date());
     }
@@ -248,11 +271,12 @@ class RecurringPayeesTests {
         assertTrue(payees.findAllByUserId(userId).isEmpty());
     }
 
-    private TypeSafeClient.Answers answers(Object state, Map<String, Map<String, Object>> questions) {
-        String payee = state instanceof PayeeJudge.BillState bill ? bill.payee() : null;
+    private TypeSafeClient.Answers answers(Map<String, Map<String, Object>> questions) {
         Map<String, TypeSafeClient.Answer> byQuestion = new HashMap<>();
-        for (String questionId : questions.keySet()) {
-            byQuestion.put(questionId, switch (questionId) {
+        for (Map.Entry<String, Map<String, Object>> question : questions.entrySet()) {
+            String questionId = question.getKey();
+            Object payee = instructions(question.getValue()).get("payee");
+            byQuestion.put(questionId, switch (questionId.substring(questionId.indexOf('.') + 1)) {
                 case PayeeJudge.REPEATS -> TypeSafeClient.Answer.noul(0.9);
                 case PayeeJudge.USUAL_FREQUENCY -> TypeSafeClient.Answer.choice("monthly");
                 default -> TypeSafeClient.Answer.choice(lineByPayee.getOrDefault(payee, "none"));
@@ -294,19 +318,44 @@ class RecurringPayeesTests {
         return recurringPayees.judged(userId).get(new RecurringMerchant(kind, merchantKey));
     }
 
-    private List<PayeeJudge.BillState> billStates() {
-        ArgumentCaptor<Object> states = ArgumentCaptor.forClass(Object.class);
-        verify(typeSafe, atLeast(1)).ask(states.capture(), any());
-        return states.getAllValues().stream()
-                .filter(PayeeJudge.BillState.class::isInstance)
-                .map(PayeeJudge.BillState.class::cast)
+    /** The questions of each request, by question id. */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Map<String, Object>>> askedQuestions() {
+        ArgumentCaptor<Map<String, Map<String, Object>>> questions = ArgumentCaptor.forClass(Map.class);
+        verify(typeSafe, atLeast(0)).ask(any(), questions.capture());
+        return questions.getAllValues();
+    }
+
+    /** The question ids of each request, without the payee's number. */
+    private List<Set<String>> askedQuestionIds() {
+        return askedQuestions().stream()
+                .map(asked -> asked.keySet().stream()
+                        .map(id -> id.substring(id.indexOf('.') + 1))
+                        .collect(Collectors.toSet()))
                 .toList();
     }
 
+    /** The instructions of the first question asked about a payee, which carry its charges. */
+    private Map<String, Object> shown(String payee) {
+        return askedQuestions().stream()
+                .flatMap(asked -> asked.values().stream())
+                .map(RecurringPayeesTests::instructions)
+                .filter(instructions -> payee.equals(instructions.get("payee")))
+                .findFirst().orElseThrow();
+    }
+
     @SuppressWarnings("unchecked")
-    private List<Set<String>> askedQuestionIds() {
-        ArgumentCaptor<Map<String, Map<String, Object>>> questions = ArgumentCaptor.forClass(Map.class);
-        verify(typeSafe, atLeast(0)).ask(any(), questions.capture());
-        return questions.getAllValues().stream().map(asked -> Set.copyOf(asked.keySet())).toList();
+    private List<PayeeJudge.Charge> charges(String payee) {
+        return (List<PayeeJudge.Charge>) shown(payee).get("charges");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> instructions(Map<String, Object> question) {
+        return (Map<String, Object>) question.get("instructions");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> lineOptions(Map<String, Map<String, Object>> questions) {
+        return ((Map<String, Object>) questions.get("0." + PayeeJudge.LINE).get("criteria")).keySet();
     }
 }

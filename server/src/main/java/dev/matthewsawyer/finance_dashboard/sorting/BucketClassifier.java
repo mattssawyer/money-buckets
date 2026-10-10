@@ -1,6 +1,5 @@
 package dev.matthewsawyer.finance_dashboard.sorting;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
@@ -9,14 +8,16 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static dev.matthewsawyer.finance_dashboard.sorting.TypeSafeClient.ordered;
 
 /**
- * Decides which bucket one transaction belongs to, using the user's plan lines to settle
+ * Decides which bucket transactions belong to, using the user's plan lines to settle
  * cases that depend on the person, like whether a streaming subscription is a fixed cost.
  */
 @Component
@@ -44,22 +45,17 @@ class BucketClassifier {
                             + "checking, without being spent, saved or invested.",
                     "not_for", "Cash withdrawals or payments to other people."));
 
-    private static final String BUCKET_QUESTION_ID = "bucket";
+    /**
+     * Transactions asked about in one request. The eval matched one-at-a-time answers with up to
+     * 80; 50 keeps a request well under the token limit.
+     */
+    static final int PER_REQUEST = 50;
 
     private static final String QUESTION =
             "Which part of the user's Conscious Spending Plan does `transaction` belong to?";
 
-    private static final Map<String, Object> WITH_PLAN = ordered(
-            "type", "choice",
-            "instructions", ordered(
-                    "question", QUESTION,
-                    "guidance", "When `transaction` matches a line in `spending_plan`, choose the part that line is in."),
-            "criteria", CRITERIA);
-
-    private static final Map<String, Object> WITHOUT_PLAN = ordered(
-            "type", "choice",
-            "instructions", QUESTION,
-            "criteria", CRITERIA);
+    private static final String GUIDANCE =
+            "When `transaction` matches a line in `spending_plan`, choose the part that line is in.";
 
     private final TypeSafeClient typeSafe;
 
@@ -71,19 +67,32 @@ class BucketClassifier {
         return typeSafe.isConfigured();
     }
 
-    /** The bucket {@code transaction} belongs in. */
-    Bucket classify(PlaidTransaction transaction, PlanLines plan) {
-        State state = new State(TransactionState.of(transaction), plan.isEmpty() ? null : PlanState.of(plan));
-        TypeSafeClient.Answers answers = typeSafe.ask(
-                state, Map.of(BUCKET_QUESTION_ID, plan.isEmpty() ? WITHOUT_PLAN : WITH_PLAN));
-        return Bucket.valueOf(answers.choice(BUCKET_QUESTION_ID).toUpperCase(Locale.ROOT));
+    /**
+     * The bucket each transaction belongs in, in the same order, from one request. Each question
+     * carries its own transaction and the plan, and the state is empty: the eval found answers
+     * drift when questions share a state.
+     */
+    List<Bucket> classify(List<PlaidTransaction> transactions, PlanLines plan) {
+        PlanState planState = plan.isEmpty() ? null : PlanState.of(plan);
+        Map<String, Map<String, Object>> questions = new LinkedHashMap<>();
+        for (int i = 0; i < transactions.size(); i++) {
+            questions.put(questionId(i), question(TransactionState.of(transactions.get(i)), planState));
+        }
+        TypeSafeClient.Answers answers = typeSafe.ask(Map.of(), questions);
+        return IntStream.range(0, transactions.size())
+                .mapToObj(i -> Bucket.valueOf(answers.choice(questionId(i)).toUpperCase(Locale.ROOT)))
+                .toList();
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    record State(
-            @JsonProperty("transaction") TransactionState transaction,
-            @JsonProperty("spending_plan") PlanState spendingPlan
-    ) {
+    private static String questionId(int index) {
+        return "t" + index;
+    }
+
+    private static Map<String, Object> question(TransactionState transaction, PlanState plan) {
+        Object instructions = plan == null
+                ? ordered("transaction", transaction, "question", QUESTION)
+                : ordered("transaction", transaction, "spending_plan", plan, "question", QUESTION, "guidance", GUIDANCE);
+        return ordered("type", "choice", "instructions", instructions, "criteria", CRITERIA);
     }
 
     record TransactionState(

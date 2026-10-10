@@ -36,7 +36,7 @@ public class TransactionCountingController {
         }
         var user = users.getOrCreateUser(jwt);
         exclusions.set(user.getId(), request.transactionId(), request.excluded(), request.future());
-        sorting.sortLater(user.getId());
+        sorting.sortNow(user.getId());
     }
 
     public record CountingRequest(

@@ -55,7 +55,7 @@ public class PayeeCorrectionsController {
             throw badRequest("category must be a Plaid primary category");
         }
         corrections.correct(user.getId(), checkMerchantKey(request.merchantKey()), request.bucket(), request.category());
-        bucketSorting.sortLater(user.getId());
+        bucketSorting.sortNow(user.getId());
     }
 
     /** Forgets the payee's correction; its charges are sorted again. */
@@ -64,7 +64,7 @@ public class PayeeCorrectionsController {
     public void undo(@AuthenticationPrincipal Jwt jwt, @RequestParam(name = "merchant_key") String merchantKey) {
         User user = userService.getOrCreateUser(jwt);
         corrections.undo(user.getId(), checkMerchantKey(merchantKey));
-        bucketSorting.sortLater(user.getId());
+        bucketSorting.sortNow(user.getId());
     }
 
     public record CorrectionRequest(

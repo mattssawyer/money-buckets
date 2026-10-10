@@ -125,7 +125,7 @@ class PlaidItemSyncTests {
 
         itemSync.linked(storedItem());
 
-        verify(bucketSorting).sortLater(userId);
+        verify(bucketSorting).itemSynced(userId, ITEM_ID);
         assertEquals(List.of("checking"), accountIds());
         assertEquals(List.of("txn-1"), transactionIds());
         assertEquals(List.of("rent"), streamIds());
@@ -278,7 +278,7 @@ class PlaidItemSyncTests {
 
         assertEquals(List.of("txn-1"), transactionIds());
         assertEquals(List.of("rent"), streamIds());
-        verify(bucketSorting).sortLater(userId);
+        verify(bucketSorting).itemSynced(userId, ITEM_ID);
     }
 
     @Test

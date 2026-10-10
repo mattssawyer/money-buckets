@@ -13,6 +13,7 @@ import dev.matthewsawyer.finance_dashboard.repository.RecurringPayeeRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
+import dev.matthewsawyer.finance_dashboard.sorting.TypeSafeClient;
 import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
 import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
 import org.slf4j.Logger;
@@ -122,36 +123,43 @@ public class RecurringPayees {
             return;
         }
 
-        List<CompletableFuture<PayeeJudge.Judgment>> answers = toAsk.stream()
-                .map(request -> CompletableFuture.supplyAsync(() -> judge.ask(request), askExecutor))
+        List<List<PayeeJudge.Request>> batches = TypeSafeClient.batches(toAsk, PayeeJudge.PER_REQUEST);
+        List<CompletableFuture<List<PayeeJudge.Judgment>>> answers = batches.stream()
+                .map(batch -> CompletableFuture.supplyAsync(() -> judge.ask(batch), askExecutor))
                 .toList();
         int failed = 0;
         RuntimeException firstFailure = null;
-        for (int i = 0; i < toAsk.size(); i++) {
-            PayeeJudge.Request request = toAsk.get(i);
-            PayeeJudge.Judgment judgment;
+        for (int i = 0; i < batches.size(); i++) {
+            List<PayeeJudge.Request> batch = batches.get(i);
+            List<PayeeJudge.Judgment> judgments;
             try {
-                judgment = answers.get(i).join();
+                judgments = answers.get(i).join();
             } catch (CompletionException e) {
-                failed++;
+                failed += batch.size();
                 firstFailure = firstFailure == null ? e : firstFailure;
                 continue;
             }
-            RecurringPayee payee = stored.getOrDefault(request.payee(), new RecurringPayee(userId, request.payee()));
-            payee.judged(
-                    judgment.probability(),
-                    judgment.usualFrequency(),
-                    judgment.line() == null ? null : judgment.line().bucket(),
-                    judgment.line() == null ? null : judgment.line().name(),
-                    request.fingerprint(),
-                    Instant.now(clock));
-            payeeRepository.save(payee);
+            for (int j = 0; j < batch.size(); j++) {
+                save(userId, stored.get(batch.get(j).payee()), batch.get(j), judgments.get(j));
+            }
         }
 
-        log.info("Judged {} payees for user {}: {} failed", toAsk.size(), userId, failed);
+        log.info("Judged {} payees for user {} in {} requests: {} failed", toAsk.size(), userId, batches.size(), failed);
         if (firstFailure != null) {
             log.warn("First failure for user {}", userId, firstFailure);
         }
+    }
+
+    private void save(UUID userId, RecurringPayee known, PayeeJudge.Request request, PayeeJudge.Judgment judgment) {
+        RecurringPayee payee = known == null ? new RecurringPayee(userId, request.payee()) : known;
+        payee.judged(
+                judgment.probability(),
+                judgment.usualFrequency(),
+                judgment.line() == null ? null : judgment.line().bucket(),
+                judgment.line() == null ? null : judgment.line().name(),
+                request.fingerprint(),
+                Instant.now(clock));
+        payeeRepository.save(payee);
     }
 
     /** The stored judgment of each of the user's payees. */

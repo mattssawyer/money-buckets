@@ -10,12 +10,17 @@ every charge the user has made to it. Checks two things the design has to get ri
 - Each bill lands on the right plan line, from the same request, even when Plaid's category
   is wrong (rent labelled home improvement).
 
+With --batch N, asks about N payees per request instead of one. The state is empty and each
+question carries its own payee and charges, so it reads what a request of its own shows; see
+evals/bucket_sorting.py for why that shape and not every payee in the state.
+
 Run from the repo root; reads TYPESAFE_API_KEY from the environment or server/.env:
 
-    python3 evals/recurring_payees.py
+    python3 evals/recurring_payees.py [--batch 25]
 
 Ambiguous cases (expected None) are printed but not scored.
 """
+import argparse
 import json
 import os
 import sys
@@ -228,31 +233,87 @@ PAY_CASES = [
 ]
 
 
-def ask(key, payee, payee_charges, pay=False):
+# Asked alongside repeats, as PayeeJudge does. Not scored: printed so a batched run can be
+# compared with a one-payee-per-request run.
+FREQUENCY_QUESTION = {
+    "type": "choice",
+    "instructions": "If payments like these repeat, how often are they usually made?",
+    "criteria": {
+        "weekly": "Every week",
+        "biweekly": "Every two weeks",
+        "semi_monthly": "Twice a month, such as on the 1st and the 15th",
+        "monthly": "Once a month",
+        "quarterly": "Every three months",
+        "semi_annually": "Twice a year",
+        "annually": "Once a year",
+    },
+}
+
+
+def payee_questions(payee, payee_charges, pay):
     if pay:
-        state = {"payee": payee, "deposits": payee_charges}
-        questions = {"repeats": PAY_QUESTION}
-    else:
-        state = {"payee": payee, "charges": payee_charges}
-        questions = {"repeats": QUESTION, "line": LINE_QUESTION}
+        return ({"payee": payee, "deposits": payee_charges},
+                {"repeats": PAY_QUESTION, "usual_frequency": FREQUENCY_QUESTION})
+    return ({"payee": payee, "charges": payee_charges},
+            {"repeats": QUESTION, "usual_frequency": FREQUENCY_QUESTION, "line": LINE_QUESTION})
+
+
+def post(key, state, questions):
     body = json.dumps({"model": "jev-latest", "state": state, "questions": questions}).encode()
     request = urllib.request.Request(
         "https://api.typesafe.ai/v1/systemone",
         data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        answers = json.load(response)["answers"]
-        return answers["repeats"]["noul"], answers.get("line", {}).get("choice")
+    with urllib.request.urlopen(request, timeout=120) as response:
+        return json.load(response)["answers"]
+
+
+def ask(key, payee, payee_charges, pay=False):
+    state, questions = payee_questions(payee, payee_charges, pay)
+    answers = post(key, state, questions)
+    return (answers["repeats"]["noul"], answers.get("line", {}).get("choice"),
+            answers["usual_frequency"]["choice"])
+
+
+def contained(state, question):
+    """The question with the payee's state ahead of its own instructions, as PayeeJudge sends it."""
+    own = question["instructions"]
+    own = own if isinstance(own, dict) else {"question": own}
+    return {**question, "instructions": {**state, **own}}
+
+
+def ask_batch(key, cases, pay=False):
+    """One request for several payees: each question carries its payee and charges."""
+    questions = {}
+    for i, (_, payee, payee_charges) in enumerate(cases):
+        state, asked = payee_questions(payee, payee_charges, pay)
+        for name, asking in asked.items():
+            questions[f"{i}.{name}"] = contained(state, asking)
+    answers = post(key, {}, questions)
+    return [(answers[f"{i}.repeats"]["noul"], answers.get(f"{i}.line", {}).get("choice"),
+             answers[f"{i}.usual_frequency"]["choice"])
+            for i in range(len(cases))]
+
+
+def ask_all(key, cases, batch, pay=False):
+    if batch <= 1:
+        with ThreadPoolExecutor(8) as pool:
+            return list(pool.map(lambda case: ask(key, case[1], case[2], pay), cases))
+    chunks = [cases[i:i + batch] for i in range(0, len(cases), batch)]
+    with ThreadPoolExecutor(8) as pool:
+        return [answer for chunk in pool.map(lambda chunk: ask_batch(key, chunk, pay), chunks) for answer in chunk]
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch", type=int, default=1, help="payees per request")
+    args = parser.parse_args()
     key = api_key()
-    with ThreadPoolExecutor(8) as pool:
-        scores = list(pool.map(lambda case: ask(key, case[1], case[2]), CASES))
+    scores = ask_all(key, CASES, args.batch)
 
     scored = right = lines_scored = lines_right = 0
-    for (expected, payee, payee_charges), (score, line) in zip(CASES, scores):
+    for (expected, payee, payee_charges), (score, line, frequency) in zip(CASES, scores):
         verdict = " "
         if expected is not None:
             scored += 1
@@ -266,16 +327,15 @@ def main():
             lines_right += line == wanted
             line_note = f"  -> {line}" + ("" if line == wanted else f"  (!) expected {wanted}")
         label = {True: "bill", False: "not", None: "?"}[expected]
-        print(f"{verdict} {score:4.2f}  {label:4}  {payee} ×{len(payee_charges)} "
+        print(f"{verdict} {score:4.2f}  {label:4}  {frequency:13}  {payee} ×{len(payee_charges)} "
               f"[{payee_charges[0]['plaid_category']}]{line_note}")
-    with ThreadPoolExecutor(8) as pool:
-        pay_scores = list(pool.map(lambda case: ask(key, case[1], case[2], pay=True)[0], PAY_CASES))
+    pay_scores = ask_all(key, PAY_CASES, args.batch, pay=True)
     pay_right = 0
     print()
-    for (expected, payer, deposits), score in zip(PAY_CASES, pay_scores):
+    for (expected, payer, deposits), (score, _, frequency) in zip(PAY_CASES, pay_scores):
         ok = (score >= THRESHOLD) == expected
         pay_right += ok
-        print(f"{' ' if ok else '!'} {score:4.2f}  {'pay' if expected else 'not':4}  {payer} ×{len(deposits)} "
+        print(f"{' ' if ok else '!'} {score:4.2f}  {'pay' if expected else 'not':4}  {frequency:13}  {payer} ×{len(deposits)} "
               f"[{deposits[0]['plaid_category']}]")
 
     print(f"\nrepeats: {right}/{scored} right at {THRESHOLD}")

@@ -27,7 +27,6 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -72,10 +71,39 @@ class BucketSortingTests {
         store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
         answer(Map.of("Rent ACH", "fixed_costs", "Starbucks", "guilt_free"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
         assertEquals(Bucket.GUILT_FREE, bucket("coffee"));
+    }
+
+    @Test
+    void asksAboutManyTransactionsInSeveralRequests() {
+        for (int i = 0; i <= BucketClassifier.PER_REQUEST; i++) {
+            store(transaction("coffee-" + i, "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+        }
+        answer(Map.of("Starbucks", "guilt_free"));
+
+        sorting.sortNow(userId);
+
+        verify(typeSafe, times(2)).ask(any(), any());
+        assertEquals(Bucket.GUILT_FREE, bucket("coffee-0"));
+        assertEquals(Bucket.GUILT_FREE, bucket("coffee-" + BucketClassifier.PER_REQUEST));
+    }
+
+    @Test
+    void putsEachTransactionInItsOwnQuestionWithAnEmptyState() {
+        savePlan("Subscriptions");
+        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
+        answer(Map.of("Netflix", "fixed_costs"));
+
+        sorting.sortNow(userId);
+
+        ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
+        verify(typeSafe).ask(state.capture(), any());
+        assertEquals(Map.of(), state.getValue());
+        assertEquals(List.of("transaction", "spending_plan", "question", "guidance"),
+                List.copyOf(askedInstructions().keySet()));
     }
 
     @Test
@@ -85,7 +113,7 @@ class BucketSortingTests {
         store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
         answer(Map.of("Sterling Group", "guilt_free", "Starbucks", "guilt_free"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
         savePlan("Subscriptions");
         sorting.planSaved(userId, PlanLines.NONE);
 
@@ -99,7 +127,7 @@ class BucketSortingTests {
         store(pay("pay", "ACME payroll"));
         store(transaction("card", "Card autopay", "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         verify(typeSafe, never()).ask(any(), any());
         assertNull(bucket("pay"));
@@ -116,27 +144,50 @@ class BucketSortingTests {
             return null;
         }).when(payees).judge(userId);
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         verify(payees).judge(userId);
     }
 
     @Test
     void judgesRecurringPayeesEvenWhenNothingNeedsSorting() {
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         verify(payees).judge(userId);
     }
 
     @Test
-    void catchesEveryoneUpOnStartup() {
+    void sortsEveryoneDaily() {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         answer(Map.of("Netflix", "fixed_costs"));
 
-        sorting.catchUp();
+        sorting.sortDaily();
 
         assertEquals(Bucket.FIXED_COSTS, bucket("netflix"));
         verify(payees).judge(userId);
+    }
+
+    @Test
+    void sortsANewlyLinkedBanksTransactionsRightAway() {
+        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
+        answer(Map.of("Netflix", "fixed_costs"));
+
+        sorting.itemSynced(userId, "item");
+
+        assertEquals(Bucket.FIXED_COSTS, bucket("netflix"));
+    }
+
+    @Test
+    void leavesNewTransactionsFromABankSortedBeforeForTheDailyJob() {
+        store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
+        answer(Map.of("Netflix", "fixed_costs", "Starbucks", "guilt_free"));
+        sorting.itemSynced(userId, "item");
+
+        store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+        sorting.itemSynced(userId, "item");
+
+        assertNull(bucket("coffee"));
+        verify(typeSafe, times(1)).ask(any(), any());
     }
 
     @Test
@@ -145,13 +196,15 @@ class BucketSortingTests {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         answer(Map.of("Netflix", "fixed_costs"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
-        BucketClassifier.State state = askedState();
-        assertEquals(List.of("Subscriptions"), state.spendingPlan().fixedCosts().lines());
-        assertEquals("entertainment: tv and movies", state.transaction().plaidCategory());
-        assertEquals(new BigDecimal("15.49"), state.transaction().amountUsd());
-        assertEquals("money out", state.transaction().direction());
+        Map<String, Object> asked = askedInstructions();
+        assertEquals(List.of("Subscriptions"),
+                ((BucketClassifier.PlanState) asked.get("spending_plan")).fixedCosts().lines());
+        BucketClassifier.TransactionState transaction = (BucketClassifier.TransactionState) asked.get("transaction");
+        assertEquals("entertainment: tv and movies", transaction.plaidCategory());
+        assertEquals(new BigDecimal("15.49"), transaction.amountUsd());
+        assertEquals("money out", transaction.direction());
     }
 
     @Test
@@ -159,27 +212,31 @@ class BucketSortingTests {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         answer(Map.of("Netflix", "guilt_free"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
-        assertNull(askedState().spendingPlan());
+        assertNull(askedInstructions().get("spending_plan"));
         assertEquals(Bucket.GUILT_FREE, bucket("netflix"));
     }
 
     @Test
-    void leavesATransactionUnsortedWhenTypeSafeFails() {
-        store(transaction("rent", "Rent ACH", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT"));
-        store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+    void leavesAFailedRequestsTransactionsUnsorted() {
+        for (int i = 0; i <= BucketClassifier.PER_REQUEST; i++) {
+            store(transaction("coffee-" + i, "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
+        }
         when(typeSafe.ask(any(), any())).thenAnswer(invocation -> {
-            if (description(invocation.getArgument(0)).equals("Starbucks")) {
+            Map<String, Map<String, Object>> questions = invocation.getArgument(1);
+            if (questions.size() > 1) {
                 throw new IllegalStateException("TypeSafe unavailable");
             }
-            return answers("fixed_costs");
+            return answers(questions, Map.of("Starbucks", "guilt_free"));
         });
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
-        assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
-        assertNull(bucket("coffee"));
+        assertNull(bucket("coffee-0"));
+        assertEquals(1, transactions.findToSort(userId, true, BucketSorting.NOT_PLAN_MONEY).stream()
+                .filter(transaction -> transaction.getBucket() == Bucket.GUILT_FREE)
+                .count());
     }
 
     @Test
@@ -189,7 +246,7 @@ class BucketSortingTests {
         store(transaction("rent", "Sterling Group", "HOME_IMPROVEMENT", "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE"));
         store(transaction("coffee", "Starbucks", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         verify(typeSafe, never()).ask(any(), any());
         assertEquals(Bucket.FIXED_COSTS, bucket("rent"));
@@ -201,7 +258,7 @@ class BucketSortingTests {
         when(typeSafe.isConfigured()).thenReturn(false);
         store(transaction("rent", "Rent ACH", "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT"));
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         verify(typeSafe, never()).ask(any(), any());
         assertNull(bucket("rent"));
@@ -219,10 +276,10 @@ class BucketSortingTests {
                     """)
                     .setParameter("now", Instant.now().plusSeconds(1))
                     .executeUpdate();
-            return answers("guilt_free");
+            return answers(invocation.getArgument(1), Map.of("Starbucks", "guilt_free"));
         });
 
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         assertNull(bucket("coffee"));
     }
@@ -231,7 +288,7 @@ class BucketSortingTests {
     void sortsEverythingAgainWhenAPlanSaveChangesTheLines() {
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         answer(Map.of("Netflix", "guilt_free"));
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         savePlan("Subscriptions");
         answer(Map.of("Netflix", "fixed_costs"));
@@ -245,7 +302,7 @@ class BucketSortingTests {
         savePlan("Subscriptions");
         store(transaction("netflix", "Netflix", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES"));
         answer(Map.of("Netflix", "fixed_costs"));
-        sorting.sortLater(userId);
+        sorting.sortNow(userId);
 
         sorting.planSaved(userId, new PlanLines(List.of("Subscriptions"), List.of(), List.of()));
 
@@ -277,24 +334,33 @@ class BucketSortingTests {
                 .personalFinanceCategory("INCOME", "INCOME_SALARY");
     }
 
-    /** Answers the bucket question with the bucket for each description. */
+    /** Answers each transaction's question with the bucket for its description. */
     private void answer(Map<String, String> bucketByDescription) {
-        doAnswer(invocation -> answers(bucketByDescription.get(description(invocation.getArgument(0)))))
+        doAnswer(invocation -> answers(invocation.getArgument(1), bucketByDescription))
                 .when(typeSafe).ask(any(), any());
     }
 
-    private static TypeSafeClient.Answers answers(String bucket) {
-        return new TypeSafeClient.Answers(Map.of("bucket", TypeSafeClient.Answer.choice(bucket)));
+    private static TypeSafeClient.Answers answers(
+            Map<String, Map<String, Object>> questions, Map<String, String> bucketByDescription) {
+        Map<String, TypeSafeClient.Answer> byQuestion = new HashMap<>();
+        questions.forEach((id, question) -> byQuestion.put(id,
+                TypeSafeClient.Answer.choice(bucketByDescription.get(description(question)))));
+        return new TypeSafeClient.Answers(byQuestion);
     }
 
-    private BucketClassifier.State askedState() {
-        ArgumentCaptor<Object> state = ArgumentCaptor.forClass(Object.class);
-        verify(typeSafe).ask(state.capture(), any());
-        return assertInstanceOf(BucketClassifier.State.class, state.getValue());
+    /** The instructions of the only question asked. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> askedInstructions() {
+        ArgumentCaptor<Map<String, Map<String, Object>>> questions = ArgumentCaptor.forClass(Map.class);
+        verify(typeSafe).ask(any(), questions.capture());
+        Map<String, Object> question = questions.getValue().values().iterator().next();
+        return (Map<String, Object>) question.get("instructions");
     }
 
-    private static String description(Object state) {
-        return ((BucketClassifier.State) state).transaction().description();
+    @SuppressWarnings("unchecked")
+    private static String description(Map<String, Object> question) {
+        Map<String, Object> instructions = (Map<String, Object>) question.get("instructions");
+        return ((BucketClassifier.TransactionState) instructions.get("transaction")).description();
     }
 
     private Bucket bucket(String transactionId) {

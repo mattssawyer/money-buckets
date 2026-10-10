@@ -25,7 +25,7 @@ import java.util.concurrent.ScheduledFuture;
 
 /**
  * Keeps a Plaid item's stored accounts, transactions and recurring streams up to date, records
- * the day's balance snapshots, and queues new transactions for sorting.
+ * the day's balance snapshots, and tells sorting about new transactions.
  *
  * <p>Syncs of the same item never overlap: concurrent syncs would race each other's
  * transactions cursor. Failures are logged rather than thrown, because the next webhook or
@@ -235,7 +235,7 @@ public class PlaidItemSync {
             boolean hasTransactions = syncAccounts(item, today);
             if (hasTransactions && scope == Scope.EVERYTHING) {
                 run("Transactions", item, () -> transactionsSync.sync(item));
-                bucketSorting.sortLater(item.getUserId());
+                bucketSorting.itemSynced(item.getUserId(), item.getItemId());
             }
             RuntimeException recurringFailure = null;
             if (hasTransactions && scope != Scope.ACCOUNTS) {

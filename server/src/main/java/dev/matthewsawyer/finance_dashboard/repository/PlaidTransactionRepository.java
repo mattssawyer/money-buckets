@@ -153,4 +153,7 @@ public interface PlaidTransactionRepository extends JpaRepository<PlaidTransacti
 
     @Query("SELECT DISTINCT t.userId FROM PlaidTransaction t")
     List<UUID> findUserIdsWithTransactions();
+
+    /** Whether any of the item's transactions has been sorted, which a newly linked one's haven't. */
+    boolean existsByItemIdAndBucketIsNotNull(String itemId);
 }
