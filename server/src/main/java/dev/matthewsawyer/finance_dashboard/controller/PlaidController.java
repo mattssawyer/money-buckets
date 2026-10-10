@@ -9,6 +9,7 @@ import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
+import dev.matthewsawyer.finance_dashboard.model.Reconnect;
 import java.time.Clock;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
 import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
@@ -179,11 +180,36 @@ public class PlaidController {
             @JsonProperty("item_id") String itemId,
             @JsonProperty("institution_name") String institutionName,
             @JsonProperty("investments") boolean investments,
-            @JsonProperty("investments_available") Boolean investmentsAvailable
+            @JsonProperty("investments_available") Boolean investmentsAvailable,
+            /** Why the user needs to sign in to the bank again; null while it's connected. */
+            @JsonProperty("reconnect") Reconnect reconnect
     ) {
         static ItemResponse from(PlaidItem item) {
             return new ItemResponse(item.getItemId(), item.getInstitutionName(), item.hasInvestments(),
-                    item.getInvestmentsAvailable());
+                    item.getInvestmentsAvailable(), item.getReconnect());
+        }
+    }
+
+    /** A link token for Link update mode, so the user can sign in to the item's bank again. */
+    @PostMapping("/items/{itemId}/reconnect")
+    public Map<String, String> createReconnectLinkToken(@AuthenticationPrincipal Jwt jwt, @PathVariable String itemId) {
+        User user = userService.getOrCreateUser(jwt);
+        try {
+            return Map.of("link_token", itemLinking.createReconnectLinkToken(user.getId(), itemId));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found");
+        }
+    }
+
+    /** Call once update mode finishes; syncs the item before returning. */
+    @PostMapping("/items/{itemId}/reconnected")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reconnected(@AuthenticationPrincipal Jwt jwt, @PathVariable String itemId) {
+        User user = userService.getOrCreateUser(jwt);
+        try {
+            itemLinking.reconnected(user.getId(), itemId);
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found");
         }
     }
 

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -223,6 +225,30 @@ class PlaidItemLinkingTests {
     }
 
     @Test
+    void opensUpdateModeForAnItemThatNeedsANewLogin() throws IOException {
+        storedItem();
+        stubLinkToken();
+
+        assertEquals("link-token", linking.createReconnectLinkToken(USER_ID, "item-id"));
+
+        LinkTokenCreateRequest request = captureLinkTokenRequest();
+        assertEquals("access-token", request.getAccessToken());
+        assertNull(request.getProducts());
+        assertEquals(WEBHOOK_URL, request.getWebhook());
+    }
+
+    @Test
+    void clearsTheReconnectAndSyncsOnceUpdateModeFinishes() {
+        PlaidItem item = storedItem();
+
+        linking.reconnected(USER_ID, "item-id");
+
+        InOrder inOrder = inOrder(plaidItemRepository, itemSync);
+        inOrder.verify(plaidItemRepository).clearReconnect("item-id");
+        inOrder.verify(itemSync).linked(item);
+    }
+
+    @Test
     void removesAnItemFromPlaidBeforeForgettingIt() throws IOException {
         storedItem();
         when(plaidApi.itemRemove(any(ItemRemoveRequest.class))).thenReturn(removeCall);
@@ -251,6 +277,8 @@ class PlaidItemLinkingTests {
     void cannotChangeAnItemTheUserDoesNotHave() {
         assertThrows(NoSuchElementException.class, () -> linking.addInvestments(USER_ID, "item-id"));
         assertThrows(NoSuchElementException.class, () -> linking.remove(USER_ID, "item-id"));
+        assertThrows(NoSuchElementException.class, () -> linking.createReconnectLinkToken(USER_ID, "item-id"));
+        assertThrows(NoSuchElementException.class, () -> linking.reconnected(USER_ID, "item-id"));
 
         verifyNoInteractions(plaidApi, itemSync);
     }

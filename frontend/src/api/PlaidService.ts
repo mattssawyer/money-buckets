@@ -173,7 +173,15 @@ export interface PlaidItem {
   investments: boolean
   /** Whether its institution offers investments at all; null until a sync finds out. */
   investments_available: boolean | null
+  /** Why the user needs to sign in to the bank again; null while it's connected. */
+  reconnect: Reconnect | null
 }
+
+/**
+ * LOGIN_REQUIRED: the bank stopped accepting the login, so nothing updates until the user signs
+ * in again. EXPIRING: the bank's consent runs out soon.
+ */
+export type Reconnect = 'LOGIN_REQUIRED' | 'EXPIRING'
 
 /**
  * added: done. needs_consent: finish Link update mode with link_token, then ask again.
@@ -219,6 +227,19 @@ export async function addInvestments(itemId: string): Promise<AddInvestmentsResu
     `/plaid/items/${encodeURIComponent(itemId)}/investments`,
   )
   return data
+}
+
+/** A link token that opens Link in update mode, so the user can sign in to the bank again. */
+export async function createReconnectLinkToken(itemId: string): Promise<string> {
+  const { data } = await apiClient.post<{ link_token: string }>(
+    `/plaid/items/${encodeURIComponent(itemId)}/reconnect`,
+  )
+  return data.link_token
+}
+
+/** Tells the server update mode finished; it syncs the item before answering. */
+export async function finishReconnect(itemId: string): Promise<void> {
+  await apiClient.post(`/plaid/items/${encodeURIComponent(itemId)}/reconnected`)
 }
 
 /** Removes an item from Plaid. Its accounts leave net worth from today. */

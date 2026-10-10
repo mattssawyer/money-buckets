@@ -335,6 +335,7 @@ describe('accounts page', () => {
           institution_name: 'Chase',
           investments: false,
           investments_available: true,
+          reconnect: null,
         },
       ],
     })

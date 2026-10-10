@@ -14,12 +14,14 @@ const items = [
     institution_name: 'Fidelity',
     investments: false,
     investments_available: true,
+    reconnect: null,
   },
   {
     item_id: 'second',
     institution_name: 'Fidelity',
     investments: true,
     investments_available: true,
+    reconnect: null,
   },
 ]
 

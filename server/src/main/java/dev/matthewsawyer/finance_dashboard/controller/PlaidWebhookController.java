@@ -61,7 +61,8 @@ public class PlaidWebhookController {
                 payload.webhookCode(),
                 payload.itemId());
 
-        itemSync.notified(payload.itemId(), payload.webhookType(), payload.webhookCode());
+        itemSync.notified(payload.itemId(), payload.webhookType(), payload.webhookCode(),
+                payload.error() == null ? null : payload.error().errorCode());
     }
 
     private WebhookPayload parse(String rawBody) {
@@ -76,7 +77,12 @@ public class PlaidWebhookController {
     public record WebhookPayload(
             @JsonProperty("webhook_type") String webhookType,
             @JsonProperty("webhook_code") String webhookCode,
-            @JsonProperty("item_id") String itemId
+            @JsonProperty("item_id") String itemId,
+            @JsonProperty("error") WebhookError error
     ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record WebhookError(@JsonProperty("error_code") String errorCode) {
     }
 }

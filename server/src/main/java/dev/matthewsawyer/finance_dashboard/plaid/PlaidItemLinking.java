@@ -167,6 +167,32 @@ public class PlaidItemLinking {
     }
 
     /**
+     * A token that opens Link in update mode for an item, so the user can sign in to the bank
+     * again. Call {@link #reconnected} once they finish.
+     *
+     * @throws NoSuchElementException when the user has no such item
+     * @throws PlaidRequestException when Plaid cannot create the token
+     */
+    public String createReconnectLinkToken(UUID userId, String itemId) {
+        PlaidItem item = activeItem(userId, itemId);
+        String accessToken = tokenEncryption.decrypt(item.getEncryptedAccessToken(), userId, itemId);
+        return requestLinkToken(linkTokenRequest(userId).accessToken(accessToken));
+    }
+
+    /**
+     * Clears what the item needed once the user has finished update mode, and syncs it before
+     * returning. The access token stays the same. If Plaid still can't reach the bank, the sync
+     * marks the item again.
+     *
+     * @throws NoSuchElementException when the user has no such item
+     */
+    public void reconnected(UUID userId, String itemId) {
+        PlaidItem item = activeItem(userId, itemId);
+        plaidItemRepository.clearReconnect(itemId);
+        itemSync.linked(item);
+    }
+
+    /**
      * Removes an item from Plaid, which ends its billing, then stops syncing it. Its accounts
      * stay as dropped accounts so net worth keeps its history.
      *

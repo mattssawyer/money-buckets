@@ -3,6 +3,9 @@ package dev.matthewsawyer.finance_dashboard.plaid;
 /** Plaid could not be reached or rejected a request. */
 public class PlaidRequestException extends RuntimeException {
 
+    /** The bank no longer accepts the item's login; the user must sign in again through Link. */
+    public static final String ITEM_LOGIN_REQUIRED = "ITEM_LOGIN_REQUIRED";
+
     /** Plaid's error_code, such as ITEM_NOT_FOUND; null when Plaid sent none or wasn't reached. */
     private final String errorCode;
 
@@ -22,5 +25,9 @@ public class PlaidRequestException extends RuntimeException {
 
     public String getErrorCode() {
         return errorCode;
+    }
+
+    public boolean isLoginRequired() {
+        return ITEM_LOGIN_REQUIRED.equals(errorCode);
     }
 }

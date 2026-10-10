@@ -43,7 +43,19 @@ class PlaidWebhookControllerTests {
 
         controller.receiveWebhook(SYNC_BODY, SIGNATURE);
 
-        verify(itemSync).notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE");
+        verify(itemSync).notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+    }
+
+    @Test
+    void passesOnTheErrorCodeOfAnItemError() {
+        String body = """
+                {"webhook_type":"ITEM","webhook_code":"ERROR","item_id":"item-id",\
+                "error":{"error_type":"ITEM_ERROR","error_code":"ITEM_LOGIN_REQUIRED"}}""";
+        when(webhookVerifier.isValid(body, SIGNATURE)).thenReturn(true);
+
+        controller.receiveWebhook(body, SIGNATURE);
+
+        verify(itemSync).notified("item-id", "ITEM", "ERROR", "ITEM_LOGIN_REQUIRED");
     }
 
     @Test

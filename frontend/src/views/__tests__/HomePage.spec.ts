@@ -328,6 +328,7 @@ describe('homepage balances', () => {
           institution_name: 'Fidelity',
           investments: false,
           investments_available: true,
+          reconnect: null,
         },
       ],
     })
