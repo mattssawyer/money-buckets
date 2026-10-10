@@ -10,10 +10,10 @@ import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,8 +26,13 @@ import java.util.concurrent.RejectedExecutionException;
 /**
  * Keeps each transaction's bucket current, then has the user's recurring payees judged again,
  * since which money is plan money decides what counts as a payee's charge. Sorting asks TypeSafe
- * about every transaction, so it runs off the caller's thread, and its jobs run one at a time so
- * an older job can never overwrite a newer one's answers.
+ * about transactions in batches, so it runs off the caller's thread, and its jobs run one at a
+ * time so an older job can never overwrite a newer one's answers.
+ *
+ * <p>New transactions from Plaid wait for the daily job, so Jev gets a few large requests a day
+ * rather than one after every sync. The user's own changes don't wait: a new bank's first
+ * transactions, a plan save that changes the lines, a payee correction and a counting change
+ * are sorted right away.
  *
  * <p>A payee the user corrected keeps the bucket they chose; Jev isn't asked about its charges.
  * Failures leave transactions unsorted rather than guessing; the next sort retries them.
@@ -71,19 +76,32 @@ public class BucketSorting {
         this.classifyExecutor = classifyExecutor;
     }
 
+    /** Sorts everyone's new transactions once a day, in one job so users are asked about in turn. */
+    @Scheduled(cron = "${sorting.daily-cron:0 0 10 * * *}", zone = "UTC")
+    public void sortDaily() {
+        queue(null, () -> {
+            for (UUID userId : transactionRepository.findUserIdsWithTransactions()) {
+                run(userId, false);
+            }
+        });
+    }
+
     /**
-     * Catches everyone up on startup, such as when payee judgments first ship. Payees whose
-     * charges haven't changed since they were judged aren't asked about again.
+     * Sorts a newly linked bank's transactions right away, so its first transactions don't wait
+     * for the daily job. A bank sorted before waits for it. Called after each transactions sync.
      */
-    @EventListener(ApplicationReadyEvent.class)
-    public void catchUp() {
-        for (UUID userId : transactionRepository.findUserIdsWithTransactions()) {
-            sortLater(userId);
+    public void itemSynced(UUID userId, String itemId) {
+        if (!transactionRepository.existsByItemIdAndBucketIsNotNull(itemId)) {
+            sortNow(userId);
         }
     }
 
-    /** Queues sorting of the user's transactions that don't have a bucket yet. */
-    public void sortLater(UUID userId) {
+    /**
+     * Queues sorting of the user's transactions that don't have a bucket yet, and judging their
+     * payees, without waiting for the daily job. For changes the user made, such as correcting a
+     * payee, so they see the result.
+     */
+    public void sortNow(UUID userId) {
         queue(userId, () -> run(userId, false));
     }
 
@@ -105,7 +123,7 @@ public class BucketSorting {
         try {
             jobExecutor.execute(job);
         } catch (RejectedExecutionException e) {
-            log.warn("Sorting queue is full; skipping a sort for user {}", userId);
+            log.warn("Sorting queue is full; skipping a sort for {}", userId == null ? "everyone" : "user " + userId);
         }
     }
 
@@ -119,58 +137,66 @@ public class BucketSorting {
     }
 
     /**
-     * Asks about every transaction in parallel and stores each bucket as it's read, skipping the
-     * ones whose question failed; the next job asks them again. Without a TypeSafe API key, only
-     * payees the user corrected are sorted.
+     * Asks about the transactions in batches, in parallel, and stores each bucket as it's read.
+     * A failed batch leaves its transactions unsorted; the next job asks them again. Without a
+     * TypeSafe API key, only payees the user corrected are sorted.
      */
     private void sort(UUID userId, boolean includeSorted) {
         List<PlaidTransaction> transactions = transactionRepository.findToSort(userId, includeSorted, NOT_PLAN_MONEY);
         if (transactions.isEmpty()) {
             return;
         }
-        PlanLines plan = planLines(userId);
         Map<String, PayeeCorrection> corrected = corrections.byPayee(userId);
         boolean canAsk = classifier.isAvailable();
         if (!canAsk) {
             log.info("No TypeSafe API key is set; sorting only corrected payees for user {}", userId);
         }
-        List<CompletableFuture<Bucket>> answers = transactions.stream()
-                .map(transaction -> {
-                    String payee = PayeeCorrections.payeeKey(transaction);
-                    PayeeCorrection correction = payee == null ? null : corrected.get(payee);
-                    if (correction != null && correction.getBucket() != null) {
-                        return CompletableFuture.completedFuture(correction.getBucket());
-                    }
-                    return canAsk
-                            ? CompletableFuture.supplyAsync(() -> classifier.classify(transaction, plan), classifyExecutor)
-                            : CompletableFuture.<Bucket>completedFuture(null);
-                })
-                .toList();
 
         int stored = 0;
+        List<PlaidTransaction> toAsk = new ArrayList<>();
+        for (PlaidTransaction transaction : transactions) {
+            String payee = PayeeCorrections.payeeKey(transaction);
+            PayeeCorrection correction = payee == null ? null : corrected.get(payee);
+            if (correction != null && correction.getBucket() != null) {
+                stored += store(transaction, correction.getBucket());
+            } else if (canAsk) {
+                toAsk.add(transaction);
+            }
+        }
+
+        PlanLines plan = planLines(userId);
+        List<List<PlaidTransaction>> batches = TypeSafeClient.batches(toAsk, BucketClassifier.PER_REQUEST);
+        List<CompletableFuture<List<Bucket>>> answers = batches.stream()
+                .map(batch -> CompletableFuture.supplyAsync(() -> classifier.classify(batch, plan), classifyExecutor))
+                .toList();
         int failed = 0;
         RuntimeException firstFailure = null;
-        for (int i = 0; i < transactions.size(); i++) {
-            PlaidTransaction transaction = transactions.get(i);
-            Bucket bucket;
+        for (int i = 0; i < batches.size(); i++) {
+            List<PlaidTransaction> batch = batches.get(i);
+            List<Bucket> buckets;
             try {
-                bucket = answers.get(i).join();
+                buckets = answers.get(i).join();
             } catch (CompletionException e) {
-                failed++;
+                failed += batch.size();
                 firstFailure = firstFailure == null ? e : firstFailure;
                 continue;
             }
-            if (bucket != null && bucket != transaction.getBucket()) {
-                stored += transactionRepository.updateBucket(
-                        transaction.getTransactionId(), transaction.getUpdatedAt(), bucket);
+            for (int j = 0; j < batch.size(); j++) {
+                stored += store(batch.get(j), buckets.get(j));
             }
         }
 
-        log.info("Sorted {} transactions for user {}: {} stored, {} failed",
-                transactions.size(), userId, stored, failed);
+        log.info("Sorted {} transactions for user {} in {} requests: {} stored, {} failed",
+                transactions.size(), userId, batches.size(), stored, failed);
         if (firstFailure != null) {
             log.warn("First failure for user {}", userId, firstFailure);
         }
+    }
+
+    private int store(PlaidTransaction transaction, Bucket bucket) {
+        return bucket == transaction.getBucket()
+                ? 0
+                : transactionRepository.updateBucket(transaction.getTransactionId(), transaction.getUpdatedAt(), bucket);
     }
 
     private PlanLines planLines(UUID userId) {

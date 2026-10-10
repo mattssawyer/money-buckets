@@ -9,13 +9,14 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Asks TypeSafe's System One model questions about one state, in a single request so they run
- * in parallel. See <a href="https://docs.typesafe.ai/api">the API reference</a>.
+ * Asks TypeSafe's System One model questions in a single request, so they run in parallel. See <a href="https://docs.typesafe.ai/api">the API reference</a>.
  */
 @Component
 public class TypeSafeClient {
@@ -127,6 +128,15 @@ public class TypeSafeClient {
             map.put((String) keysAndValues[i], keysAndValues[i + 1]);
         }
         return map;
+    }
+
+    /** {@code items} split into consecutive lists of at most {@code size}, for one request each. */
+    public static <T> List<List<T>> batches(List<T> items, int size) {
+        List<List<T>> batches = new ArrayList<>();
+        for (int i = 0; i < items.size(); i += size) {
+            batches.add(items.subList(i, Math.min(items.size(), i + size)));
+        }
+        return batches;
     }
 
     private record SystemOneResponse(@JsonProperty("answers") Map<String, Answer> answers) {
