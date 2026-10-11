@@ -25,6 +25,7 @@ import {
 } from '../../api/PlaidService'
 import { getSpendingPlan, type SpendingPlanResponse } from '../../api/SpendingPlanService'
 import { periodName, periodRange } from '../../spending/period'
+import { fromSaved } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../api/SpendingPlanService', () => ({
   getSpendingPlan: vi.fn<() => Promise<SpendingPlanResponse | null>>(),
@@ -53,6 +54,16 @@ vi.mock('../../auth', () => ({
   useAuth: () => ({ user: computed(() => auth.user) }),
 }))
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
+
+// The plan editor is covered by its own tests; here it only needs to open and report a save.
+vi.mock('../../components/SpendingPlanDialog.vue', () => ({
+  default: {
+    name: 'SpendingPlanDialog',
+    props: ['visible', 'header', 'saved', 'replacing', 'focusBuffer'],
+    emits: ['update:visible', 'saved'],
+    template: '<div />',
+  },
+}))
 enableAutoUnmount(afterEach)
 
 const checking: PlaidAccount = {
@@ -821,9 +832,35 @@ describe('homepage spending breakdown', () => {
     const wrapper = mountHome()
     await flushPromises()
 
-    const prompt = wrapper.get('.spending-plan-prompt')
-    expect(prompt.text()).toBe('Create your spending plan to set a target for each bucket.')
-    expect(prompt.get('a').attributes('href')).toBe('/spending-plan')
+    const todo = wrapper.get('.plan-todo')
+    expect(todo.text()).toContain('Make your spending plan')
+    expect(wrapper.find('.spending-plan-prompt').exists()).toBe(false)
+
+    await todo.get('button').trigger('click')
+
+    expect(wrapper.findComponent({ name: 'SpendingPlanDialog' }).props('visible')).toBe(true)
+  })
+
+  it('drops the plan to-do once a plan is saved', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getSpendingPlan).mockResolvedValue(null)
+    const wrapper = mountHome()
+    await flushPromises()
+
+    wrapper.findComponent({ name: 'SpendingPlanDialog' }).vm.$emit(
+      'saved',
+      fromSaved({
+        account_id: null,
+        take_home: 4000,
+        gross_pay: null,
+        fixed_cost_buffer_percent: 0,
+        lines: [],
+        updated_at: '2026-10-11T00:00:00Z',
+      }),
+    )
+    await flushPromises()
+
+    expect(wrapper.find('.plan-todo').exists()).toBe(false)
   })
 
   it('charts buckets before there is a plan, like the transactions list', async () => {

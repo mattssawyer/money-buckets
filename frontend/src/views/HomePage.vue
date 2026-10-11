@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Landmark, Plus } from '@lucide/vue'
+import { ArrowRight, ChevronDown, Landmark, Plus, Wallet } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { ChartOptions } from 'chart.js'
@@ -10,6 +10,7 @@ import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
 import InfoTip from '../components/InfoTip.vue'
+import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -93,6 +94,8 @@ const savedPlan = ref<SavedPlan | null>()
 const hasSpendingPlan = computed(() =>
   savedPlan.value === undefined ? undefined : savedPlan.value !== null,
 )
+// Onboarding leaves the plan for later, so until there is one it's a to-do here.
+const planDialogVisible = ref(false)
 // Legend rows the user has flipped from how they start. Buckets start open and categories start
 // closed. Category keys include the bucket, since the same category can appear under two buckets.
 const toggledRows = ref(new Set<string>())
@@ -374,6 +377,13 @@ async function loadSpendingPlan() {
   }
 }
 
+/** The new plan's lines change how spending is sorted into buckets, so the card loads again. */
+function onPlanSaved(plan: SavedPlan) {
+  savedPlan.value = plan
+  planDialogVisible.value = false
+  void loadSpending()
+}
+
 function onSpendingPeriodChange(event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
@@ -609,6 +619,30 @@ async function openPlaidLink() {
           @removed="onOlderRemoved"
           @dismiss="sameInstitution = []"
         />
+
+        <section
+          v-if="!initialLoading && hasConnections && hasSpendingPlan === false"
+          class="panel plan-todo"
+          aria-labelledby="plan-todo-heading"
+        >
+          <div class="plan-todo-icon" aria-hidden="true">
+            <Wallet :size="18" :stroke-width="1.75" />
+          </div>
+          <div class="plan-todo-text">
+            <h2 id="plan-todo-heading">Make your spending plan</h2>
+            <p>Split your take-home pay into buckets and see what’s free to spend.</p>
+          </div>
+          <Button
+            label="Make my plan"
+            icon-pos="right"
+            aria-haspopup="dialog"
+            @click="planDialogVisible = true"
+          >
+            <template #icon="{ class: iconClass }">
+              <ArrowRight :class="iconClass" :size="16" :stroke-width="1.75" aria-hidden="true" />
+            </template>
+          </Button>
+        </section>
 
         <section
           v-if="initialLoading"
@@ -969,11 +1003,7 @@ async function openPlaidLink() {
             </div>
 
             <div v-else class="spending-body" :class="{ 'spending-refreshing': loadingSpending }">
-              <p v-if="hasSpendingPlan === false" class="spending-plan-prompt">
-                <RouterLink to="/spending-plan">Create your spending plan</RouterLink>
-                to set a target for each bucket.
-              </p>
-              <p v-else-if="needsTakeHome" class="spending-plan-prompt">
+              <p v-if="needsTakeHome" class="spending-plan-prompt">
                 <RouterLink to="/spending-plan">Add your take-home pay</RouterLink>
                 to your plan to see how much guilt-free spending is left.
               </p>
@@ -1176,6 +1206,12 @@ async function openPlaidLink() {
       :transaction="editing"
       @changed="loadCards"
     />
+
+    <SpendingPlanDialog
+      v-model:visible="planDialogVisible"
+      header="Create your spending plan"
+      @saved="onPlanSaved"
+    />
   </div>
 </template>
 
@@ -1241,6 +1277,43 @@ h1 {
 .overview-actions :deep(.cl-avatarBox) {
   width: 2rem;
   height: 2rem;
+}
+
+.plan-todo {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.plan-todo-icon {
+  display: grid;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  color: var(--app-text-inverse);
+  background: var(--app-text);
+  border-radius: var(--app-radius-control);
+}
+
+.plan-todo-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-todo h2 {
+  font-size: 1rem;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+
+.plan-todo p {
+  margin-top: 0.125rem;
+  color: var(--app-text-secondary);
+  font-size: 0.875rem;
 }
 
 .dashboard-grid {

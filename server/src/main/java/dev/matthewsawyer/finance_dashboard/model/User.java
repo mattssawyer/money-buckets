@@ -29,6 +29,10 @@ public class User {
     @Column(name = "display_name", length = 100)
     private String displayName;
 
+    /** Null until the user finishes onboarding. */
+    @Column(name = "onboarded_at")
+    private Instant onboardedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -76,5 +80,16 @@ public class User {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public boolean isOnboarded() {
+        return onboardedAt != null;
+    }
+
+    /** Keeps the first finish if the user finishes again. */
+    public void finishOnboarding(Instant at) {
+        if (onboardedAt == null) {
+            onboardedAt = at;
+        }
     }
 }

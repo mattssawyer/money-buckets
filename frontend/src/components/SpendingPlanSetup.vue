@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ChevronRight, CircleMinus, Info, Plus, Repeat } from '@lucide/vue'
+import { ChevronDown, ChevronRight, CircleMinus, Plus, Repeat, X } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
 import {
@@ -117,8 +116,9 @@ const showSpending = ref(false)
 const unansweredCandidates = ref(0)
 // Recurring bills Jev put on no line, or hasn't judged yet, for the user to place or skip.
 const unplaced = ref<RecurringStream[]>([])
-// The row each unplaced bill will be added to, by stream id.
-const placeInto = ref<Record<string, string>>({})
+const unplacedCount = computed(() => (loadingEstimates.value ? 0 : unplaced.value.length))
+// The bills on no line stay folded away until the user asks to place them.
+const showUnplaced = ref(false)
 const recurringVisible = ref(false)
 const recurringStartOn = ref<'recurring' | 'possible'>('recurring')
 // The recurring payments the plan was last brought up to date with, so answers given in the
@@ -445,10 +445,6 @@ function addLine(bucket: BucketId) {
 function removeLine(bucket: BucketId, id: string) {
   plan.value[bucket] = plan.value[bucket].filter((row) => row.id !== id)
   expandedRows.value.delete(id)
-  // A bill waiting to go on the removed line has to be pointed at another one.
-  for (const [streamId, rowId] of Object.entries(placeInto.value)) {
-    if (rowId === id) delete placeInto.value[streamId]
-  }
 }
 
 function toggleBreakdown(id: string) {
@@ -474,8 +470,8 @@ function addItem(row: PlanRow) {
   row.amount = null
 }
 
-function placeBill(bill: RecurringStream) {
-  const rowId = placeInto.value[bill.stream_id]
+/** Puts a bill on the line the user picked for it, straight away. */
+function placeBill(bill: RecurringStream, rowId: string) {
   const row = BUCKETS.flatMap((bucket) => plan.value[bucket.id]).find((row) => row.id === rowId)
   if (!row) return
   addToRow(row, bill)
@@ -494,8 +490,8 @@ function skipBill(bill: RecurringStream) {
 
 function onPlaceIntoChange(bill: RecurringStream, event: Event) {
   const target = event.target
-  if (!(target instanceof HTMLSelectElement)) return
-  placeInto.value[bill.stream_id] = target.value
+  if (!(target instanceof HTMLSelectElement) || !target.value) return
+  placeBill(bill, target.value)
 }
 
 function removeItem(row: PlanRow, id: string) {
@@ -544,78 +540,91 @@ function amountValue(amount: number | null) {
   <div class="plan-setup" :class="{ 'showing-spending': showSpending }">
     <div class="plan-body">
       <form class="plan-form" aria-label="Spending plan" @submit.prevent>
-        <div v-if="!editing" class="plan-toolbar">
-          <p class="autofill-note">
-            <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-            Amounts are filled in from your tracked accounts’ recurring transactions and what you
-            usually spend.
-            <RouterLink to="/accounts">Choose accounts</RouterLink>
-          </p>
-          <p v-if="unansweredCandidates" class="autofill-note">
-            <Info :size="14" :stroke-width="1.75" aria-hidden="true" />
-            {{
+        <!-- What still needs the user, one short row each. -->
+        <div v-if="unplacedCount || (!editing && unansweredCandidates)" class="plan-notes">
+          <div v-if="unplacedCount" class="plan-note-group">
+            <p class="plan-note">
+              <span>{{
+                unplacedCount === 1
+                  ? '1 recurring payment isn’t on a line'
+                  : `${unplacedCount} recurring payments aren’t on a line`
+              }}</span>
+              <button
+                type="button"
+                class="note-action"
+                aria-controls="unplaced-list"
+                :aria-expanded="showUnplaced"
+                @click="showUnplaced = !showUnplaced"
+              >
+                {{ showUnplaced ? 'Hide' : 'Place' }}
+                <ChevronDown
+                  :size="15"
+                  :stroke-width="2"
+                  class="note-chevron"
+                  :class="{ 'note-chevron-open': showUnplaced }"
+                  aria-hidden="true"
+                />
+              </button>
+            </p>
+            <section
+              v-show="showUnplaced"
+              id="unplaced-list"
+              class="unplaced"
+              aria-labelledby="unplaced-heading"
+            >
+              <h2 id="unplaced-heading" class="visually-hidden">Recurring payments to place</h2>
+              <TransitionGroup name="unplaced" tag="div" class="unplaced-rows">
+                <div v-for="bill in unplaced" :key="bill.stream_id" class="unplaced-row">
+                  <div class="unplaced-payee">
+                    <span class="unplaced-name">{{ recurringLabel(bill) }}</span>
+                    <span class="unplaced-amount"
+                      >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
+                    >
+                  </div>
+                  <!-- Picking a line puts the bill on it; there's no separate add step. -->
+                  <select
+                    class="line-select"
+                    :aria-label="`Line for ${recurringLabel(bill)}`"
+                    value=""
+                    @change="onPlaceIntoChange(bill, $event)"
+                  >
+                    <option value="" disabled>Choose a line</option>
+                    <optgroup v-for="bucket in BUCKETS" :key="bucket.id" :label="bucket.title">
+                      <option v-for="row in plan[bucket.id]" :key="row.id" :value="row.id">
+                        {{ row.name || bucket.lineNoun }}
+                      </option>
+                    </optgroup>
+                  </select>
+                  <button
+                    type="button"
+                    class="unplaced-skip"
+                    title="Skip"
+                    :aria-label="`Skip ${recurringLabel(bill)}`"
+                    @click="skipBill(bill)"
+                  >
+                    <X :size="15" :stroke-width="2" aria-hidden="true" />
+                  </button>
+                </div>
+              </TransitionGroup>
+            </section>
+          </div>
+          <p v-if="!editing && unansweredCandidates" class="plan-note">
+            <span>{{
               unansweredCandidates === 1
-                ? '1 payment might be recurring.'
-                : `${unansweredCandidates} payments might be recurring.`
-            }}
-            Confirm them to fill them in.
+                ? '1 payment might be recurring'
+                : `${unansweredCandidates} payments might be recurring`
+            }}</span>
             <button
               type="button"
               class="note-action"
               aria-haspopup="dialog"
               @click="openRecurring('possible')"
             >
-              Review them
+              Review
+              <ChevronRight :size="15" :stroke-width="2" aria-hidden="true" />
             </button>
           </p>
         </div>
-
-        <section
-          v-if="!loadingEstimates && unplaced.length"
-          class="unplaced"
-          aria-labelledby="unplaced-heading"
-        >
-          <h2 id="unplaced-heading" class="unplaced-heading">Recurring payments to place</h2>
-          <p class="block-hint">
-            We couldn’t tell which line these belong on. Add each to a line, or skip it.
-          </p>
-          <div v-for="bill in unplaced" :key="bill.stream_id" class="sheet-row unplaced-row">
-            <span class="row-label">{{ recurringLabel(bill) }}</span>
-            <span class="unplaced-amount"
-              >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
-            >
-            <select
-              class="line-select"
-              :aria-label="`Line for ${recurringLabel(bill)}`"
-              :value="placeInto[bill.stream_id] ?? ''"
-              @change="onPlaceIntoChange(bill, $event)"
-            >
-              <option value="" disabled>Choose a line</option>
-              <optgroup v-for="bucket in BUCKETS" :key="bucket.id" :label="bucket.title">
-                <option v-for="row in plan[bucket.id]" :key="row.id" :value="row.id">
-                  {{ row.name || bucket.lineNoun }}
-                </option>
-              </optgroup>
-            </select>
-            <button
-              type="button"
-              class="unplaced-action unplaced-add"
-              :disabled="!placeInto[bill.stream_id]"
-              :aria-label="`Add ${recurringLabel(bill)}`"
-              @click="placeBill(bill)"
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              class="unplaced-action"
-              :aria-label="`Skip ${recurringLabel(bill)}`"
-              @click="skipBill(bill)"
-            >
-              Skip
-            </button>
-          </div>
-        </section>
 
         <section class="plan-block" aria-labelledby="plan-section-heading-income">
           <h2 id="plan-section-heading-income">Income</h2>
@@ -932,6 +941,7 @@ function amountValue(amount: number | null) {
           severity="secondary"
           outlined
           class="recurring-button"
+          aria-label="Recurring payments"
           aria-haspopup="dialog"
           @click="openRecurring('recurring')"
         >
@@ -1032,6 +1042,8 @@ function amountValue(amount: number | null) {
   display: grid;
   --section-gap: 2.25rem;
 
+  /* One column no wider than the form, so inputs shrink to fit rather than push past it. */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   flex: 1;
   gap: var(--section-gap);
@@ -1042,69 +1054,103 @@ function amountValue(amount: number | null) {
   overscroll-behavior: contain;
 }
 
-.plan-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
+/* One outlined panel of short rows: each says what's left to do, with its action on the right. */
+.plan-notes {
+  max-width: calc(34rem + 2.5rem);
+  border: 1px solid var(--app-divider);
+  border-radius: var(--app-radius-control);
 }
 
-.autofill-note {
+.plan-notes > * + * {
+  border-top: 1px solid var(--app-divider);
+}
+
+.plan-note {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: space-between;
+  gap: 1rem;
   margin: 0;
-  color: var(--app-text-subdued);
-  font-size: 0.8125rem;
+  padding: 0.625rem 0.875rem;
+  color: var(--app-text-secondary);
+  font-size: 0.875rem;
 }
 
-.autofill-note svg {
+.note-action {
+  display: inline-flex;
   flex: none;
-}
-
-.autofill-note a,
-.note-action {
-  color: var(--app-text);
-  font-weight: 500;
-}
-
-.note-action {
+  align-items: center;
+  gap: 0.125rem;
   padding: 0;
+  color: var(--app-text);
   font: inherit;
-  text-decoration: underline;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
   background: none;
   border: 0;
   cursor: pointer;
 }
 
-.unplaced {
-  display: grid;
-  gap: 0.25rem;
-  max-width: 36.5rem;
-  padding: 0.875rem 1rem;
-  background: var(--app-inset);
-  border-radius: var(--app-radius-chip);
+.note-action:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
-.unplaced-heading {
-  font-size: 0.9375rem;
+.note-chevron {
+  transition: transform 150ms ease;
+}
+
+.note-chevron-open {
+  transform: rotate(180deg);
+}
+
+/* The payments to place open under the row that counts them, on a faint background. */
+.unplaced {
+  padding: 0.25rem 0.875rem;
+  background: var(--app-canvas);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .unplaced-row {
-  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.unplaced-payee {
+  display: grid;
+  flex: 1;
+  min-width: 0;
   font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.unplaced-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unplaced-amount {
-  flex: none;
   color: var(--app-text-secondary);
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
 
 .line-select {
   flex: none;
-  max-width: 11rem;
+  width: 9.5rem;
   appearance: none;
   padding: 0.3rem 1.6rem 0.3rem 0.55rem;
   color: var(--app-text);
@@ -1118,47 +1164,57 @@ function amountValue(amount: number | null) {
   font-size: 0.8125rem;
 }
 
-.unplaced-action {
+.unplaced-skip {
+  display: grid;
   flex: none;
-  padding: 0.25rem 0.35rem;
-  color: var(--app-text-secondary);
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  place-items: center;
+  color: var(--app-text-subdued);
   background: transparent;
   border: 0;
-  font: inherit;
-  font-size: 0.8125rem;
+  border-radius: var(--app-radius-chip);
   cursor: pointer;
 }
 
-.unplaced-action:hover:not(:disabled) {
+.unplaced-skip:hover {
   color: var(--app-text);
+  background: var(--app-inset);
 }
 
-.unplaced-add {
-  color: var(--app-text);
-  font-weight: 500;
+/* A placed or skipped payment slides out, and the rest close up. */
+.unplaced-leave-active {
+  position: absolute;
+  width: 100%;
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
 }
 
-.unplaced-action:disabled {
-  color: var(--app-text-subdued);
-  cursor: default;
+.unplaced-leave-to {
+  opacity: 0;
+  transform: translateX(0.75rem);
+}
+
+.unplaced-move {
+  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.unplaced-rows {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unplaced-leave-active,
+  .unplaced-move {
+    transition: none;
+  }
 }
 
 .plan-form {
   container-type: inline-size;
   counter-reset: plan-step;
-}
-
-@container (max-width: 45rem) {
-  .has-paycheck-toggle {
-    flex-wrap: wrap;
-  }
-
-  .paycheck-toggle {
-    position: static;
-    flex-basis: 100%;
-    margin: -0.4rem 0 0.2rem 3.25rem;
-    transform: none;
-  }
 }
 
 /* Each section is a numbered step; a bar runs from its bubble down to the next one. */
@@ -1168,6 +1224,7 @@ function amountValue(amount: number | null) {
 
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.35rem;
   max-width: calc(34rem + var(--step-gutter));
   padding-left: var(--step-gutter);
@@ -1573,6 +1630,23 @@ h2 {
   color: var(--app-text-secondary);
 }
 
+/*
+ * A narrow plan has no room beside the line for the paycheck checkbox, so it drops below. This
+ * comes after the rules above so it wins over them.
+ */
+@container (max-width: 45rem) {
+  .has-paycheck-toggle {
+    flex-wrap: wrap;
+  }
+
+  .paycheck-toggle {
+    position: static;
+    flex-basis: 100%;
+    margin: -0.4rem 0 0.2rem 3.25rem;
+    transform: none;
+  }
+}
+
 .guilt-free-row {
   font-size: 1rem;
 }
@@ -1630,7 +1704,22 @@ h2 {
 
 @media (max-width: 640px) {
   .plan-footer {
+    gap: 0.75rem;
     padding-inline: 1.25rem;
+  }
+
+  .footer-actions {
+    gap: 0.75rem;
+  }
+
+  /* Labels stay on one line; the recurring button keeps just its icon. */
+  .plan-footer :deep(.p-button),
+  .spending-toggle {
+    white-space: nowrap;
+  }
+
+  .recurring-button :deep(.p-button-label) {
+    display: none;
   }
 
   .plan-block {
@@ -1639,11 +1728,6 @@ h2 {
 
   .plan-form {
     padding: 1.15rem 1.25rem 1.5rem;
-  }
-
-  .plan-toolbar {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .block-heading {

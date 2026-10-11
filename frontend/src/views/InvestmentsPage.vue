@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Landmark, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
+import { Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -7,12 +7,9 @@ import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import UserMenu from '../components/UserMenu.vue'
 import BalanceChart from '../components/BalanceChart.vue'
-import InfoTip from '../components/InfoTip.vue'
+import AddInvestments from '../components/AddInvestments.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import {
-  addInvestments,
-  createLinkToken,
-  exchangePublicToken,
   getAccounts,
   getLinkedItems,
   updateAccountTracking,
@@ -36,7 +33,7 @@ import {
   type Change,
   type Range,
 } from '../investments/history'
-import { closePlaidLink, openPlaidLink } from '../plaid/plaidLink'
+import { closePlaidLink, linkItem } from '../plaid/plaidLink'
 
 const NET_WORTH_COLOR = '#171717'
 
@@ -94,10 +91,6 @@ const history = ref<BalanceHistory>()
 const linking = ref(false)
 const linkError = ref('')
 const sameInstitution = ref<PlaidItem[]>([])
-const addingItemId = ref<string>()
-const addError = ref('')
-// Outlives the connection it's about, which leaves the list once it's known not to offer investments.
-const addNote = ref('')
 // The account the big chart shows instead of net worth, if the user picked one.
 const focusedId = ref<string>()
 const figure = useTemplateRef<HTMLElement>('figure')
@@ -209,19 +202,15 @@ function focus(id: string) {
   if (focusedId.value) figure.value?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
 }
 
-// Unknown availability still shows; trying finds out, and banks without investments drop off.
-const itemsWithoutInvestments = computed(() =>
-  items.value.filter((item) => !item.investments && item.investments_available !== false),
-)
-
-onMounted(load)
+onMounted(() => load())
 onUnmounted(() => {
   disposed = true
   closePlaidLink()
 })
 
-async function load() {
-  loading.value = true
+/** In place keeps the page showing while it reloads, as after adding investments to a connection. */
+async function load({ inPlace = false } = {}) {
+  if (!inPlace) loading.value = true
   loadError.value = false
   try {
     const [linked, stored, balances] = await Promise.all([
@@ -301,50 +290,14 @@ async function linkInvestmentAccount() {
   linking.value = true
   linkError.value = ''
   try {
-    const publicToken = await openPlaidLink(await createLinkToken({ investments: true }))
-    if (disposed || !publicToken) return
-    const result = await exchangePublicToken(publicToken)
-    if (disposed) return
+    const result = await linkItem({ investments: true })
+    if (disposed || !result) return
     sameInstitution.value = result.same_institution
     await load()
   } catch {
     if (!disposed) linkError.value = 'We couldn’t connect that account. Please try again.'
   } finally {
     if (!disposed) linking.value = false
-  }
-}
-
-/**
- * Retries with Link update mode if the holdings check fails, then reloads page data. A bank that
- * doesn't offer investments leaves the list with a note saying so.
- */
-async function addInvestmentsTo(item: PlaidItem) {
-  if (addingItemId.value) return
-  addingItemId.value = item.item_id
-  addError.value = ''
-  addNote.value = ''
-  const institution = item.institution_name ?? 'that institution'
-  try {
-    let result = await addInvestments(item.item_id)
-    if (result.outcome === 'needs_consent' && result.link_token) {
-      // Plaid needs the user's consent first; update mode asks for it on the same connection.
-      const finished = await openPlaidLink(result.link_token)
-      if (disposed || !finished) return
-      result = await addInvestments(item.item_id)
-    }
-    if (disposed) return
-    if (result.outcome === 'not_offered') {
-      addNote.value = `${item.institution_name ?? 'That institution'} doesn’t offer investment accounts through Plaid.`
-    } else if (result.outcome !== 'added') {
-      addError.value = `${item.institution_name ?? 'That institution'} didn’t share any investment accounts.`
-      return
-    }
-    await load()
-  } catch {
-    if (!disposed)
-      addError.value = `We couldn’t add investments from ${institution}. Please try again.`
-  } finally {
-    if (!disposed) addingItemId.value = undefined
   }
 }
 
@@ -400,7 +353,7 @@ function changeIcon(change: Change) {
         <div class="prompt-content">
           <h2 id="load-error-heading">We couldn’t load your investments.</h2>
           <p>Check your connection and try again.</p>
-          <Button label="Try again" severity="secondary" @click="load" />
+          <Button label="Try again" severity="secondary" @click="load()" />
         </div>
       </section>
 
@@ -618,41 +571,7 @@ function changeIcon(change: Change) {
           </ul>
         </section>
 
-        <Message v-if="addNote && !itemsWithoutInvestments.length" severity="secondary">
-          {{ addNote }}
-        </Message>
-
-        <section
-          v-if="itemsWithoutInvestments.length"
-          class="panel connections"
-          aria-labelledby="connections-heading"
-        >
-          <div class="connections-heading">
-            <h2 id="connections-heading" class="section-heading">Already connected</h2>
-            <InfoTip
-              label="About adding investments"
-              text="Add investments to a connection you already have instead of linking it again. Linking the same institution twice counts its accounts twice."
-            />
-          </div>
-          <Message v-if="addError" severity="error" size="small">{{ addError }}</Message>
-          <Message v-else-if="addNote" severity="secondary" size="small">{{ addNote }}</Message>
-          <ul class="connection-list">
-            <li v-for="item in itemsWithoutInvestments" :key="item.item_id" class="connection">
-              <span class="connection-name">
-                <Landmark :size="16" :stroke-width="1.75" aria-hidden="true" />
-                {{ item.institution_name ?? 'Connected institution' }}
-              </span>
-              <Button
-                label="Add investments"
-                size="small"
-                severity="secondary"
-                :loading="addingItemId === item.item_id"
-                :disabled="addingItemId != null"
-                @click="addInvestmentsTo(item)"
-              />
-            </li>
-          </ul>
-        </section>
+        <AddInvestments :items="items" @added="load({ inPlace: true })" />
       </template>
     </main>
   </div>
@@ -1046,40 +965,6 @@ h1 {
   font-weight: 550;
   letter-spacing: -0.02em;
   white-space: nowrap;
-}
-
-.connections {
-  display: grid;
-  gap: 0.75rem;
-  padding: 1.125rem 1.25rem;
-}
-
-.connections-heading {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.connection-list {
-  display: grid;
-  padding: 0;
-  list-style: none;
-}
-
-.connection {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.625rem 0;
-  border-top: 1px solid var(--app-divider);
-}
-
-.connection-name {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
 }
 
 @media (max-width: 900px) {

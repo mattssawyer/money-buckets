@@ -31,7 +31,14 @@ const items: MenuItem[] = [
   >
     <span aria-hidden="true">{{ initial }}</span>
   </button>
-  <Menu id="user-menu" ref="menu" :model="items" popup />
+  <!-- The popup sits on the page body, out of reach of scoped styles, so its gap is set here. -->
+  <Menu
+    id="user-menu"
+    ref="menu"
+    :model="items"
+    popup
+    :pt="{ root: { style: { marginTop: '0.375rem' } } }"
+  />
 </template>
 
 <style scoped>
