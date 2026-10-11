@@ -16,6 +16,23 @@ import java.util.UUID;
 
 public interface PlaidItemRepository extends JpaRepository<PlaidItem, String> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM PlaidItem i WHERE i.itemId = :itemId")
+    Optional<PlaidItem> lockById(@Param("itemId") String itemId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE PlaidItem i SET i.transactionsEnabled = :enabled WHERE i.itemId = :itemId")
+    void updateTransactionsEnabled(@Param("itemId") String itemId, @Param("enabled") Boolean enabled);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE PlaidItem i SET i.transactionHistoryReady = true WHERE i.itemId = :itemId")
+    void markTransactionHistoryReady(@Param("itemId") String itemId);
+
+    @Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE PlaidItem i SET i.registeredWebhookUrl = :url WHERE i.itemId = :itemId")
+    void markWebhookRegistered(@Param("itemId") String itemId, @Param("url") String url);
+
     List<PlaidItem> findAllByRemovedOnIsNull();
 
     List<PlaidItem> findAllByUserIdOrderByItemIdAsc(UUID userId);

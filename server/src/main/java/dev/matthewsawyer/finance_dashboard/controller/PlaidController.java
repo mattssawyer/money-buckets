@@ -118,8 +118,7 @@ public class PlaidController {
     }
 
     /**
-     * Requests transactions by default; investment links require investments and make
-     * transactions optional.
+     * Requests transactions by default; investment links request only investments.
      */
     @PostMapping("/create-link-token")
     public Map<String, String> createLinkToken(

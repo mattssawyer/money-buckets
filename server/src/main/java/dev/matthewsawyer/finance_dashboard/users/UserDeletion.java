@@ -44,6 +44,7 @@ public class UserDeletion {
             "DELETE FROM transactions WHERE user_id = ?",
             "DELETE FROM recurring_streams WHERE user_id = ?",
             "DELETE FROM accounts WHERE user_id = ?",
+            "DELETE FROM plaid_sync_jobs WHERE item_id IN (SELECT item_id FROM plaid_items WHERE user_id = ?)",
             "DELETE FROM plaid_items WHERE user_id = ?",
             "DELETE FROM users WHERE id = ?");
 

@@ -37,6 +37,19 @@ public class PlaidItem {
     @Column(name = "institution_name")
     private String institutionName;
 
+    @Column(name = "transactions_enabled")
+    private Boolean transactionsEnabled;
+
+    @Column(name = "transaction_history_ready", nullable = false)
+    private boolean transactionHistoryReady;
+
+    @Column(name = "registered_webhook_url")
+    private String registeredWebhookUrl;
+
+    public Boolean getTransactionsEnabled() { return transactionsEnabled; }
+    public boolean isTransactionHistoryReady() { return transactionHistoryReady; }
+    public String getRegisteredWebhookUrl() { return registeredWebhookUrl; }
+
     /** Whether the item has Plaid's investments product, which Plaid bills per item. */
     @Column(nullable = false)
     private boolean investments;

@@ -43,7 +43,29 @@ class PlaidWebhookControllerTests {
 
         controller.receiveWebhook(SYNC_BODY, SIGNATURE);
 
-        verify(itemSync).notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+        verify(itemSync).notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null, false);
+    }
+
+    @Test
+    void acceptsPlaidsDocumentedRecurringPayload() {
+        String body = """
+                {"webhook_type":"TRANSACTIONS","webhook_code":"RECURRING_TRANSACTIONS_UPDATE",
+                 "item_id":"item-id","account_ids":["checking"],"environment":"sandbox"}
+                """;
+        when(webhookVerifier.isValid(body, SIGNATURE)).thenReturn(true);
+        controller.receiveWebhook(body, SIGNATURE);
+        verify(itemSync).notified("item-id", "TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null, false);
+    }
+
+    @Test
+    void forwardsHistoryReadinessToWakeInitialization() {
+        String body = """
+                {"webhook_type":"TRANSACTIONS","webhook_code":"SYNC_UPDATES_AVAILABLE",
+                 "item_id":"item-id","initial_update_complete":true,"historical_update_complete":true}
+                """;
+        when(webhookVerifier.isValid(body, SIGNATURE)).thenReturn(true);
+        controller.receiveWebhook(body, SIGNATURE);
+        verify(itemSync).notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null, true);
     }
 
     @Test
@@ -55,7 +77,7 @@ class PlaidWebhookControllerTests {
 
         controller.receiveWebhook(body, SIGNATURE);
 
-        verify(itemSync).notified("item-id", "ITEM", "ERROR", "ITEM_LOGIN_REQUIRED");
+        verify(itemSync).notified("item-id", "ITEM", "ERROR", "ITEM_LOGIN_REQUIRED", false);
     }
 
     @Test

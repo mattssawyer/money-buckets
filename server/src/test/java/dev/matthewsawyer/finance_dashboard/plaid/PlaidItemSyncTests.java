@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.scheduling.TaskScheduler;
+
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -55,7 +55,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ScheduledFuture;
+
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -64,6 +64,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -95,14 +97,14 @@ class PlaidItemSyncTests {
     @Autowired private BalanceHistory balanceHistory;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
+    @Autowired private PlaidSyncJobs jobs;
+    @Autowired private PlaidSyncJobRepository jobRepository;
+    @Autowired private PlaidItemLocks locks;
+    private final MutableClock clock = new MutableClock();
 
     /** Webhook syncs are queued here and run when the test says so. */
     private final List<Runnable> queued = new ArrayList<>();
     private final BucketSorting bucketSorting = mock(BucketSorting.class);
-    /** Recurring re-checks, with how long each waits, held until the test runs them. */
-    private final List<Runnable> retries = new ArrayList<>();
-    private final List<Duration> retryDelays = new ArrayList<>();
-    private final List<ScheduledFuture<?>> retryFutures = new ArrayList<>();
     private PlaidItemSync itemSync;
     private UUID userId;
 
@@ -110,7 +112,7 @@ class PlaidItemSyncTests {
     void setUp() throws IOException {
         itemSync = new PlaidItemSync(
                 items, accountsSync, transactionsSync, recurringStreamsSync, bucketSorting, balanceHistory,
-                CLOCK, transactionTemplate, queued::add, retryScheduler());
+                clock, transactionTemplate, queued::add, jobs, locks, plaidApi, tokenEncryption);
         userId = users.saveAndFlush(new User("item-sync-test-user")).getId();
         items.saveAndFlush(new PlaidItem(
                 ITEM_ID, tokenEncryption.encrypt("access-token", userId, ITEM_ID), userId));
@@ -172,15 +174,15 @@ class PlaidItemSyncTests {
     }
 
     @Test
-    void stillSyncsTransactionsWhenPlaidCannotListTheAccounts() throws IOException {
+    void unknownProductsDoNotActivateTransactionsWhenAccountsFail() throws IOException {
         stubAccountsFailure();
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurring(recurringResponse());
 
         itemSync.linked(storedItem());
 
-        assertEquals(List.of("txn-1"), transactionIds());
-        assertEquals(List.of("rent"), streamIds());
+        verify(plaidApi, never()).transactionsSync(any());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
     }
 
     @Test
@@ -210,14 +212,14 @@ class PlaidItemSyncTests {
     }
 
     @Test
-    void stillSyncsStreamsWhenTheTransactionsSyncFails() throws IOException {
+    void doesNotBootstrapRecurringBeforeHistoryIsReady() throws IOException {
         stubTransactionsSyncFailure();
         stubRecurring(recurringResponse());
 
         itemSync.linked(storedItem());
 
         assertTrue(transactionIds().isEmpty());
-        assertEquals(List.of("rent"), streamIds());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
     }
 
     @Test
@@ -235,14 +237,17 @@ class PlaidItemSyncTests {
 
     @Test
     void syncsOnlyStreamsWhenPlaidReportsARecurringUpdate() throws IOException {
+        items.updateTransactionsEnabled(ITEM_ID, true);
+        items.markTransactionHistoryReady(ITEM_ID);
         stubRecurring(recurringResponse());
 
-        itemSync.notified(ITEM_ID, "RECURRING_TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null);
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null);
         runQueued();
 
         assertEquals(List.of("rent"), streamIds());
         verify(plaidApi, never()).transactionsSync(any());
         verifyNoInteractions(bucketSorting);
+        verify(plaidApi, never()).accountsGet(any());
     }
 
     @Test
@@ -297,91 +302,120 @@ class PlaidItemSyncTests {
     }
 
     @Test
-    void checksAgainLaterWhilePlaidHasNoRecurringStreams() throws IOException {
+    void successfulEmptyRecurringResultsDoNotRetry() throws IOException {
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurring(noStreams());
-
         itemSync.linked(storedItem());
-
-        assertTrue(streamIds().isEmpty());
-        assertEquals(List.of(Duration.ofMinutes(2)), retryDelays);
-
-        stubRecurring(recurringResponse());
-        runRetries();
-
-        assertEquals(List.of("rent"), streamIds());
-        assertEquals(List.of(Duration.ofMinutes(2)), retryDelays);
+        clock.advance(Duration.ofHours(3));
+        itemSync.syncAll();
+        runQueued();
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+        assertTrue(jobRepository.findById(ITEM_ID + ":RECURRING").orElseThrow().lastSuccess != null);
     }
 
     @Test
-    void checksAgainLaterWhenPlaidSaysRecurringStreamsAreNotReady() throws IOException {
+    void productNotReadyRetriesPersistAndWebhooksCannotBypassBackoff() throws IOException {
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurringNotReady();
-
         itemSync.linked(storedItem());
-
-        assertEquals(List.of(Duration.ofMinutes(2)), retryDelays);
+        var failed = jobRepository.findById(ITEM_ID + ":RECURRING").orElseThrow();
+        assertEquals(1, failed.failures);
+        assertTrue(failed.nextAttempt.isAfter(clock.instant()));
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null);
+        runQueued();
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+        clock.advance(Duration.ofMinutes(3));
+        itemSync = new PlaidItemSync(items, accountsSync, transactionsSync, recurringStreamsSync,
+                bucketSorting, balanceHistory, clock, transactionTemplate, queued::add, jobs, locks, plaidApi, tokenEncryption);
+        stubRecurring(recurringResponse());
+        itemSync.syncAll();
+        runQueued();
+        assertEquals(List.of("rent"), streamIds());
+        verify(plaidApi, times(2)).transactionsRecurringGet(any());
     }
 
     @Test
-    void waitsLongerBetweenChecksAndThenStops() throws IOException {
+    void manualRecurringRefreshHasAServerSideCooldown() throws IOException {
         stubTransactionsSync(transactionsPage("cursor-1"));
         stubRecurring(noStreams());
-
         itemSync.linked(storedItem());
-        for (int i = 0; i < 5; i++) {
-            runRetries();
-        }
-
-        assertEquals(List.of(Duration.ofMinutes(2), Duration.ofMinutes(10), Duration.ofMinutes(30),
-                Duration.ofHours(2)), retryDelays);
-        assertTrue(retries.isEmpty());
+        stubRecurring(recurringResponse());
+        itemSync.recheckRecurring(ITEM_ID);
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+        clock.advance(Duration.ofMinutes(16));
+        itemSync.recheckRecurring(ITEM_ID);
+        assertEquals(List.of("rent"), streamIds());
+        verify(plaidApi, times(2)).transactionsRecurringGet(any());
+        verify(plaidApi, times(1)).accountsGet(any());
     }
 
     @Test
-    void keepsOneCheckPendingWhenAWebhookAlsoFindsNoStreams() throws IOException {
-        stubTransactionsSync(transactionsPage("cursor-1"));
-        stubRecurring(noStreams());
+    void recurringFailureIsReportedAndRepeatedManualRequestsAreThrottled() throws IOException {
+        items.updateTransactionsEnabled(ITEM_ID, true);
+        items.markTransactionHistoryReady(ITEM_ID);
+        stubRecurringNotReady();
+        assertThrows(PlaidRequestException.class, () -> itemSync.recheckRecurring(ITEM_ID));
+        itemSync.recheckRecurring(ITEM_ID);
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+    }
 
+    @Test
+    void duplicateWebhooksCoalesceAndDoNotRefetchRecurringOrFreshAccounts() throws IOException {
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
         itemSync.linked(storedItem());
+        clearInvocations(plaidApi);
+        for (int i = 0; i < 20; i++) itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+        assertEquals(1, queued.size());
+        runQueued();
+        verify(plaidApi, times(1)).transactionsSync(any());
+        verify(plaidApi, never()).accountsGet(any());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
+    }
+
+    @Test
+    void freshItemsDoNotSyncOnRestartAndOnlyOverdueScopesRun() throws IOException {
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+        itemSync.linked(storedItem());
+        clearInvocations(plaidApi);
+        itemSync.syncAll();
+        runQueued();
+        verifyNoInteractions(plaidApi);
+        clock.advance(Duration.ofHours(7));
+        itemSync.syncAll();
+        runQueued();
+        verify(plaidApi, times(1)).accountsGet(any());
+        verify(plaidApi, never()).transactionsSync(any());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
+        clock.advance(Duration.ofHours(18));
+        itemSync.syncAll();
+        runQueued();
+        verify(plaidApi, times(1)).transactionsSync(any());
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+    }
+
+    @Test
+    void loginRequiredItemsAreNotPolled() {
+        items.markReconnect(ITEM_ID, Reconnect.LOGIN_REQUIRED);
+        itemSync.syncAll();
         itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
         runQueued();
-
-        assertEquals(1, retries.size());
+        verifyNoInteractions(plaidApi);
     }
 
     @Test
-    void recheckingOnRequestStoresStreamsPlaidHasSinceFound() throws IOException {
+    void acknowledgedWorkSurvivesAnExecutorRejection() throws IOException {
         stubTransactionsSync(transactionsPage("cursor-1"));
-        stubRecurring(noStreams());
-        itemSync.linked(storedItem());
-
         stubRecurring(recurringResponse());
-        itemSync.recheckRecurring(ITEM_ID);
-
-        assertEquals(List.of("rent"), streamIds());
-        verify(plaidApi).transactionsSync(any());
-    }
-
-    @Test
-    void recheckingOnRequestReportsWhenPlaidFails() throws IOException {
-        stubTransactionsSync(transactionsPage("cursor-1"));
-        stubRecurringNotReady();
-
-        assertThrows(PlaidRequestException.class, () -> itemSync.recheckRecurring(ITEM_ID));
-        assertEquals(List.of(Duration.ofMinutes(2)), retryDelays);
-    }
-
-    @Test
-    void cancelsThePendingCheckOnceStreamsTurnUp() throws IOException {
-        stubTransactionsSync(transactionsPage("cursor-1"));
-        stubRecurring(noStreams());
-        itemSync.linked(storedItem());
-
-        stubRecurring(recurringResponse());
-        itemSync.recheckRecurring(ITEM_ID);
-
-        verify(retryFutures.get(0)).cancel(false);
+        PlaidItemSync full = new PlaidItemSync(items, accountsSync, transactionsSync, recurringStreamsSync,
+                bucketSorting, balanceHistory, clock, transactionTemplate,
+                task -> { throw new java.util.concurrent.RejectedExecutionException(); }, jobs, locks, plaidApi, tokenEncryption);
+        full.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+        assertTrue(jobRepository.findById(ITEM_ID + ":TRANSACTIONS").orElseThrow().pending());
+        itemSync.syncAll();
+        runQueued();
+        assertEquals(List.of("txn-1"), transactionIds());
     }
 
     @Test
@@ -448,7 +482,7 @@ class PlaidItemSyncTests {
         itemSync.linked(storedItem());
 
         assertNull(storedItem().getReconnect());
-        assertEquals(List.of("txn-1"), transactionIds());
+        verify(plaidApi, never()).transactionsSync(any());
     }
 
     @Test
@@ -471,6 +505,92 @@ class PlaidItemSyncTests {
         itemSync.linked(storedItem());
 
         assertEquals(Reconnect.EXPIRING, storedItem().getReconnect());
+    }
+
+    @Test
+    void aWebhookArrivingDuringWorkRemainsPendingAfterCompletion() {
+        jobs.request(ITEM_ID, PlaidSyncJob.Scope.TRANSACTIONS, "webhook", clock.instant(), null, false);
+        var running = jobs.start(ITEM_ID, PlaidSyncJob.Scope.TRANSACTIONS, clock.instant());
+        jobs.request(ITEM_ID, PlaidSyncJob.Scope.TRANSACTIONS, "webhook", clock.instant(), null, false);
+        jobs.succeed(running, clock.instant());
+        var pending = jobRepository.findById(ITEM_ID + ":TRANSACTIONS").orElseThrow();
+        assertTrue(pending.pending());
+        assertEquals(1, pending.completed);
+        assertEquals(2, pending.requested);
+    }
+
+    @Test
+    void anUnrunWebhookIsRecoveredByANewServiceInstance() throws IOException {
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(recurringResponse());
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+        queued.clear(); // Simulate the process exiting before the executor ran.
+        itemSync = new PlaidItemSync(items, accountsSync, transactionsSync, recurringStreamsSync,
+                bucketSorting, balanceHistory, clock, transactionTemplate, queued::add, jobs, locks, plaidApi, tokenEncryption);
+        itemSync.syncAll();
+        runQueued();
+        assertEquals(List.of("txn-1"), transactionIds());
+        assertTrue(!jobRepository.findById(ITEM_ID + ":TRANSACTIONS").orElseThrow().pending());
+    }
+
+    @Test
+    void retryBudgetDoesNotResetAfterExhaustion() throws IOException {
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurringNotReady();
+        itemSync.linked(storedItem());
+        for (int attempt = 0; attempt < 4; attempt++) {
+            var job = jobRepository.findById(ITEM_ID + ":RECURRING").orElseThrow();
+            clock.now = job.nextAttempt.plusSeconds(1);
+            itemSync.syncAll();
+            runQueued();
+        }
+        var exhausted = jobRepository.findById(ITEM_ID + ":RECURRING").orElseThrow();
+        assertEquals(5, exhausted.failures);
+        assertTrue(!exhausted.nextAttempt.isBefore(clock.instant().plus(Duration.ofDays(1))));
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "RECURRING_TRANSACTIONS_UPDATE", null);
+        runQueued();
+        verify(plaidApi, times(5)).transactionsRecurringGet(any());
+    }
+
+    @Test
+    void newInvestmentOnlyItemsNeverFetchTransactionProducts() throws IOException {
+        stubAccounts(List.of(Products.INVESTMENTS));
+        itemSync.linked(storedItem());
+        clock.advance(Duration.ofDays(2));
+        itemSync.syncAll();
+        runQueued();
+        itemSync.recheckRecurring(ITEM_ID);
+        verify(plaidApi, never()).transactionsSync(any());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
+    }
+
+    @Test
+    void initializationWaitsForHistoricalDataBeforeRequestingRecurring() throws IOException {
+        stubTransactionsSync(transactionsPage("initial").transactionsUpdateStatus(
+                com.plaid.client.model.TransactionsUpdateStatus.INITIAL_UPDATE_COMPLETE));
+        itemSync.linked(storedItem());
+        verify(plaidApi, never()).transactionsRecurringGet(any());
+        stubTransactionsSync(transactionsPage("historical"));
+        stubRecurring(noStreams());
+        itemSync.notified(ITEM_ID, "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null, true);
+        runQueued();
+        verify(plaidApi, times(1)).transactionsRecurringGet(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void repairsExistingWebhookRegistrationOnce() throws IOException {
+        stubTransactionsSync(transactionsPage("cursor-1"));
+        stubRecurring(noStreams());
+        org.springframework.test.util.ReflectionTestUtils.setField(itemSync, "webhookUrl", "https://example.com/api/plaid/webhook");
+        Call<com.plaid.client.model.ItemWebhookUpdateResponse> call = mock(Call.class);
+        when(call.execute()).thenReturn(Response.success(new com.plaid.client.model.ItemWebhookUpdateResponse()));
+        when(plaidApi.itemWebhookUpdate(any())).thenReturn(call);
+        itemSync.linked(storedItem());
+        itemSync.syncAll();
+        runQueued();
+        assertEquals("https://example.com/api/plaid/webhook", storedItem().getRegisteredWebhookUrl());
+        verify(plaidApi, times(1)).itemWebhookUpdate(any());
     }
 
     private void runQueued() {
@@ -516,25 +636,16 @@ class PlaidItemSyncTests {
                         .amount(12.34)
                         .date(LocalDate.of(2026, 9, 1))))
                 .nextCursor(nextCursor)
+                .transactionsUpdateStatus(com.plaid.client.model.TransactionsUpdateStatus.HISTORICAL_UPDATE_COMPLETE)
                 .hasMore(false);
     }
 
-    private TaskScheduler retryScheduler() {
-        TaskScheduler scheduler = mock(TaskScheduler.class);
-        doAnswer(invocation -> {
-            retries.add(invocation.getArgument(0));
-            retryDelays.add(Duration.between(CLOCK.instant(), invocation.<Instant>getArgument(1)));
-            ScheduledFuture<?> future = mock(ScheduledFuture.class);
-            retryFutures.add(future);
-            return future;
-        }).when(scheduler).schedule(any(Runnable.class), any(Instant.class));
-        return scheduler;
-    }
-
-    private void runRetries() {
-        List<Runnable> due = List.copyOf(retries);
-        retries.clear();
-        due.forEach(Runnable::run);
+    private static class MutableClock extends Clock {
+        private Instant now = CLOCK.instant();
+        void advance(Duration duration) { now = now.plus(duration); }
+        public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+        public Clock withZone(java.time.ZoneId zone) { return Clock.fixed(now, zone); }
+        public Instant instant() { return now; }
     }
 
     private static TransactionsRecurringGetResponse noStreams() {

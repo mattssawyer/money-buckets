@@ -58,15 +58,12 @@ public class PlaidItemLinking {
 
     /**
      * Like {@link #createLinkToken}, for linking investment accounts. Investments is required, so
-     * Link shows institutions such as 401(k) providers that have no transactions; transactions
-     * are added wherever the institution supports them. Plaid bills investments per item, so
-     * only these links ask for it.
+     * Link shows institutions such as 401(k) providers that have no transactions. Do not add
+     * optional Transactions: it activates a separate subscription even if never used.
      */
     public String createInvestmentsLinkToken(UUID userId) {
         return requestLinkToken(linkTokenRequest(userId)
-                .products(List.of(Products.INVESTMENTS))
-                .optionalProducts(List.of(Products.TRANSACTIONS))
-                .transactions(new LinkTokenTransactions().daysRequested(DAYS_OF_HISTORY)));
+                .products(List.of(Products.INVESTMENTS)));
     }
 
     private static LinkTokenCreateRequest linkTokenRequest(UUID userId) {
@@ -78,8 +75,7 @@ public class PlaidItemLinking {
     }
 
     private String requestLinkToken(LinkTokenCreateRequest request) {
-        // Items linked without a URL never receive webhooks, so local runs without a tunnel
-        // only sync at link time.
+        // Without a public URL, local runs rely on the scheduled recovery checks.
         if (!webhookUrl.isBlank()) {
             request.webhook(webhookUrl);
         }
@@ -100,8 +96,8 @@ public class PlaidItemLinking {
                         new ItemPublicTokenExchangeRequest().publicToken(publicToken)),
                 "token exchange");
 
-        // Plaid returns the same item_id when an institution is re-linked, so this upserts
-        // onto the existing row to keep its transactions cursor.
+        // Preserve a known Item's cursor. A fresh Link can create a different Item at the same
+        // institution; the duplicate review below lets the user resolve that safely.
         String encryptedToken = tokenEncryption.encrypt(
                 exchange.getAccessToken(), userId, exchange.getItemId());
         PlaidItem item = plaidItemRepository.findByItemIdAndUserId(exchange.getItemId(), userId)
@@ -202,7 +198,12 @@ public class PlaidItemLinking {
     public void remove(UUID userId, String itemId) {
         PlaidItem item = activeItem(userId, itemId);
         String accessToken = tokenEncryption.decrypt(item.getEncryptedAccessToken(), userId, itemId);
-        PlaidCalls.execute(plaidApi.itemRemove(new ItemRemoveRequest().accessToken(accessToken)), "item remove");
+        try {
+            PlaidCalls.execute(plaidApi.itemRemove(new ItemRemoveRequest().accessToken(accessToken)), "item remove");
+        } catch (PlaidRequestException e) {
+            // A previous removal may have succeeded remotely before its local commit failed.
+            if (!"ITEM_NOT_FOUND".equals(e.getErrorCode())) throw e;
+        }
         itemSync.removed(itemId);
     }
 

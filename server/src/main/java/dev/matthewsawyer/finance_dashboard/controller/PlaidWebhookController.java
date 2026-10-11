@@ -62,7 +62,8 @@ public class PlaidWebhookController {
                 payload.itemId());
 
         itemSync.notified(payload.itemId(), payload.webhookType(), payload.webhookCode(),
-                payload.error() == null ? null : payload.error().errorCode());
+                payload.error() == null ? null : payload.error().errorCode(),
+                Boolean.TRUE.equals(payload.historicalUpdateComplete()));
     }
 
     private WebhookPayload parse(String rawBody) {
@@ -78,7 +79,8 @@ public class PlaidWebhookController {
             @JsonProperty("webhook_type") String webhookType,
             @JsonProperty("webhook_code") String webhookCode,
             @JsonProperty("item_id") String itemId,
-            @JsonProperty("error") WebhookError error
+            @JsonProperty("error") WebhookError error,
+            @JsonProperty("historical_update_complete") Boolean historicalUpdateComplete
     ) {
     }
 
