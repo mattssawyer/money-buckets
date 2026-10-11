@@ -38,17 +38,22 @@ vi.mock('../../plaid/plaidLink', () => ({
   openPlaidLink: vi.fn<() => Promise<string | null>>(),
 }))
 
-// The plan editor is covered by its own tests; here it only needs to report a save.
-vi.mock('../../components/SpendingPlanSetup.vue', () => ({
+// The plan editor is covered by its own tests; here it only needs to open and report a save.
+vi.mock('../../components/SpendingPlanDialog.vue', () => ({
   default: {
-    name: 'SpendingPlanSetup',
-    props: ['saved', 'replacing', 'focusBuffer'],
-    emits: ['saved'],
+    name: 'SpendingPlanDialog',
+    props: ['visible', 'header', 'saved', 'replacing', 'focusBuffer'],
+    emits: ['update:visible', 'saved'],
     template: '<div class="setup-stub" />',
   },
 }))
 
 enableAutoUnmount(afterEach)
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 const chase: PlaidItem = {
   item_id: 'chase-item',
@@ -166,12 +171,12 @@ describe('welcome page', () => {
     expect(wrapper.text()).toContain('We couldn’t connect that account. Please try again.')
   })
 
-  it('lets the user skip the plan', async () => {
+  it('leaves the plan for later', async () => {
     vi.mocked(getLinkedItems).mockResolvedValue([chase])
     const { wrapper, router } = await mountAt('/welcome?step=plan')
 
-    expect(heading(wrapper)).toBe('Make your spending plan')
-    await button(wrapper, 'Skip for now').trigger('click')
+    expect(heading(wrapper)).toBe('Your spending plan')
+    await button(wrapper, 'Set it up later').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.query.step).toBe('investments')
@@ -182,7 +187,11 @@ describe('welcome page', () => {
     vi.mocked(getLinkedItems).mockResolvedValue([chase])
     const { wrapper, router } = await mountAt('/welcome?step=plan')
 
-    wrapper.findComponent({ name: 'SpendingPlanSetup' }).vm.$emit('saved', {})
+    await button(wrapper, 'Make it now').trigger('click')
+    const dialog = wrapper.findComponent({ name: 'SpendingPlanDialog' })
+    expect(dialog.props('visible')).toBe(true)
+
+    dialog.vm.$emit('saved', {})
     await flushPromises()
 
     expect(router.currentRoute.value.query.step).toBe('investments')
@@ -196,6 +205,23 @@ describe('welcome page', () => {
     await flushPromises()
 
     expect(finishOnboarding).toHaveBeenCalled()
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('shows that setup is done for a moment before Home', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    vi.mocked(getLinkedItems).mockResolvedValue([chase])
+    const { wrapper, router } = await mountAt('/welcome?step=investments')
+    vi.useFakeTimers()
+
+    await button(wrapper, 'Skip and finish').trigger('click')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(heading(wrapper)).toBe('You’re all set')
+    expect(router.currentRoute.value.name).toBe('welcome')
+
+    await vi.advanceTimersByTimeAsync(1400)
+
     expect(router.currentRoute.value.name).toBe('home')
   })
 

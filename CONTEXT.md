@@ -7,7 +7,7 @@ A personal finance dashboard that pulls a user's bank data from Plaid and helps 
 ### Getting started
 
 **Onboarding**:
-The steps a new user goes through before the app opens on Home: connecting at least one bank, choosing which accounts count, making a spending plan, and linking investment accounts. Only connecting a bank is required; the plan and investments can be skipped and done later from their own pages. Once finished it isn't shown again, and users who had already linked a bank before it existed skip it.
+The steps a new user goes through before the app opens on Home: connecting at least one bank, choosing which accounts count, meeting the spending plan, and linking investment accounts. Only connecting a bank is required. The plan step only introduces the plan: making it can wait, since the user's bills take a few hours to arrive, and Home shows it as a to-do until there is one. Once finished it isn't shown again, and users who had already linked a bank before it existed skip it.
 _Avoid_: Setup wizard, first run
 
 ### Bank data

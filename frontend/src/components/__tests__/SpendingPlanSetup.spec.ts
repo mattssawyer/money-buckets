@@ -323,7 +323,25 @@ describe('spending plan setup', () => {
     expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
   })
 
-  it('lists bills on no line and adds one to the line the user picks', async () => {
+  it('keeps bills on no line folded behind a note until the user asks to place them', async () => {
+    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup()
+    await flushPromises()
+
+    const list = wrapper.get('[aria-labelledby="unplaced-heading"]')
+    expect(list.isVisible()).toBe(false)
+    const toggle = wrapper.findAll('.note-action').find((button) => button.text() === 'Place')!
+    expect(toggle.element.closest('p')!.textContent).toContain(
+      '1 recurring payment isn’t on a line',
+    )
+
+    await toggle.trigger('click')
+
+    expect(list.isVisible()).toBe(true)
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('lists bills on no line and puts one on the line the user picks', async () => {
     vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
     const wrapper = mountSetup()
     await flushPromises()
@@ -331,29 +349,13 @@ describe('spending plan setup', () => {
     const list = wrapper.get('[aria-labelledby="unplaced-heading"]')
     expect(list.text()).toContain('Sterling Group')
     expect(list.text()).toContain('$1,554.91/mo')
-    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
 
     const select = wrapper.get('[aria-label="Line for Sterling Group"]')
     const rentRow = select.findAll('option').find((option) => option.text() === 'Rent/mortgage')
     await select.setValue(rentRow!.attributes('value'))
-    await wrapper.get('[aria-label="Add Sterling Group"]').trigger('click')
 
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1554.91')
     expect(wrapper.find('[aria-labelledby="unplaced-heading"]').exists()).toBe(false)
-  })
-
-  it('asks for another line when the one picked for a bill is removed', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
-    const wrapper = mountSetup()
-    await flushPromises()
-
-    const select = wrapper.get('[aria-label="Line for Sterling Group"]')
-    const utilities = select.findAll('option').find((option) => option.text() === 'Utilities')
-    await select.setValue(utilities!.attributes('value'))
-    await wrapper.get('[aria-label="Remove Utilities"]').trigger('click')
-
-    expect(wrapper.get('[aria-label="Add Sterling Group"]').attributes('disabled')).toBeDefined()
-    expect((select.element as HTMLSelectElement).value).toBe('')
   })
 
   it('lets the user skip a bill that belongs on no line', async () => {
@@ -367,17 +369,13 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').element).toHaveProperty('value', '')
   })
 
-  it('estimates from every tracked account and links to choosing them', async () => {
+  it('estimates from every tracked account', async () => {
     const wrapper = mountSetup()
     await flushPromises()
 
     expect(getRecurringTransactions).toHaveBeenCalledWith(undefined, 50)
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
-    expect(wrapper.get('.autofill-note').text()).toBe(
-      'Amounts are filled in from your tracked accounts’ recurring transactions and what you usually spend. Choose accounts',
-    )
-    expect(wrapper.get('.autofill-note a').attributes('href')).toBe('/accounts')
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
     expect(wrapper.get('[aria-label="Utilities amount"]').element).toHaveProperty('value', '')
     expect(wrapper.find('[aria-label="Landlord name"]').exists()).toBe(false)
@@ -438,12 +436,10 @@ describe('spending plan setup', () => {
 
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
     expect(wrapper.get('[aria-label="Subscriptions amount"]').element).toHaveProperty('value', '')
-    const notes = wrapper.findAll('.autofill-note')
-    expect(notes[1]?.text().replace(/\s+/g, ' ')).toBe(
-      '1 payment might be recurring. Confirm them to fill them in. Review them',
-    )
+    const note = wrapper.findAll('.plan-note').find((row) => row.text().includes('recurring'))!
+    expect(note.text().replace(/\s+/g, ' ')).toBe('1 payment might be recurring Review')
 
-    await notes[1]?.get('button').trigger('click')
+    await note.get('button').trigger('click')
     const dialog = wrapper.getComponent(RecurringDialog)
     expect(dialog.props('visible')).toBe(true)
     expect(dialog.props('startOn')).toBe('possible')
@@ -499,7 +495,7 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Utilities amount"]').element).toHaveProperty('value', '')
     expect(wrapper.get('[aria-label="Groceries amount"]').element).toHaveProperty('value', '500')
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5000')
-    expect(wrapper.findAll('.autofill-note')).toHaveLength(1)
+    expect(wrapper.findAll('.plan-note')).toHaveLength(0)
   })
 
   it('leaves a bill the user skipped off the plan after recurring answers', async () => {
@@ -567,7 +563,7 @@ describe('spending plan setup', () => {
     await flushPromises()
 
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
-    expect(wrapper.findAll('.autofill-note')).toHaveLength(1)
+    expect(wrapper.findAll('.plan-note')).toHaveLength(0)
   })
 
   it('lets you edit, add, and remove fixed cost rows', async () => {

@@ -3,12 +3,11 @@ import { ArrowRight, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
-import Dialog from 'primevue/dialog'
 import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import UserMenu from '../components/UserMenu.vue'
 import SpendingPlanOverview from '../components/SpendingPlanOverview.vue'
-import SpendingPlanSetup from '../components/SpendingPlanSetup.vue'
+import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
 import { getSpendingPlan } from '../api/SpendingPlanService'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 
@@ -106,27 +105,14 @@ function onSaved(plan: SavedPlan) {
       </section>
     </main>
 
-    <Dialog
+    <SpendingPlanDialog
       v-model:visible="dialogVisible"
-      modal
-      dismissable-mask
-      block-scroll
       :header="dialogHeader"
-      :draggable="false"
-      :style="{ width: 'min(76rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
-      :breakpoints="{ '640px': 'calc(100vw - 1.5rem)' }"
-      :pt="{
-        content: { style: { display: 'flex', flex: '1', minHeight: '0', padding: '0' } },
-      }"
-    >
-      <SpendingPlanSetup
-        :key="dialogMode"
-        :saved="dialogMode === 'edit' ? (savedPlan ?? undefined) : undefined"
-        :replacing="dialogMode === 'setup' && savedPlan != null"
-        :focus-buffer="focusBuffer"
-        @saved="onSaved"
-      />
-    </Dialog>
+      :saved="dialogMode === 'edit' ? (savedPlan ?? undefined) : undefined"
+      :replacing="dialogMode === 'setup' && savedPlan != null"
+      :focus-buffer="focusBuffer"
+      @saved="onSaved"
+    />
   </div>
 </template>
 

@@ -103,6 +103,29 @@ describe('app', () => {
     auth.isSignedIn = true
     vi.mocked(getCurrentUser).mockRejectedValue(new Error('Server unavailable'))
 
-    expect((await mountAt('/')).text()).toBe('Home')
+    const wrapper = await mountAt('/')
+    await settleRetries()
+
+    expect(getCurrentUser).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).toBe('Home')
+  })
+
+  it('asks again when the first check is turned away, as right after the page loads', async () => {
+    auth.isLoaded = true
+    auth.isSignedIn = true
+    vi.mocked(getCurrentUser)
+      .mockRejectedValueOnce(new Error('Request failed with status code 401'))
+      .mockResolvedValue({ onboarded: false })
+
+    const wrapper = await mountAt('/')
+    await settleRetries()
+
+    expect(wrapper.text()).toBe('Welcome')
   })
 })
+
+/** Waits out the onboarding check's retries. */
+async function settleRetries() {
+  await new Promise((resolve) => setTimeout(resolve, 1400))
+  await flushPromises()
+}
