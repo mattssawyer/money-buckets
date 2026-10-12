@@ -321,8 +321,10 @@ function changeIcon(change: Change) {
           <Button
             v-if="items.length"
             :label="linking ? 'Connecting…' : 'Link investment account'"
+            :aria-label="linking ? 'Connecting…' : 'Link investment account'"
             :loading="linking"
             :disabled="linking"
+            class="link-button"
             @click="linkInvestmentAccount"
           >
             <template #icon v-if="!linking">
@@ -980,6 +982,22 @@ h1 {
 @media (max-width: 640px) {
   .page-heading {
     flex-wrap: wrap;
+  }
+
+  /* Linking shrinks to an icon beside the avatar, as on Home. */
+  .heading-actions {
+    gap: 0.5rem;
+  }
+
+  .link-button {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .link-button :deep(.p-button-label) {
+    display: none;
   }
 
   .net-worth {

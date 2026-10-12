@@ -285,6 +285,7 @@ function isOwed(account: PlaidAccount) {
 /* In narrow places each account becomes a small card with its settings labelled. */
 @container (max-width: 40rem) {
   .account-table,
+  .account-table caption,
   .account-table tbody,
   .account-table tr,
   .account-table th,

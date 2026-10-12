@@ -29,8 +29,9 @@ const visible = defineModel<boolean>('visible', { required: true })
     block-scroll
     :header="header"
     :draggable="false"
+    class="app-sheet"
     :style="{ width: 'min(76rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
-    :breakpoints="{ '640px': 'calc(100vw - 1.5rem)' }"
+    :breakpoints="{ '640px': '100vw' }"
     :pt="{
       content: { style: { display: 'flex', flex: '1', minHeight: '0', padding: '0' } },
     }"

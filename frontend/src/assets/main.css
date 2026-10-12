@@ -147,6 +147,28 @@ body {
   appearance: none;
 }
 
+/*
+ * Dialogs that hold a whole list or form (class="app-sheet") take the full screen on phones, where
+ * a floating box only wastes the edges. Their breakpoints set the width to 100vw.
+ */
+@media (max-width: 640px) {
+  .p-dialog.app-sheet {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .p-dialog.app-sheet .p-dialog-header {
+    padding: calc(env(safe-area-inset-top) + 1rem) 1rem 0.75rem 1.25rem;
+  }
+
+  .p-dialog.app-sheet .p-dialog-content {
+    padding: 0 1.25rem env(safe-area-inset-bottom);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .switch,
   .switch::after {

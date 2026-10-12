@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Ellipsis } from '@lucide/vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import Menu from 'primevue/menu'
+import type { MenuItem } from 'primevue/menuitem'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import RecurringEditor from './RecurringEditor.vue'
@@ -14,6 +17,7 @@ import {
   type RecurringStream,
 } from '../api/PlaidService'
 import { frequencyLabel, recurringLabel } from '../api/plaidLabels'
+import { PHONE_QUERY, useMediaQuery } from '../useMediaQuery'
 
 /** The most streams the server sends. */
 const STREAM_LIMIT = 50
@@ -21,14 +25,19 @@ const STREAM_LIMIT = 50
 /** What's recurring, what's waiting on an answer, and what the user ruled out, each on its own. */
 type Tab = 'recurring' | 'possible' | 'dismissed'
 
-const TABS: { id: Tab; label: string; empty: string }[] = [
+const TABS: { id: Tab; label: string; shortLabel?: string; empty: string }[] = [
   {
     id: 'recurring',
     label: 'Recurring',
     empty:
       'No recurring transactions found yet. Plaid can take up to a day to find them after you link a bank.',
   },
-  { id: 'possible', label: 'Possibly recurring', empty: 'Nothing is waiting on your answer.' },
+  {
+    id: 'possible',
+    label: 'Possibly recurring',
+    shortLabel: 'Possible',
+    empty: 'Nothing is waiting on your answer.',
+  },
   { id: 'dismissed', label: 'Not recurring', empty: 'You haven’t ruled anything out.' },
 ]
 
@@ -58,6 +67,19 @@ const loading = ref(false)
 const error = ref('')
 const editing = ref<RecurringStream>()
 const editorVisible = ref(false)
+// On phones, an answered row's undo or rule-out sits behind a menu instead of on a line of its own.
+const compact = useMediaQuery(PHONE_QUERY)
+const rowMenu = ref<InstanceType<typeof Menu>>()
+const rowMenuItems = ref<MenuItem[]>([])
+
+function openRowMenu(event: Event, row: RecurringStream) {
+  rowMenuItems.value = [
+    row.status === 'DISMISSED'
+      ? { label: 'Undo not recurring', command: () => answer(row, null) }
+      : { label: 'Not recurring', command: () => answer(row, false) },
+  ]
+  rowMenu.value?.toggle(event)
+}
 // The rows whose answers are being saved.
 const answering = ref(new Set<string>())
 const answerError = ref('')
@@ -228,8 +250,9 @@ function formatAmount(stream: RecurringStream) {
     dismissable-mask
     block-scroll
     :draggable="false"
+    class="app-sheet"
     :style="{ width: 'min(40rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
-    :breakpoints="{ '640px': 'calc(100vw - 1.5rem)' }"
+    :breakpoints="{ '640px': '100vw' }"
     :pt="{
       content: {
         style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' },
@@ -238,7 +261,8 @@ function formatAmount(stream: RecurringStream) {
   >
     <template #header>
       <div class="dialog-heading">
-        <h2 class="dialog-title">Recurring</h2>
+        <!-- Opening focuses the title rather than ringing the close button. -->
+        <h2 class="dialog-title" tabindex="-1" autofocus>Recurring</h2>
         <p v-if="accountLabel" class="dialog-subtitle">{{ accountLabel }}</p>
       </div>
     </template>
@@ -262,7 +286,7 @@ function formatAmount(stream: RecurringStream) {
           aria-controls="recurring-panel"
           @click="tab = option.id"
         >
-          {{ option.label }}
+          {{ compact && option.shortLabel ? option.shortLabel : option.label }}
           <span v-if="!loading" class="tab-count">{{ rowsByTab[option.id].length }}</span>
         </button>
       </div>
@@ -285,7 +309,12 @@ function formatAmount(stream: RecurringStream) {
         </p>
 
         <ul v-else class="rows">
-          <li v-for="row in shown" :key="row.stream_id" class="row">
+          <li
+            v-for="row in shown"
+            :key="row.stream_id"
+            class="row"
+            :class="{ 'row-suggested': row.status === 'SUGGESTED' }"
+          >
             <span class="logo" aria-hidden="true">{{ recurringLabel(row).charAt(0) }}</span>
             <span class="details">
               <button type="button" class="name" aria-haspopup="dialog" @click="edit(row)">
@@ -296,10 +325,25 @@ function formatAmount(stream: RecurringStream) {
             <span class="amount" :class="{ 'amount-inflow': row.amount < 0 }">
               {{ formatAmount(row) }}
             </span>
-            <span class="answers">
-              <!-- Plaid named nobody, so there's no payee to keep an answer for. -->
-              <template v-if="!row.kind || !row.merchant_key" />
-              <template v-else-if="row.status === 'SUGGESTED'">
+            <!-- Plaid named nobody, so there's no payee to keep an answer for. -->
+            <span v-if="!row.kind || !row.merchant_key" class="answers" />
+            <Button
+              v-else-if="compact && row.status !== 'SUGGESTED'"
+              severity="secondary"
+              text
+              size="small"
+              class="row-more"
+              aria-haspopup="true"
+              aria-controls="recurring-row-menu"
+              :aria-label="`More for ${recurringLabel(row)}`"
+              @click="openRowMenu($event, row)"
+            >
+              <template #icon>
+                <Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" />
+              </template>
+            </Button>
+            <span v-else class="answers">
+              <template v-if="row.status === 'SUGGESTED'">
                 <Button
                   label="Yes"
                   size="small"
@@ -337,6 +381,7 @@ function formatAmount(stream: RecurringStream) {
             </span>
           </li>
         </ul>
+        <Menu id="recurring-row-menu" ref="rowMenu" :model="rowMenuItems" popup />
       </div>
     </template>
     <RecurringEditor v-model:visible="editorVisible" :stream="editing" @changed="onEdited" />
@@ -354,6 +399,10 @@ function formatAmount(stream: RecurringStream) {
   font-size: 1.125rem;
   font-weight: 550;
   letter-spacing: -0.02em;
+}
+
+.dialog-title:focus {
+  outline: none;
 }
 
 .dialog-subtitle {
@@ -423,6 +472,7 @@ function formatAmount(stream: RecurringStream) {
   margin-top: 0.5rem;
   /* Room for the scrollbar up front, so amounts don't shift when a list starts scrolling. */
   padding-right: 0.25rem;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -548,15 +598,52 @@ function formatAmount(stream: RecurringStream) {
 }
 
 @media (max-width: 640px) {
+  .tab {
+    padding: 0.5rem 0.375rem;
+  }
+
   .row {
-    flex-wrap: wrap;
+    gap: 0.75rem;
+    min-height: 3.75rem;
+    padding: 0.625rem 0;
+  }
+
+  .logo {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .row:not(:last-child)::after {
+    left: 2.75rem;
   }
 
   .answers {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .answers:empty {
+    display: none;
+  }
+
+  /* A guess's Yes and No go under its name, where there's room for them. */
+  .row-suggested {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  .row-suggested .answers {
     flex-basis: 100%;
     justify-content: flex-start;
-    min-width: 0;
-    padding-left: 2.5rem;
+    padding-left: 2.75rem;
+  }
+
+  .row-more {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    color: var(--app-text-secondary);
   }
 }
 </style>

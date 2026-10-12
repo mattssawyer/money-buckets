@@ -13,6 +13,7 @@ import {
   formatTransactionAmount,
   transactionLabel,
 } from '../api/plaidLabels'
+import { PHONE_QUERY, useMediaQuery } from '../useMediaQuery'
 
 const PAGE_SIZE = 50
 
@@ -34,6 +35,8 @@ const loading = ref(false)
 const error = ref('')
 const editing = ref<PlaidTransaction>()
 const editorVisible = ref(false)
+// Phones get a list grouped by day instead of a five-column table.
+const compact = useMediaQuery(PHONE_QUERY)
 
 function edit(transaction: PlaidTransaction) {
   editing.value = transaction
@@ -85,6 +88,17 @@ function formatDate(date: string) {
     year: 'numeric',
   }).format(new Date(`${date}T00:00:00`))
 }
+
+/** A day's heading in the phone list, with the year only when it isn't this year. */
+function formatDay(date: string) {
+  const day = new Date(`${date}T00:00:00`)
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: day.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  }).format(day)
+}
 </script>
 
 <template>
@@ -94,8 +108,9 @@ function formatDate(date: string) {
     dismissable-mask
     block-scroll
     :draggable="false"
+    class="app-sheet"
     :style="{ width: 'min(64rem, calc(100vw - 2rem))', height: '88dvh', maxHeight: '92dvh' }"
-    :breakpoints="{ '640px': 'calc(100vw - 1.5rem)' }"
+    :breakpoints="{ '640px': '100vw' }"
     :pt="{
       content: {
         style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' },
@@ -104,7 +119,8 @@ function formatDate(date: string) {
   >
     <template #header>
       <div class="dialog-heading">
-        <h2 class="dialog-title">Transactions</h2>
+        <!-- Opening focuses the title rather than ringing the close button. -->
+        <h2 class="dialog-title" tabindex="-1" autofocus>Transactions</h2>
         <p v-if="accountLabel || total" class="dialog-subtitle">
           <template v-if="accountLabel">{{ accountLabel }}</template>
           <template v-if="accountLabel && total"> · </template>
@@ -131,6 +147,12 @@ function formatDate(date: string) {
       scrollable
       scroll-height="flex"
       class="transactions-table"
+      :class="{ 'transactions-compact': compact }"
+      :show-headers="!compact"
+      :row-group-mode="compact ? 'subheader' : undefined"
+      group-rows-by="date"
+      :paginator-template="compact ? 'PrevPageLink CurrentPageReport NextPageLink' : undefined"
+      current-page-report-template="Page {currentPage} of {totalPages}"
       aria-label="All transactions"
       @page="onPage"
     >
@@ -140,13 +162,48 @@ function formatDate(date: string) {
         </p>
       </template>
 
-      <Column header="Date" class="date-column">
+      <template v-if="compact" #groupheader="{ data }: { data: PlaidTransaction }">
+        <span class="day">{{ formatDay(data.date) }}</span>
+      </template>
+
+      <Column v-if="compact" class="compact-column">
+        <template #body="{ data }: { data: PlaidTransaction }">
+          <button type="button" class="compact-row" aria-haspopup="dialog" @click="edit(data)">
+            <img v-if="data.logo_url" class="logo compact-logo" :src="data.logo_url" alt="" />
+            <span v-else class="logo compact-logo logo-fallback" aria-hidden="true">
+              {{ transactionLabel(data).charAt(0) }}
+            </span>
+            <span class="compact-details">
+              <span class="compact-name">
+                <span class="name">{{ transactionLabel(data) }}</span>
+                <span v-if="data.pending" class="pending">Pending</span>
+              </span>
+              <span class="compact-meta">
+                <span
+                  class="swatch"
+                  :style="{ backgroundColor: bucketStyle(data).color }"
+                  aria-hidden="true"
+                />
+                <span class="compact-meta-text">
+                  {{ bucketStyle(data).label }} ·
+                  {{ categoryLabel(data.category ?? 'UNCATEGORIZED') }}
+                </span>
+              </span>
+            </span>
+            <span class="amount" :class="{ 'amount-inflow': data.amount < 0 }">
+              {{ formatTransactionAmount(data) }}
+            </span>
+          </button>
+        </template>
+      </Column>
+
+      <Column v-if="!compact" header="Date" class="date-column">
         <template #body="{ data }: { data: PlaidTransaction }">
           {{ formatDate(data.date) }}
         </template>
       </Column>
 
-      <Column header="Description">
+      <Column v-if="!compact" header="Description">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="description">
             <img v-if="data.logo_url" class="logo" :src="data.logo_url" alt="" />
@@ -166,13 +223,13 @@ function formatDate(date: string) {
         </template>
       </Column>
 
-      <Column header="Category">
+      <Column v-if="!compact" header="Category">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="secondary">{{ categoryLabel(data.category ?? 'UNCATEGORIZED') }}</span>
         </template>
       </Column>
 
-      <Column header="Bucket">
+      <Column v-if="!compact" header="Bucket">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="bucket">
             <span
@@ -185,7 +242,7 @@ function formatDate(date: string) {
         </template>
       </Column>
 
-      <Column header="Amount" class="amount-column">
+      <Column v-if="!compact" header="Amount" class="amount-column">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="amount" :class="{ 'amount-inflow': data.amount < 0 }">
             {{ formatTransactionAmount(data) }}
@@ -208,6 +265,10 @@ function formatDate(date: string) {
   font-size: 1.125rem;
   font-weight: 550;
   letter-spacing: -0.02em;
+}
+
+.dialog-title:focus {
+  outline: none;
 }
 
 .dialog-subtitle {
@@ -343,6 +404,97 @@ function formatDate(date: string) {
 
 .amount-inflow {
   color: var(--app-success);
+}
+
+/* The phone list: each day under its own heading, each transaction one tappable row. */
+.transactions-compact :deep(.p-datatable-row-group-header td) {
+  padding: 1rem 0 0.375rem;
+  background: var(--app-surface);
+  border: 0;
+}
+
+.day {
+  color: var(--app-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+}
+
+.transactions-compact :deep(td.compact-column) {
+  padding: 0;
+}
+
+/* The last row of a day already sits above the next day's heading, so it needs no rule. */
+.transactions-compact :deep(tr:has(+ .p-datatable-row-group-header) td) {
+  border-bottom: 0;
+}
+
+.compact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.625rem 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.compact-row:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--app-radius-chip);
+}
+
+.compact-logo {
+  width: 2rem;
+  height: 2rem;
+}
+
+.compact-details {
+  display: grid;
+  flex: 1;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.compact-name {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  color: var(--app-text-secondary);
+  font-size: 0.75rem;
+}
+
+.compact-meta-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transactions-compact :deep(.p-paginator) {
+  padding: 0.5rem 0;
+}
+
+.transactions-compact :deep(.p-paginator-content) {
+  justify-content: space-between;
+  width: 100%;
+}
+
+.transactions-compact :deep(.p-paginator-current) {
+  color: var(--app-text-secondary);
+  font-size: 0.8125rem;
 }
 
 .table-empty {
