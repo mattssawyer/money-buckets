@@ -1332,6 +1332,53 @@ h1 {
 .balance-card {
   flex: none;
   padding: 1.125rem 1.25rem 1.25rem;
+  color: #fff;
+  background: linear-gradient(135deg, #1b1e23 0%, #30353d 100%);
+  box-shadow: none;
+}
+
+/* The balance card is dark, so what sits on it is light. */
+.balance-card .card-title {
+  color: rgb(255 255 255 / 70%);
+}
+
+.balance-card .balance-amount {
+  color: #fff;
+}
+
+.balance-card .balance-account {
+  color: rgb(255 255 255 / 65%);
+}
+
+.balance-card .account-select {
+  color: #fff;
+  background-color: rgb(255 255 255 / 10%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  border-color: rgb(255 255 255 / 18%);
+  box-shadow: none;
+}
+
+/* The native menu keeps its own light background, so its options keep dark text. */
+.balance-card .account-select option {
+  color: var(--app-text);
+}
+
+.balance-card :deep(.info-tip-button) {
+  color: rgb(255 255 255 / 70%);
+}
+
+.balance-card :deep(.info-tip-button:hover),
+.balance-card :deep(.info-tip-button:focus-visible) {
+  color: #fff;
+}
+
+.balance-card :deep(.p-skeleton) {
+  background: rgb(255 255 255 / 10%);
+}
+
+.balance-card :focus-visible,
+.balance-card :deep(:focus-visible) {
+  outline-color: #fff;
 }
 
 .transactions-card,

@@ -4,7 +4,7 @@
   --app-font: 'Geist Variable', system-ui, sans-serif;
 
   /* Surfaces, from canvas outward to the containers that sit on it. */
-  --app-canvas: #f7f7f7;
+  --app-canvas: #eeeeee;
   --app-surface: #ffffff;
   --app-inset: #f0f0f0;
   --app-inset-hover: #e7e7e7;

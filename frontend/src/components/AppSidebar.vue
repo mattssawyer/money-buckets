@@ -114,7 +114,7 @@ const items = [
 }
 
 .rail-item:hover .rail-icon {
-  background: var(--app-inset);
+  background: var(--app-inset-hover);
 }
 
 .rail-item-active {
@@ -154,7 +154,7 @@ const items = [
     width: auto;
     height: calc(var(--app-tabbar-height) + env(safe-area-inset-bottom));
     padding: 0 0 env(safe-area-inset-bottom);
-    background: rgb(247 247 247 / 86%);
+    background: rgb(238 238 238 / 86%);
     border-top: 1px solid var(--app-divider);
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);

@@ -689,7 +689,8 @@ h1 {
   display: inline-flex;
   gap: 0.125rem;
   padding: 0.1875rem;
-  background: var(--app-inset);
+  /* It sits on the page, not a card, so it takes the darker grey to stand out from it. */
+  background: var(--app-inset-hover);
   border-radius: var(--app-radius-control);
 }
 
