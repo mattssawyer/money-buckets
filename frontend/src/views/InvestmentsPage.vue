@@ -742,7 +742,7 @@ function changeIcon(change: Change) {
 
 .hero-figure {
   margin-top: 0.25rem;
-  font-size: var(--text-3xl);
+  font-size: var(--text-4xl);
   font-weight: 550;
   line-height: 1.1;
   letter-spacing: -0.04em;

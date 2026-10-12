@@ -24,7 +24,7 @@ defineProps<{ home: boolean }>()
         <div class="boot-main">
           <section class="panel boot-card boot-balance">
             <div class="boot-card-heading"><p class="card-title">Balance</p></div>
-            <Skeleton width="min(100%, 11rem)" height="calc(var(--text-2xl) * 1.1)" />
+            <Skeleton width="min(100%, 12.5rem)" height="calc(var(--text-3xl) * 1.1)" />
           </section>
           <section class="panel boot-card boot-transactions">
             <div class="boot-card-heading"><p class="card-title">Recent transactions</p></div>
