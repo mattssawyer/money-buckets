@@ -53,7 +53,7 @@ const items: MenuItem[] = [
   background: var(--app-text);
   color: var(--app-text-inverse);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
   cursor: pointer;
 }

@@ -133,7 +133,7 @@ const items = [
 .rail-label {
   min-width: 0;
   padding: 0 0.25rem;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 500;
   line-height: 1.2;
   text-align: center;

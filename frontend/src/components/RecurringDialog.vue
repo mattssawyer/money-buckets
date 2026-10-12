@@ -17,7 +17,7 @@ import {
   type RecurringStatus,
   type RecurringStream,
 } from '../api/PlaidService'
-import { frequencyLabel, recurringLabel } from '../api/plaidLabels'
+import { frequencyLabel, recurringLabel, formatStreamAmount } from '../api/plaidLabels'
 import { PHONE_QUERY, useMediaQuery } from '../useMediaQuery'
 
 /** The most streams the server sends. */
@@ -234,14 +234,6 @@ function meta(stream: RecurringStream) {
     .filter(Boolean)
     .join(' · ')
 }
-
-function formatAmount(stream: RecurringStream) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: stream.iso_currency_code ?? 'USD',
-    signDisplay: 'exceptZero',
-  }).format(-stream.amount)
-}
 </script>
 
 <template>
@@ -324,7 +316,7 @@ function formatAmount(stream: RecurringStream) {
               <span v-if="meta(row)" class="meta">{{ meta(row) }}</span>
             </span>
             <span class="amount" :class="{ 'amount-inflow': row.amount < 0 }">
-              {{ formatAmount(row) }}
+              {{ formatStreamAmount(row) }}
             </span>
             <!-- Plaid named nobody, so there's no payee to keep an answer for. -->
             <span v-if="!row.kind || !row.merchant_key" class="answers" />
@@ -397,7 +389,7 @@ function formatAmount(stream: RecurringStream) {
 
 .dialog-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -409,7 +401,7 @@ function formatAmount(stream: RecurringStream) {
 .dialog-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .dialog-notice {
@@ -441,7 +433,7 @@ function formatAmount(stream: RecurringStream) {
   border: 0;
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -535,7 +527,7 @@ function formatAmount(stream: RecurringStream) {
   background: none;
   border: 0;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
@@ -556,12 +548,12 @@ function formatAmount(stream: RecurringStream) {
 
 .meta {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .amount {
   flex: none;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

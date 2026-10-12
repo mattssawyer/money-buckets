@@ -3,8 +3,8 @@ import { ArrowRight, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
-import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import SkeletonCard from '../components/SkeletonCard.vue'
 import UserMenu from '../components/UserMenu.vue'
 import SpendingPlanOverview from '../components/SpendingPlanOverview.vue'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
@@ -66,8 +66,8 @@ function onSaved(plan: SavedPlan) {
       </header>
 
       <div v-if="loading" class="plan-loading" aria-label="Loading your spending plan">
-        <Skeleton height="12rem" />
-        <Skeleton height="16rem" />
+        <SkeletonCard height="12rem" />
+        <SkeletonCard height="16rem" :lines="5" />
       </div>
 
       <section v-else-if="loadError" class="panel plan-prompt" aria-labelledby="plan-error-heading">
@@ -149,25 +149,12 @@ function onSaved(plan: SavedPlan) {
 
 .accounts-link {
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
 }
 
 .accounts-link:hover {
   color: var(--app-text);
-}
-
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.page-heading :deep(.cl-userButtonTrigger),
-.page-heading :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
 }
 
 .plan-loading {
@@ -200,10 +187,10 @@ h1 {
 }
 
 h2 {
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
   font-weight: 550;
   line-height: 1.25;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.04em;
 }
 
 .plan-prompt p {
@@ -216,20 +203,12 @@ h2 {
   .spending-plan-page {
     padding: 1.25rem 1.25rem calc(var(--app-tabbar-height) + env(safe-area-inset-bottom) + 1.5rem);
   }
-
-  h1 {
-    font-size: 1.375rem;
-  }
 }
 
 @media (max-width: 640px) {
   .plan-prompt {
     min-height: 20rem;
     padding: 2rem 1.25rem;
-  }
-
-  h2 {
-    font-size: 1.25rem;
   }
 }
 </style>

@@ -1,5 +1,6 @@
 import type { PlaidTransaction, Bucket, RecurringStream } from './PlaidService'
 import { PLAN_COLORS, PLAN_TITLES } from '../spendingPlan/plan'
+import { formatSignedMoney } from '../money'
 
 // Same colors as the spending plan page. Unsorted is grey so it reads as not yet decided.
 export const BUCKET_STYLES: Record<Bucket | 'NOT_COUNTED', { label: string; color: string }> = {
@@ -71,11 +72,11 @@ export function yourAmount(entry: { amount: number; share_percent: number }): nu
 
 // Plaid reports money leaving the account as positive, which reads backwards in a ledger.
 export function formatTransactionAmount(transaction: PlaidTransaction) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: transaction.iso_currency_code ?? 'USD',
-    signDisplay: 'exceptZero',
-  }).format(-transaction.amount)
+  return formatSignedMoney(-transaction.amount, transaction.iso_currency_code ?? 'USD')
+}
+
+export function formatStreamAmount(stream: RecurringStream) {
+  return formatSignedMoney(-stream.amount, stream.iso_currency_code ?? 'USD')
 }
 
 const FREQUENCY_LABELS: Record<string, string> = {

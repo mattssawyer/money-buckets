@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import type { Chart as ChartJs, ChartOptions, Plugin } from 'chart.js'
 import Chart from 'primevue/chart'
 import type { AccountChange, BalancePoint } from '../api/InvestmentsService'
-import { formatCompactMoney, formatDay, formatMoney } from '../investments/history'
+import { formatDay } from '../investments/history'
+import { formatCompactMoney, formatMoney } from '../money'
 
 const props = defineProps<{
   points: BalancePoint[]

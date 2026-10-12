@@ -97,7 +97,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
 
 .choice-heading {
   color: var(--app-text-subdued);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -133,7 +133,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
 
 .choice-kind {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .choice-share {
@@ -142,6 +142,6 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
   gap: 0.5rem;
   margin-top: 0.25rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 </style>

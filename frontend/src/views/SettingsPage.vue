@@ -156,19 +156,6 @@ async function deleteAccount() {
   gap: 1rem;
 }
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.page-heading :deep(.cl-userButtonTrigger),
-.page-heading :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
-}
-
 .settings-card {
   width: min(100%, 40rem);
   padding: 1rem 1.25rem 0.25rem;
@@ -191,7 +178,7 @@ h1 {
   display: grid;
   gap: 0.125rem;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .setting-name {
@@ -213,7 +200,7 @@ h1 {
   display: flex;
   gap: 1.25rem;
   padding: 0 0.25rem;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .legal-links a {
@@ -249,10 +236,6 @@ h1 {
 @media (max-width: 900px) {
   .settings-page {
     padding: 1.25rem 1.25rem calc(var(--app-tabbar-height) + env(safe-area-inset-bottom) + 1.5rem);
-  }
-
-  h1 {
-    font-size: 1.375rem;
   }
 }
 </style>

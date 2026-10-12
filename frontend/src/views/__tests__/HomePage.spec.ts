@@ -277,7 +277,7 @@ describe('homepage balances', () => {
   it('waits for saved connections before showing onboarding', async () => {
     const wrapper = mountHome()
     expect(wrapper.text()).not.toContain('Start with an account.')
-    expect(wrapper.find('[aria-label="Loading your accounts"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Loading balances"]').exists()).toBe(true)
 
     await flushPromises()
 

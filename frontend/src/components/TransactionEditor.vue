@@ -312,7 +312,7 @@ function formatDate(date: string) {
 .editor-title {
   margin: 0;
   overflow: hidden;
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
   text-overflow: ellipsis;
@@ -322,7 +322,7 @@ function formatDate(date: string) {
 .editor-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -344,7 +344,7 @@ function formatDate(date: string) {
 .section-title {
   margin: 0;
   color: var(--app-text);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
 }
 
@@ -355,7 +355,7 @@ function formatDate(date: string) {
 
 .field-label {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -371,13 +371,13 @@ function formatDate(date: string) {
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .hint {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -393,14 +393,14 @@ function formatDate(date: string) {
   align-items: center;
   gap: 0.375rem;
   color: var(--app-text);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .counting-option {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--app-text-secondary);
 }
 </style>

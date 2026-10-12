@@ -9,7 +9,7 @@ import {
   type PayeeRef,
   type RecurringStream,
 } from '../api/PlaidService'
-import { FREQUENCIES, frequencyLabel, recurringLabel } from '../api/plaidLabels'
+import { FREQUENCIES, frequencyLabel, recurringLabel, formatStreamAmount } from '../api/plaidLabels'
 import InfoTip from './InfoTip.vue'
 
 const visible = defineModel<boolean>('visible', { required: true })
@@ -97,14 +97,6 @@ async function run(change: () => Promise<void>) {
     saving.value = false
   }
 }
-
-function formatAmount(stream: RecurringStream) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: stream.iso_currency_code ?? 'USD',
-    signDisplay: 'exceptZero',
-  }).format(-stream.amount)
-}
 </script>
 
 <template>
@@ -119,7 +111,7 @@ function formatAmount(stream: RecurringStream) {
       <div v-if="stream" class="editor-heading">
         <h2 class="editor-title">{{ name }}</h2>
         <p class="editor-subtitle">
-          {{ formatAmount(stream) }} · {{ frequencyLabel(stream.frequency) }}
+          {{ formatStreamAmount(stream) }} · {{ frequencyLabel(stream.frequency) }}
         </p>
       </div>
     </template>
@@ -249,7 +241,7 @@ function formatAmount(stream: RecurringStream) {
 .editor-title {
   margin: 0;
   overflow: hidden;
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
   text-overflow: ellipsis;
@@ -259,7 +251,7 @@ function formatAmount(stream: RecurringStream) {
 .editor-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -287,7 +279,7 @@ function formatAmount(stream: RecurringStream) {
 .section-title {
   margin: 0;
   color: var(--app-text);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
 }
 
@@ -298,7 +290,7 @@ function formatAmount(stream: RecurringStream) {
 
 .field-label {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -314,13 +306,13 @@ function formatAmount(stream: RecurringStream) {
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .hint {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 

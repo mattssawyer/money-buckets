@@ -144,7 +144,7 @@ async function addInvestmentsTo(item: PlaidItem) {
 
 .section-heading {
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
   letter-spacing: 0;
 }

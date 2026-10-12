@@ -15,7 +15,7 @@ import UserMenu from '../components/UserMenu.vue'
 import { getAccounts, getLinkedItems, type PlaidAccount, type PlaidItem } from '../api/PlaidService'
 import { getSpendingPlan } from '../api/SpendingPlanService'
 import { accountLabel } from '../accounts/useSelectedAccount'
-import { formatMoney } from '../investments/history'
+import { formatMoney } from '../money'
 import { useOnboarding } from '../onboarding'
 import { closePlaidLink, linkItem } from '../plaid/plaidLink'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
@@ -585,13 +585,6 @@ async function finish() {
   border: 1px solid var(--app-divider);
 }
 
-h1 {
-  font-size: 1.625rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
 .heading-row {
   display: flex;
   align-items: center;
@@ -667,7 +660,7 @@ h1 {
   align-items: center;
   gap: 0.25rem;
   color: var(--app-success);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .connected-balance {
@@ -699,7 +692,7 @@ h1 {
   align-items: center;
   gap: 0.375rem;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -913,7 +906,7 @@ h1 {
   justify-items: center;
   gap: 0.5rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   text-align: center;
 }
@@ -1004,10 +997,6 @@ h1 {
 
   .welcome-main {
     justify-content: flex-start;
-  }
-
-  h1 {
-    font-size: 1.375rem;
   }
 
   /* Only the current step keeps its name, so the labels don't crowd each other. */

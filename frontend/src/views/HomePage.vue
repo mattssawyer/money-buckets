@@ -12,6 +12,7 @@ import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
 import InfoTip from '../components/InfoTip.vue'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SkeletonRows from '../components/SkeletonRows.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
 import ReconnectNotice from '../components/ReconnectNotice.vue'
@@ -46,7 +47,9 @@ import {
   recurringLabel,
   transactionLabel,
   yourAmount,
+  formatStreamAmount,
 } from '../api/plaidLabels'
+import { formatMoney, formatWholeDollars } from '../money'
 import { accountLabel, useSelectedAccount } from '../accounts/useSelectedAccount'
 import {
   SPENDING_PERIODS,
@@ -271,15 +274,7 @@ function spendingDate(transaction: PlaidTransaction) {
 
 function formatBalance(amount: number | null) {
   if (amount === null) return '—'
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
-}
-
-function formatWholeDollars(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(amount)
+  return formatMoney(amount)
 }
 
 // Plaid dates are calendar days, so parse them locally instead of as UTC instants.
@@ -302,14 +297,6 @@ function candidateMeta(candidate: RecurringCandidate) {
   return candidate.last_date
     ? `${cadence}? · Last ${formatTransactionDate(candidate.last_date)}`
     : `${cadence}?`
-}
-
-function formatRecurringAmount(stream: RecurringStream) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: stream.iso_currency_code ?? 'USD',
-    signDisplay: 'exceptZero',
-  }).format(-stream.amount)
 }
 
 /**
@@ -645,18 +632,7 @@ async function openPlaidLink() {
           </Button>
         </section>
 
-        <section
-          v-if="initialLoading"
-          class="panel balance-card"
-          role="status"
-          aria-label="Loading your accounts"
-          aria-busy="true"
-        >
-          <p class="card-title">Balance</p>
-          <Skeleton width="min(100%, 20rem)" height="4.5rem" />
-        </section>
-
-        <div v-else-if="connectionError" class="account-notice">
+        <div v-if="!initialLoading && connectionError" class="account-notice">
           <Message severity="error">{{ connectionError }}</Message>
           <Button
             label="Try again"
@@ -666,13 +642,14 @@ async function openPlaidLink() {
           />
         </div>
 
-        <div v-else-if="hasConnections" class="dashboard-grid">
+        <!-- The cards show from the start and fill in as their data arrives. -->
+        <div v-else-if="initialLoading || hasConnections" class="dashboard-grid">
           <div class="dashboard-main">
             <section
               class="panel balance-card"
               role="region"
               aria-labelledby="balance-heading"
-              :aria-busy="loadingAccounts"
+              :aria-busy="initialLoading || loadingAccounts"
             >
               <div class="balance-heading">
                 <div class="balance-title">
@@ -701,8 +678,12 @@ async function openPlaidLink() {
                   </option>
                 </select>
               </div>
-              <div v-if="loadingAccounts" role="status" aria-label="Loading balances">
-                <Skeleton width="min(100%, 20rem)" height="4.5rem" />
+              <div
+                v-if="initialLoading || loadingAccounts"
+                role="status"
+                aria-label="Loading balances"
+              >
+                <Skeleton width="min(100%, 11rem)" height="calc(var(--text-2xl) * 1.1)" />
               </div>
               <template v-else>
                 <p
@@ -720,7 +701,7 @@ async function openPlaidLink() {
             </section>
 
             <div
-              v-if="!loadingAccounts && (balanceError || !accounts.length)"
+              v-if="!initialLoading && !loadingAccounts && (balanceError || !accounts.length)"
               class="account-notice"
             >
               <Message :severity="balanceError ? 'error' : 'secondary'">
@@ -743,7 +724,7 @@ async function openPlaidLink() {
               class="panel transactions-card"
               role="region"
               aria-labelledby="recent-transactions-heading"
-              :aria-busy="loadingTransactions"
+              :aria-busy="initialLoading || loadingTransactions"
             >
               <div class="card-heading">
                 <h2 id="recent-transactions-heading" class="card-title">Recent transactions</h2>
@@ -759,12 +740,11 @@ async function openPlaidLink() {
                 />
               </div>
               <div
-                v-if="loadingTransactions"
-                class="transactions-loading"
+                v-if="initialLoading || loadingTransactions"
                 role="status"
                 aria-label="Loading recent transactions"
               >
-                <Skeleton v-for="row in 4" :key="row" height="2.75rem" />
+                <SkeletonRows :rows="6" />
               </div>
 
               <div v-else-if="transactionsError" class="account-notice">
@@ -819,7 +799,7 @@ async function openPlaidLink() {
               class="panel recurring-card"
               role="region"
               aria-labelledby="recurring-heading"
-              :aria-busy="loadingRecurring"
+              :aria-busy="initialLoading || loadingRecurring"
             >
               <div class="card-heading">
                 <h2 id="recurring-heading" class="card-title">Recurring</h2>
@@ -834,12 +814,11 @@ async function openPlaidLink() {
                 />
               </div>
               <div
-                v-if="loadingRecurring"
-                class="transactions-loading"
+                v-if="initialLoading || loadingRecurring"
                 role="status"
                 aria-label="Loading recurring transactions"
               >
-                <Skeleton v-for="row in 3" :key="row" height="2.75rem" />
+                <SkeletonRows :rows="5" />
               </div>
 
               <div v-else-if="recurringError" class="account-notice">
@@ -890,7 +869,7 @@ async function openPlaidLink() {
                       class="transaction-amount"
                       :class="{ 'transaction-amount-inflow': stream.amount < 0 }"
                     >
-                      {{ formatRecurringAmount(stream) }}
+                      {{ formatStreamAmount(stream) }}
                     </span>
                   </li>
                 </ul>
@@ -919,7 +898,7 @@ async function openPlaidLink() {
                       <span class="transaction-details">
                         <span class="transaction-name">{{ recurringLabel(candidate) }}</span>
                         <span class="transaction-meta">
-                          {{ candidateMeta(candidate) }} · {{ formatRecurringAmount(candidate) }}
+                          {{ candidateMeta(candidate) }} · {{ formatStreamAmount(candidate) }}
                         </span>
                       </span>
                       <span class="candidate-actions">
@@ -952,7 +931,7 @@ async function openPlaidLink() {
             class="panel spending-card"
             role="region"
             aria-labelledby="spending-heading"
-            :aria-busy="loadingSpending"
+            :aria-busy="initialLoading || loadingSpending"
           >
             <div class="card-heading">
               <h2 id="spending-heading" class="card-title">Spending</h2>
@@ -973,12 +952,25 @@ async function openPlaidLink() {
             </div>
             <!-- Only the first load has nothing to show; later ones keep what's there until they land. -->
             <div
-              v-if="loadingSpending && !spending"
-              class="spending-chart"
+              v-if="(initialLoading || loadingSpending) && !spending"
+              class="spending-body"
               role="status"
               aria-label="Loading your spending breakdown"
             >
-              <Skeleton width="100%" height="100%" border-radius="50%" />
+              <div class="spending-chart">
+                <Skeleton class="spending-ring-skeleton" width="100%" height="100%" />
+              </div>
+              <ul class="spending-legend" aria-hidden="true">
+                <li
+                  v-for="width in ['6rem', '7.5rem', '5rem']"
+                  :key="width"
+                  class="spending-legend-row"
+                >
+                  <Skeleton shape="circle" size="0.5rem" />
+                  <Skeleton :width="width" height="0.625rem" />
+                  <Skeleton class="spending-legend-amount" width="3.5rem" height="0.625rem" />
+                </li>
+              </ul>
             </div>
 
             <div v-else-if="spendingError" class="account-notice">
@@ -1235,14 +1227,8 @@ async function openPlaidLink() {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem;
+  min-height: var(--app-control-height);
   margin-bottom: 1.125rem;
-}
-
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
 }
 
 .reconnect-notice,
@@ -1255,12 +1241,6 @@ h1 {
   flex: none;
   align-items: center;
   gap: 0.75rem;
-}
-
-.overview-actions :deep(.cl-userButtonTrigger),
-.overview-actions :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
 }
 
 .plan-todo {
@@ -1289,7 +1269,7 @@ h1 {
 }
 
 .plan-todo h2 {
-  font-size: 1rem;
+  font-size: var(--text-md);
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -1297,7 +1277,7 @@ h1 {
 .plan-todo p {
   margin-top: 0.125rem;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .dashboard-grid {
@@ -1326,59 +1306,11 @@ h1 {
 .recurring-card,
 .spending-card,
 .account-prompt {
-  padding: 1rem 1.25rem 1.125rem;
+  padding: 1.125rem 1.25rem 1.25rem;
 }
 
 .balance-card {
   flex: none;
-  padding: 1.125rem 1.25rem 1.25rem;
-  color: #fff;
-  background: linear-gradient(135deg, #1b1e23 0%, #30353d 100%);
-  box-shadow: none;
-}
-
-/* The balance card is dark, so what sits on it is light. */
-.balance-card .card-title {
-  color: rgb(255 255 255 / 70%);
-}
-
-.balance-card .balance-amount {
-  color: #fff;
-}
-
-.balance-card .balance-account {
-  color: rgb(255 255 255 / 65%);
-}
-
-.balance-card .account-select {
-  color: #fff;
-  background-color: rgb(255 255 255 / 10%);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  border-color: rgb(255 255 255 / 18%);
-  box-shadow: none;
-}
-
-/* The native menu keeps its own light background, so its options keep dark text. */
-.balance-card .account-select option {
-  color: var(--app-text);
-}
-
-.balance-card :deep(.info-tip-button) {
-  color: rgb(255 255 255 / 70%);
-}
-
-.balance-card :deep(.info-tip-button:hover),
-.balance-card :deep(.info-tip-button:focus-visible) {
-  color: #fff;
-}
-
-.balance-card :deep(.p-skeleton) {
-  background: rgb(255 255 255 / 10%);
-}
-
-.balance-card :focus-visible,
-.balance-card :deep(:focus-visible) {
-  outline-color: #fff;
 }
 
 .transactions-card,
@@ -1422,6 +1354,12 @@ h1 {
   margin: 0.5rem auto 0;
 }
 
+/* A ring the size of the chart's, while the first breakdown loads. */
+.spending-ring-skeleton {
+  border-radius: 50%;
+  mask: radial-gradient(closest-side, transparent 76%, #000 76.5%);
+}
+
 .spending-chart-canvas,
 .spending-chart-canvas :deep(canvas) {
   display: block;
@@ -1442,15 +1380,15 @@ h1 {
 }
 
 .spending-total-amount {
-  font-size: 1.75rem;
+  font-size: var(--text-2xl);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
 }
 
 .spending-total-label {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 /* Opened buckets scroll within the card instead of stretching it. */
@@ -1573,7 +1511,7 @@ h1 {
   align-items: baseline;
   gap: 0.5rem;
   min-height: 1.375rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .spending-transaction-name {
@@ -1591,7 +1529,7 @@ h1 {
 
 .spending-transaction-row .spending-legend-amount {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 400;
 }
 
@@ -1606,7 +1544,7 @@ h1 {
   min-width: 0;
   overflow: hidden;
   color: var(--app-text);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1615,7 +1553,7 @@ h1 {
   margin-left: auto;
   padding-left: 0.5rem;
   color: var(--app-text);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1628,7 +1566,7 @@ h1 {
   justify-content: space-between;
   gap: 0.25rem 0.75rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.65;
 }
 
@@ -1653,24 +1591,24 @@ li.spending-legend-row {
 .period-select {
   max-width: 10rem;
   appearance: none;
-  padding: 0.25rem 1.5rem 0.25rem 0.5rem;
+  padding: 0.375rem 1.75rem 0.375rem 0.625rem;
   color: var(--app-text);
   background-color: var(--app-surface);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-position: right 0.3rem center;
-  background-size: 0.875rem;
+  background-position: right 0.4rem center;
   background-repeat: no-repeat;
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
+  box-shadow: var(--app-shadow-xs);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
 .spending-plan-prompt {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -1684,7 +1622,7 @@ li.spending-legend-row {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  min-height: 1.75rem;
+  min-height: var(--app-control-height-sm);
 }
 
 .view-all-button {
@@ -1696,6 +1634,7 @@ li.spending-legend-row {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  min-height: var(--app-control-height-sm);
   margin-bottom: 0.75rem;
 }
 
@@ -1719,14 +1658,8 @@ li.spending-legend-row {
   border-radius: var(--app-radius-chip);
   box-shadow: var(--app-shadow-xs);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
-}
-
-.transactions-loading {
-  display: grid;
-  gap: 0.625rem;
-  margin-top: 0.75rem;
 }
 
 .transactions-empty {
@@ -1747,12 +1680,19 @@ li.spending-legend-row {
   scrollbar-color: rgb(11 11 11 / 28%) transparent;
 }
 
-.transactions-card .transactions-list {
+.transactions-card .transactions-list,
+.transactions-card :deep(.skeleton-rows) {
   max-height: 18rem;
 }
 
-.recurring-card .transactions-list {
+.recurring-card .transactions-list,
+.recurring-card :deep(.skeleton-rows) {
   max-height: 13.5rem;
+}
+
+/* Placeholder rows fill the list's height and are cut off where it scrolls. */
+:deep(.skeleton-rows) {
+  overflow: hidden;
 }
 
 .candidates {
@@ -1764,14 +1704,14 @@ li.spending-legend-row {
 .candidates-heading {
   margin: 0;
   color: var(--app-text);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 
 .candidates-hint {
   margin: 0.25rem 0 0;
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
 }
 
@@ -1878,7 +1818,7 @@ li.spending-legend-row {
 .transaction-name {
   overflow: hidden;
   color: var(--app-text);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1886,14 +1826,14 @@ li.spending-legend-row {
 
 .transaction-meta {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .transaction-amount {
   margin-left: auto;
   padding-left: 0.5rem;
   color: var(--app-text);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1906,17 +1846,17 @@ li.spending-legend-row {
 .balance-amount {
   overflow-wrap: anywhere;
   color: var(--app-text);
-  font-size: 2.75rem;
+  font-size: var(--text-2xl);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
 }
 
 .balance-account {
   margin-top: 0.375rem;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .retry-button {
@@ -1948,9 +1888,9 @@ li.spending-legend-row {
 }
 
 .account-prompt h2 {
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   font-weight: 550;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
 }
 
 .account-prompt p {
@@ -1962,7 +1902,7 @@ li.spending-legend-row {
 .connection-note {
   display: block;
   margin-top: 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--app-text-subdued);
 }
 
@@ -1996,14 +1936,6 @@ li.spending-legend-row {
 
   .overview-heading {
     margin-bottom: 1.25rem;
-  }
-
-  h1 {
-    font-size: 1.375rem;
-  }
-
-  .balance-amount {
-    font-size: 2.25rem;
   }
 }
 
@@ -2044,6 +1976,15 @@ li.spending-legend-row {
     max-height: none;
     padding-right: 0;
     overflow: visible;
+  }
+
+  .transactions-card :deep(.skeleton-rows),
+  .recurring-card :deep(.skeleton-rows) {
+    max-height: none;
+  }
+
+  :deep(.skeleton-row:nth-child(n + 6)) {
+    display: none;
   }
 
   .transactions-card .transactions-list > li:nth-child(n + 6),

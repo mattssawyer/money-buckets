@@ -257,7 +257,7 @@ function formatDay(date: string) {
 
 .dialog-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -269,7 +269,7 @@ function formatDay(date: string) {
 .dialog-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .dialog-notice {
@@ -287,12 +287,12 @@ function formatDay(date: string) {
 
 .transactions-table :deep(th) {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
 .transactions-table :deep(td) {
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .transactions-table :deep(.date-column) {
@@ -354,7 +354,7 @@ function formatDay(date: string) {
   flex: none;
   padding: 0.125rem 0.375rem;
   color: var(--app-text-secondary);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 500;
   background: var(--app-inset);
   border-radius: var(--app-radius-chip);
@@ -397,7 +397,7 @@ function formatDay(date: string) {
 
 .day {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 550;
   letter-spacing: 0.01em;
 }
@@ -451,7 +451,7 @@ function formatDay(date: string) {
   gap: 0.375rem;
   min-width: 0;
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .compact-meta-text {
@@ -471,7 +471,7 @@ function formatDay(date: string) {
 
 .transactions-compact :deep(.p-paginator-current) {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .table-empty {
