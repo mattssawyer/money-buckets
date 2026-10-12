@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -62,31 +63,42 @@ class TransactionsSync {
         String accessToken = tokenEncryption.decrypt(
                 item.getEncryptedAccessToken(), item.getUserId(), itemId);
 
-        String cursor = item.getTransactionsCursor();
-        int added = 0;
-        int modified = 0;
-        int removed = 0;
-        int pages = 0;
-        for (int page = 0; page < MAX_PAGES; page++) {
-            TransactionsSyncResponse body = fetchPage(accessToken, cursor);
-            PageCounts counts = applyPage(item, body);
-            cursor = body.getNextCursor();
-            added += counts.added();
-            modified += counts.modified();
-            removed += counts.removed();
-            pages++;
-            log.debug(
-                    "Applied transactions sync page {} for item {}: {} added, {} modified, {} removed",
-                    pages, itemId, counts.added(), counts.modified(), counts.removed());
-            if (!Boolean.TRUE.equals(body.getHasMore())) {
-                log.info(
-                        "Finished transactions sync for item {}: {} added, {} modified, {} removed ({} pages)",
-                        itemId, added, modified, removed, pages);
-                return added + modified + removed;
+        // No page is visible, and no cursor advances, until a complete batch is fetched.
+        // A mutation invalidates the entire batch, including pages already fetched.
+        for (int attempt = 0; attempt < 3; attempt++) {
+            String cursor = item.getTransactionsCursor();
+            List<TransactionsSyncResponse> batch = new ArrayList<>();
+            try {
+                for (int page = 0; page < MAX_PAGES; page++) {
+                    TransactionsSyncResponse body = fetchPage(accessToken, cursor);
+                    batch.add(body);
+                    cursor = body.getNextCursor();
+                    if (!Boolean.TRUE.equals(body.getHasMore())) {
+                        return transactionTemplate.execute(status -> {
+                            int changed = 0;
+                            for (TransactionsSyncResponse result : batch) {
+                                PageCounts counts = applyPage(item, result);
+                                changed += counts.added() + counts.modified() + counts.removed();
+                            }
+                            plaidItemRepository.updateTransactionsCursor(itemId, body.getNextCursor());
+                            if (body.getTransactionsUpdateStatus() != null
+                                    && "HISTORICAL_UPDATE_COMPLETE".equals(body.getTransactionsUpdateStatus().getValue())) {
+                                plaidItemRepository.markTransactionHistoryReady(itemId);
+                            }
+                            log.info("Plaid transactions result: item={} pages={} changed={}", itemId, batch.size(), changed);
+                            return changed;
+                        });
+                    }
+                }
+                throw new IllegalStateException("Plaid transactions sync exceeded " + MAX_PAGES + " pages");
+            } catch (PlaidRequestException e) {
+                if (!"TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION".equals(e.getErrorCode()) || attempt == 2) {
+                    throw e;
+                }
+                log.info("Restarting Plaid pagination for item {} after mutation", itemId);
             }
         }
-
-        throw new IllegalStateException("Plaid transactions sync exceeded " + MAX_PAGES + " pages");
+        throw new IllegalStateException("Unreachable pagination state");
     }
 
     /** Deletes the transactions of an item the user removed. */
@@ -105,8 +117,7 @@ class TransactionsSync {
     }
 
     /**
-     * Persists one page and its cursor together, so a later page failing cannot skip
-     * transactions we never stored.
+     * Applies a page within the complete batch transaction.
      */
     private PageCounts applyPage(PlaidItem item, TransactionsSyncResponse page) {
         List<Transaction> added = Objects.requireNonNullElse(page.getAdded(), List.of());
@@ -127,8 +138,6 @@ class TransactionsSync {
             if (!removedIds.isEmpty()) {
                 transactionRepository.deleteAllByItemIdAndTransactionIdIn(item.getItemId(), removedIds);
             }
-
-            plaidItemRepository.updateTransactionsCursor(item.getItemId(), page.getNextCursor());
         });
 
         return new PageCounts(added.size(), modified.size(), removed.size());

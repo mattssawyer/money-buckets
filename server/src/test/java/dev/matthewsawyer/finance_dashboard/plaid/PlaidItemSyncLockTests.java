@@ -1,71 +1,131 @@
 package dev.matthewsawyer.finance_dashboard.plaid;
 
-import dev.matthewsawyer.finance_dashboard.history.BalanceHistory;
-import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
-import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
-import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.scheduling.TaskScheduler;
-import org.mockito.stubbing.Answer;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
-
-import java.time.Clock;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ExecutorService;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.time.Duration;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.RETURNS_MOCKS;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class PlaidItemSyncLockTests {
+    @Test
+    void busyItemsAreSkippedAndCanRunAgainAfterRelease() throws Exception {
+        DataSource source = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        DatabaseMetaData metadata = mock(DatabaseMetaData.class);
+        when(source.getConnection()).thenReturn(connection);
+        when(connection.getMetaData()).thenReturn(metadata);
+        when(metadata.getDatabaseProductName()).thenReturn("H2");
+        PlaidItemLocks locks = new PlaidItemLocks(source);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var first = executor.submit(() -> locks.run("item", () -> {
+                entered.countDown();
+                try { assertTrue(release.await(5, TimeUnit.SECONDS)); }
+                catch (InterruptedException e) { throw new RuntimeException(e); }
+            }));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertFalse(locks.run("item", () -> fail("Concurrent sync")));
+            } finally { release.countDown(); }
+            assertTrue(first.get(5, TimeUnit.SECONDS));
+            assertTrue(locks.run("item", () -> {}));
+        }
+    }
 
     @Test
-    void syncsOfTheSameItemNeverOverlap() throws InterruptedException {
-        PlaidItem item = new PlaidItem("item-id", "encrypted", UUID.randomUUID());
-        PlaidItemRepository items = mock(PlaidItemRepository.class);
-        when(items.findById("item-id")).thenReturn(Optional.of(item));
-
-        AtomicInteger running = new AtomicInteger();
-        AtomicInteger mostAtOnce = new AtomicInteger();
-        AtomicInteger finished = new AtomicInteger();
-        Answer<Object> slowSync = invocation -> {
-            mostAtOnce.accumulateAndGet(running.incrementAndGet(), Math::max);
-            Thread.sleep(20);
-            running.decrementAndGet();
-            finished.incrementAndGet();
-            return null;
-        };
-        TransactionsSync transactionsSync = mock(TransactionsSync.class);
-        RecurringStreamsSync recurringStreamsSync = mock(RecurringStreamsSync.class);
-        doAnswer(slowSync).when(transactionsSync).sync(any());
-        doAnswer(slowSync).when(recurringStreamsSync).sync(any());
-
-        AccountsSync accountsSync = mock(AccountsSync.class);
-        when(accountsSync.sync(any(), any())).thenReturn(true);
-
-        ExecutorService executor = Executors.newFixedThreadPool(4);
-        PlaidItemSync itemSync = new PlaidItemSync(
-                items, accountsSync, transactionsSync, recurringStreamsSync, mock(BucketSorting.class),
-                mock(BalanceHistory.class), Clock.systemUTC(),
-                new TransactionTemplate(mock(PlatformTransactionManager.class)), executor, mock(TaskScheduler.class, RETURNS_MOCKS));
-
-        for (int i = 0; i < 4; i++) {
-            itemSync.notified("item-id", "TRANSACTIONS", "SYNC_UPDATES_AVAILABLE", null);
+    void boundedWaitAcquiresTheStripedLockAfterReleaseAndTimesOutOtherwise() throws Exception {
+        PlaidItemLocks locks = h2Locks();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var holder = executor.submit(() -> locks.run("item", () -> awaitRelease(entered, release)));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertTimeout(Duration.ofSeconds(1), () ->
+                        assertFalse(locks.run("item", Duration.ofMillis(50), () -> fail("Busy lock"))));
+                var waiting = executor.submit(() -> locks.run("item", Duration.ofSeconds(2), () -> {}));
+                assertThrows(TimeoutException.class, () -> waiting.get(50, TimeUnit.MILLISECONDS));
+                release.countDown();
+                assertTrue(waiting.get(3, TimeUnit.SECONDS));
+            } finally { release.countDown(); }
+            assertTrue(holder.get(5, TimeUnit.SECONDS));
+            assertTrue(locks.run("item", () -> {}));
         }
-        itemSync.linked(item);
-        executor.shutdown();
-        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
-
-        assertEquals(10, finished.get());
-        assertEquals(1, mostAtOnce.get());
     }
+
+    @Test
+    void boundedWaitAlsoWaitsForACapacityPermitAndReleasesItsLockOnTimeout() throws Exception {
+        PlaidItemLocks locks = h2Locks();
+        CountDownLatch entered = new CountDownLatch(4);
+        CountDownLatch release = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(5)) {
+            try {
+                for (int i = 0; i < 4; i++) {
+                    String id = "slot-" + i;
+                    executor.submit(() -> locks.run(id, () -> awaitRelease(entered, release)));
+                }
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertFalse(locks.run("slot-4", () -> fail("No free permit")));
+                assertTimeout(Duration.ofSeconds(1), () ->
+                        assertFalse(locks.run("slot-4", Duration.ofMillis(50), () -> fail("No free permit"))));
+                var waiting = executor.submit(() -> locks.run("slot-4", Duration.ofSeconds(2), () -> {}));
+                assertThrows(TimeoutException.class, () -> waiting.get(50, TimeUnit.MILLISECONDS));
+                release.countDown();
+                assertTrue(waiting.get(3, TimeUnit.SECONDS));
+            } finally { release.countDown(); }
+        }
+        assertTrue(locks.run("slot-4", () -> {}));
+    }
+
+    @Test
+    void interruptedWaitPreservesInterruptStatusAndDoesNotRunWork() throws Exception {
+        PlaidItemLocks locks = h2Locks();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean();
+        AtomicBoolean ran = new AtomicBoolean();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var holder = executor.submit(() -> locks.run("item", () -> awaitRelease(entered, release)));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                Thread waiting = new Thread(() -> {
+                    locks.run("item", Duration.ofSeconds(2), () -> ran.set(true));
+                    interrupted.set(Thread.currentThread().isInterrupted());
+                });
+                waiting.start();
+                waiting.interrupt();
+                waiting.join(1000);
+                assertFalse(waiting.isAlive());
+                assertTrue(interrupted.get());
+                assertFalse(ran.get());
+            } finally { release.countDown(); }
+            assertTrue(holder.get(5, TimeUnit.SECONDS));
+        }
+        assertTrue(locks.run("item", () -> {}));
+    }
+
+    private static PlaidItemLocks h2Locks() throws Exception {
+        DataSource source = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        DatabaseMetaData metadata = mock(DatabaseMetaData.class);
+        when(source.getConnection()).thenReturn(connection);
+        when(connection.getMetaData()).thenReturn(metadata);
+        when(metadata.getDatabaseProductName()).thenReturn("H2");
+        return new PlaidItemLocks(source);
+    }
+
+    private static void awaitRelease(CountDownLatch entered, CountDownLatch release) {
+        entered.countDown();
+        try { assertTrue(release.await(5, TimeUnit.SECONDS)); }
+        catch (InterruptedException e) { throw new RuntimeException(e); }
+    }
+
 }

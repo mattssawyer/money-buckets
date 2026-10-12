@@ -19,18 +19,27 @@ final class PlaidCalls {
      * e.g. "transactions sync".
      */
     static <T> T execute(Call<T> call, String action) {
+        long started = System.nanoTime();
         Response<T> response;
         try {
             response = call.execute();
         } catch (IOException e) {
+            log.info("Plaid request: endpoint={} trigger={} outcome=io_error duration_ms={}", action,
+                    org.slf4j.MDC.get("plaid_trigger"), (System.nanoTime() - started) / 1_000_000);
             throw new PlaidRequestException("Plaid " + action + " failed", e);
         }
         if (!response.isSuccessful() || response.body() == null) {
             JsonObject error = errorBody(response);
-            log.warn("Plaid {} failed with HTTP {}: {}", action, response.code(), describe(error));
+            log.warn("Plaid request: endpoint={} trigger={} status={} error={} request_id={} duration_ms={}",
+                    action, org.slf4j.MDC.get("plaid_trigger"), response.code(),
+                    error == null ? null : nullableField(error, "error_code"),
+                    error == null ? null : nullableField(error, "request_id"),
+                    (System.nanoTime() - started) / 1_000_000);
             throw new PlaidRequestException("Plaid " + action + " failed",
-                    error == null ? null : nullableField(error, "error_code"));
+                    error == null ? null : nullableField(error, "error_code"), response.code());
         }
+        log.info("Plaid request: endpoint={} trigger={} status={} duration_ms={}", action,
+                org.slf4j.MDC.get("plaid_trigger"), response.code(), (System.nanoTime() - started) / 1_000_000);
         return response.body();
     }
 
@@ -43,22 +52,8 @@ final class PlaidCalls {
         }
     }
 
-    /** Plaid's error type, code and message; never tokens or secrets. */
-    private static String describe(JsonObject error) {
-        if (error == null) {
-            return "no readable error body";
-        }
-        return String.join(" / ", field(error, "error_type"), field(error, "error_code"),
-                field(error, "error_message"));
-    }
-
     private static String nullableField(JsonObject error, String name) {
         return error.has(name) && !error.get(name).isJsonNull() ? error.get(name).getAsString() : null;
-    }
-
-    private static String field(JsonObject error, String name) {
-        String value = nullableField(error, name);
-        return value == null ? "-" : value;
     }
 
     private PlaidCalls() {

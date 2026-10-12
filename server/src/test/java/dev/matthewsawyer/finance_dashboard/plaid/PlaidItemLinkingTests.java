@@ -102,14 +102,15 @@ class PlaidItemLinkingTests {
     }
 
     @Test
-    void investmentLinksRequireInvestmentsAndAddTransactionsWhereSupported() throws IOException {
+    void investmentLinksDoNotActivateAnUnusedTransactionsSubscription() throws IOException {
         stubLinkToken();
 
         assertEquals("link-token", linking.createInvestmentsLinkToken(USER_ID));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals(List.of(Products.INVESTMENTS), request.getProducts());
-        assertEquals(List.of(Products.TRANSACTIONS), request.getOptionalProducts());
+        assertNull(request.getOptionalProducts());
+        assertNull(request.getTransactions());
         assertEquals(WEBHOOK_URL, request.getWebhook());
     }
 
@@ -301,6 +302,16 @@ class PlaidItemLinkingTests {
         when(plaidItemRepository.findByItemIdAndUserIdAndRemovedOnIsNull("item-id", USER_ID))
                 .thenReturn(Optional.of(item));
         return item;
+    }
+
+    @Test
+    void finishesLocalRemovalWhenPlaidAlreadyRemovedTheItem() throws IOException {
+        storedItem();
+        when(plaidApi.itemRemove(any())).thenReturn(removeCall);
+        when(removeCall.execute()).thenReturn(Response.error(400, okhttp3.ResponseBody.create(
+                "{\"error_code\":\"ITEM_NOT_FOUND\"}", okhttp3.MediaType.get("application/json"))));
+        linking.remove(USER_ID, "item-id");
+        verify(itemSync).removed("item-id");
     }
 
     private PlaidItemLinking linking(String webhookUrl) {

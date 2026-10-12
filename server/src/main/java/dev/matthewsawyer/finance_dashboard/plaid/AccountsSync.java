@@ -122,6 +122,9 @@ class AccountsSync {
                 accountRepository.save(missing);
             }
 
+            if (response.getItem() != null && response.getItem().getProducts() != null) {
+                itemRepository.updateTransactionsEnabled(item.getItemId(), products.contains(Products.TRANSACTIONS));
+            }
             itemRepository.updateDetails(item.getItemId(), institutionId, institutionName,
                     products.contains(Products.INVESTMENTS),
                     products.contains(Products.INVESTMENTS) || available.contains(Products.INVESTMENTS));

@@ -23,6 +23,8 @@ public class PlaidConfig {
         keys.put("secret", secret);
 
         ApiClient apiClient = new ApiClient(keys);
+        apiClient.setTimeout(30);
+        apiClient.getOkBuilder().callTimeout(java.time.Duration.ofSeconds(45));
         apiClient.setPlaidAdapter(baseUrl(environment));
         return apiClient.createService(PlaidApi.class);
     }

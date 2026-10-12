@@ -153,7 +153,7 @@ class TransactionsSyncTests {
         verify(plaidApi, org.mockito.Mockito.times(2)).transactionsSync(requestCaptor.capture());
         assertNull(requestCaptor.getAllValues().get(0).getCursor());
         assertEquals("cursor-1", requestCaptor.getAllValues().get(1).getCursor());
-        verify(plaidItemRepository).updateTransactionsCursor("item-id", "cursor-1");
+        verify(plaidItemRepository, org.mockito.Mockito.never()).updateTransactionsCursor("item-id", "cursor-1");
         verify(plaidItemRepository).updateTransactionsCursor("item-id", "cursor-2");
     }
 
@@ -208,6 +208,49 @@ class TransactionsSyncTests {
         assertThrows(IllegalStateException.class, () -> sync.sync(plaintextItem));
 
         verifyNoMoreInteractions(plaidApi);
+    }
+
+    @Test
+    void discardsTheWholeBatchAndRestartsFromOriginalCursorOnMutation() throws IOException {
+        ReflectionTestUtils.setField(item, "transactionsCursor", "original");
+        when(plaidApi.transactionsSync(any())).thenReturn(syncCall);
+        when(syncCall.execute()).thenReturn(
+                Response.success(new TransactionsSyncResponse().added(List.of(new Transaction()
+                        .transactionId("discarded").accountId("account-1").amount(1.0).date(LocalDate.now())))
+                        .nextCursor("intermediate").hasMore(true)),
+                Response.error(400, ResponseBody.create(
+                        "{\"error_code\":\"TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION\"}", MediaType.get("application/json"))),
+                Response.success(new TransactionsSyncResponse().nextCursor("final").hasMore(false)));
+        assertEquals(0, sync.sync(item));
+        ArgumentCaptor<TransactionsSyncRequest> requests = ArgumentCaptor.forClass(TransactionsSyncRequest.class);
+        verify(plaidApi, org.mockito.Mockito.times(3)).transactionsSync(requests.capture());
+        assertEquals(List.of("original", "intermediate", "original"),
+                requests.getAllValues().stream().map(TransactionsSyncRequest::getCursor).toList());
+        org.mockito.Mockito.verifyNoInteractions(transactionRepository);
+        verify(plaidItemRepository).updateTransactionsCursor("item-id", "final");
+        verifyNoMoreInteractions(plaidItemRepository);
+    }
+
+    @Test
+    void aLaterPageFailureDoesNotSavePartialDataOrAdvanceCursor() throws IOException {
+        when(plaidApi.transactionsSync(any())).thenReturn(syncCall);
+        when(syncCall.execute()).thenReturn(Response.success(new TransactionsSyncResponse()
+                        .added(List.of(new Transaction().transactionId("not-saved").accountId("account-1")
+                                .amount(1.0).date(LocalDate.now())))
+                        .nextCursor("intermediate").hasMore(true)))
+                .thenThrow(new IOException("connection lost"));
+        assertThrows(PlaidRequestException.class, () -> sync.sync(item));
+        org.mockito.Mockito.verifyNoInteractions(transactionRepository, plaidItemRepository);
+    }
+
+    @Test
+    void boundsRepeatedMutationRetries() throws IOException {
+        when(plaidApi.transactionsSync(any())).thenReturn(syncCall);
+        when(syncCall.execute()).thenAnswer(invocation -> Response.error(400, ResponseBody.create(
+                "{\"error_code\":\"TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION\"}", MediaType.get("application/json"))));
+        assertThrows(PlaidRequestException.class, () -> sync.sync(item));
+        verify(plaidApi, org.mockito.Mockito.times(3)).transactionsSync(any());
+        org.mockito.Mockito.verifyNoInteractions(transactionRepository, plaidItemRepository);
     }
 
     private void stubSync(TransactionsSyncResponse response) throws IOException {
