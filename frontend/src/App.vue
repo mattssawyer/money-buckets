@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import BootSkeleton from './components/BootSkeleton.vue'
 import SignInPage from './views/SignInPage.vue'
 import { setAccessTokenProvider } from './api/client'
 import { useAuth } from './auth'
@@ -16,6 +17,7 @@ const routerReady = ref(false)
 router.isReady().then(() => (routerReady.value = true))
 // Whether the signed-in user still needs onboarding is known, so Home doesn't flash first.
 const onboardingChecked = ref(false)
+const isHomePath = window.location.pathname === import.meta.env.BASE_URL
 
 setAccessTokenProvider(getAccessToken)
 
@@ -40,16 +42,8 @@ watch(
   <template v-else-if="isLoaded && routerReady">
     <SignInPage v-if="!isSignedIn" />
     <RouterView v-else-if="onboardingChecked" />
-    <main v-else class="session-loading" role="status" aria-live="polite">Loading…</main>
+    <BootSkeleton v-else :home="route.name === 'home'" />
   </template>
-  <main v-else class="session-loading" role="status" aria-live="polite">Loading…</main>
+  <!-- Before the router knows the page, the address says whether it's Home. -->
+  <BootSkeleton v-else :home="routerReady ? route.name === 'home' : isHomePath" />
 </template>
-
-<style scoped>
-.session-loading {
-  display: grid;
-  min-height: 100svh;
-  place-items: center;
-  color: var(--app-text-secondary);
-}
-</style>

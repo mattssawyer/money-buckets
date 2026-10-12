@@ -68,7 +68,7 @@ describe('transactions dialog', () => {
     const cells = wrapper.findAll('tbody tr td').map((cell) => cell.text())
     expect(cells).toEqual([
       'Sep 17, 2026',
-      'CCoffee ShopPending',
+      'Coffee ShopPending',
       'Food & drink',
       'Guilt-free spending',
       '-$4.75',

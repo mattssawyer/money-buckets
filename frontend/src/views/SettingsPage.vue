@@ -57,7 +57,7 @@ async function deleteAccount() {
       </header>
 
       <section class="panel settings-card" aria-labelledby="account-heading">
-        <h2 id="account-heading" class="card-label">Your account</h2>
+        <h2 id="account-heading" class="card-title">Your account</h2>
         <div class="setting-row">
           <div class="setting-text">
             <span class="setting-name">Email</span>
@@ -156,30 +156,13 @@ async function deleteAccount() {
   gap: 1rem;
 }
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.page-heading :deep(.cl-userButtonTrigger),
-.page-heading :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
-}
-
 .settings-card {
   width: min(100%, 40rem);
   padding: 1rem 1.25rem 0.25rem;
 }
 
-.card-label {
+.card-title {
   padding-bottom: 0.5rem;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.005em;
 }
 
 .setting-row {
@@ -195,7 +178,7 @@ h1 {
   display: grid;
   gap: 0.125rem;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .setting-name {
@@ -217,7 +200,7 @@ h1 {
   display: flex;
   gap: 1.25rem;
   padding: 0 0.25rem;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .legal-links a {
@@ -253,10 +236,6 @@ h1 {
 @media (max-width: 900px) {
   .settings-page {
     padding: 1.25rem 1.25rem calc(var(--app-tabbar-height) + env(safe-area-inset-bottom) + 1.5rem);
-  }
-
-  h1 {
-    font-size: 1.375rem;
   }
 }
 </style>

@@ -3,8 +3,8 @@ import { Landmark, Plus } from '@lucide/vue'
 import { onMounted, onUnmounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import SkeletonCard from '../components/SkeletonCard.vue'
 import UserMenu from '../components/UserMenu.vue'
 import InfoTip from '../components/InfoTip.vue'
 import AccountSettings from '../components/AccountSettings.vue'
@@ -105,8 +105,8 @@ function onOlderRemoved() {
         <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 
         <div v-if="loading" class="page-loading" aria-label="Loading your accounts">
-          <Skeleton height="14rem" />
-          <Skeleton height="8rem" />
+          <SkeletonCard height="14rem" :lines="4" />
+          <SkeletonCard height="8rem" :lines="2" />
         </div>
 
         <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
@@ -168,19 +168,6 @@ function onOlderRemoved() {
   gap: 1rem;
 }
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.page-heading :deep(.cl-userButtonTrigger),
-.page-heading :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
-}
-
 /* Wide screens would spread the settings far from the account they belong to. */
 .accounts-content {
   display: grid;
@@ -234,10 +221,10 @@ h1 {
 }
 
 .prompt h2 {
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
   font-weight: 550;
   line-height: 1.25;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.04em;
 }
 
 .prompt p {
@@ -249,10 +236,6 @@ h1 {
 @media (max-width: 900px) {
   .accounts-page {
     padding: 1.25rem 1.25rem calc(var(--app-tabbar-height) + env(safe-area-inset-bottom) + 1.5rem);
-  }
-
-  h1 {
-    font-size: 1.375rem;
   }
 }
 

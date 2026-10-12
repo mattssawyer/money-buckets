@@ -4,7 +4,7 @@ import Message from 'primevue/message'
 import type { PlaidAccount } from '../api/PlaidService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { kindLabel, useAccountTracking } from '../accounts/useAccountTracking'
-import { formatMoney } from '../investments/history'
+import { formatMoney } from '../money'
 
 /** The user's accounts, grouped by kind, with what counts toward spending and net worth. */
 const accounts = defineModel<PlaidAccount[]>('accounts', { required: true })
@@ -64,7 +64,7 @@ function isOwed(account: PlaidAccount) {
       :aria-labelledby="`account-group-${group.id}`"
     >
       <table class="account-table">
-        <caption :id="`account-group-${group.id}`" class="card-label">
+        <caption :id="`account-group-${group.id}`" class="card-title">
           {{
             group.title
           }}
@@ -177,19 +177,15 @@ function isOwed(account: PlaidAccount) {
   table-layout: fixed;
 }
 
-.card-label {
+.card-title {
   padding-bottom: 0.5rem;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.005em;
   text-align: left;
 }
 
 .account-table thead th {
   padding: 0 0 0.5rem;
   color: var(--app-text-subdued);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
   text-align: left;
   border-bottom: 1px solid var(--app-divider);
@@ -263,7 +259,7 @@ function isOwed(account: PlaidAccount) {
 .account-kind {
   margin-top: 0.125rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .column-balance {
@@ -274,7 +270,7 @@ function isOwed(account: PlaidAccount) {
 .owed {
   display: block;
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 400;
 }
 
@@ -334,7 +330,7 @@ function isOwed(account: PlaidAccount) {
 
   .account-table td::before {
     color: var(--app-text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--text-base);
     content: attr(data-label);
   }
 

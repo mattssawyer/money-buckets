@@ -1000,7 +1000,7 @@ function amountValue(amount: number | null) {
 .save-error,
 .save-note {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .save-error {
@@ -1033,7 +1033,7 @@ function amountValue(amount: number | null) {
   background: transparent;
   border: 0;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1073,7 +1073,7 @@ function amountValue(amount: number | null) {
   margin: 0;
   padding: 0.625rem 0.875rem;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .note-action {
@@ -1131,7 +1131,7 @@ function amountValue(amount: number | null) {
   display: grid;
   flex: 1;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   line-height: 1.3;
 }
 
@@ -1144,7 +1144,7 @@ function amountValue(amount: number | null) {
 
 .unplaced-amount {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1161,7 +1161,7 @@ function amountValue(amount: number | null) {
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .unplaced-skip {
@@ -1243,7 +1243,7 @@ function amountValue(amount: number | null) {
   color: var(--app-text-secondary);
   background: var(--app-inset);
   border-radius: 50%;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1263,7 +1263,7 @@ function amountValue(amount: number | null) {
 h2 {
   margin: 0;
   color: var(--app-text);
-  font-size: 1.0625rem;
+  font-size: var(--text-md);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.02em;
@@ -1284,7 +1284,7 @@ h2 {
 .block-hint {
   margin: 0;
   color: var(--app-text-subdued);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .sheet-row {
@@ -1408,7 +1408,7 @@ h2 {
   color: var(--app-text-secondary);
   background: var(--app-inset);
   border-radius: 999px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 500;
   line-height: 1.25rem;
   text-align: center;
@@ -1450,7 +1450,7 @@ h2 {
 
 .item-row {
   min-height: 2rem;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .item-row .name-input {
@@ -1459,7 +1459,7 @@ h2 {
 
 .add-item {
   margin: 0.1rem 0 0 1.3rem;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .add-cost {
@@ -1507,7 +1507,7 @@ h2 {
   background: var(--app-inset);
   border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
 }
 
@@ -1527,7 +1527,7 @@ h2 {
   border: 0;
   border-radius: 999px;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1589,7 +1589,7 @@ h2 {
 
 .total-share {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -1615,7 +1615,7 @@ h2 {
   align-items: center;
   gap: 0.3rem;
   color: var(--app-text-subdued);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1648,7 +1648,7 @@ h2 {
 }
 
 .guilt-free-row {
-  font-size: 1rem;
+  font-size: var(--text-md);
 }
 
 .guilt-free-over,
@@ -1663,7 +1663,7 @@ h2 {
 
 .guilt-free-warning {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 1000px) {

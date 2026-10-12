@@ -7,6 +7,7 @@ import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
+import PayeeIcon from './PayeeIcon.vue'
 import RecurringEditor from './RecurringEditor.vue'
 import {
   answerRecurringCandidate,
@@ -16,7 +17,7 @@ import {
   type RecurringStatus,
   type RecurringStream,
 } from '../api/PlaidService'
-import { frequencyLabel, recurringLabel } from '../api/plaidLabels'
+import { frequencyLabel, recurringLabel, formatStreamAmount } from '../api/plaidLabels'
 import { PHONE_QUERY, useMediaQuery } from '../useMediaQuery'
 
 /** The most streams the server sends. */
@@ -233,14 +234,6 @@ function meta(stream: RecurringStream) {
     .filter(Boolean)
     .join(' · ')
 }
-
-function formatAmount(stream: RecurringStream) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: stream.iso_currency_code ?? 'USD',
-    signDisplay: 'exceptZero',
-  }).format(-stream.amount)
-}
 </script>
 
 <template>
@@ -315,7 +308,7 @@ function formatAmount(stream: RecurringStream) {
             class="row"
             :class="{ 'row-suggested': row.status === 'SUGGESTED' }"
           >
-            <span class="logo" aria-hidden="true">{{ recurringLabel(row).charAt(0) }}</span>
+            <PayeeIcon class="logo" :category="row.category" />
             <span class="details">
               <button type="button" class="name" aria-haspopup="dialog" @click="edit(row)">
                 {{ recurringLabel(row) }}
@@ -323,7 +316,7 @@ function formatAmount(stream: RecurringStream) {
               <span v-if="meta(row)" class="meta">{{ meta(row) }}</span>
             </span>
             <span class="amount" :class="{ 'amount-inflow': row.amount < 0 }">
-              {{ formatAmount(row) }}
+              {{ formatStreamAmount(row) }}
             </span>
             <!-- Plaid named nobody, so there's no payee to keep an answer for. -->
             <span v-if="!row.kind || !row.merchant_key" class="answers" />
@@ -396,7 +389,7 @@ function formatAmount(stream: RecurringStream) {
 
 .dialog-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -408,7 +401,7 @@ function formatAmount(stream: RecurringStream) {
 .dialog-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .dialog-notice {
@@ -440,7 +433,7 @@ function formatAmount(stream: RecurringStream) {
   border: 0;
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -512,23 +505,9 @@ function formatAmount(stream: RecurringStream) {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 2.5rem;
+  left: 2.75rem;
   height: 1px;
   background: var(--app-divider);
-}
-
-.logo {
-  display: grid;
-  flex: none;
-  width: 1.75rem;
-  height: 1.75rem;
-  place-items: center;
-  color: var(--app-text-secondary);
-  background: var(--app-inset);
-  border-radius: 50%;
-  font-size: 0.75rem;
-  font-weight: 550;
-  text-transform: uppercase;
 }
 
 .details {
@@ -548,7 +527,7 @@ function formatAmount(stream: RecurringStream) {
   background: none;
   border: 0;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
@@ -569,12 +548,12 @@ function formatAmount(stream: RecurringStream) {
 
 .meta {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .amount {
   flex: none;
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -606,15 +585,6 @@ function formatAmount(stream: RecurringStream) {
     gap: 0.75rem;
     min-height: 3.75rem;
     padding: 0.625rem 0;
-  }
-
-  .logo {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .row:not(:last-child)::after {
-    left: 2.75rem;
   }
 
   .answers {

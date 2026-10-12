@@ -1,4 +1,5 @@
 import type { BalancePoint } from '../api/InvestmentsService'
+import { formatSignedMoney } from '../money'
 
 export const RANGES = ['1M', '3M', 'YTD', '1Y', 'All'] as const
 export type Range = (typeof RANGES)[number]
@@ -55,29 +56,8 @@ export function latestValue(points: BalancePoint[]): number | null {
   return points.length ? points[points.length - 1]!.value : null
 }
 
-const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
-const signedMoney = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  signDisplay: 'exceptZero',
-})
-const compactMoney = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  notation: 'compact',
-  maximumFractionDigits: 1,
-})
-
-export function formatMoney(value: number): string {
-  return money.format(value)
-}
-
-export function formatCompactMoney(value: number): string {
-  return compactMoney.format(value)
-}
-
 export function formatChange(change: Change): string {
-  const amount = signedMoney.format(change.amount)
+  const amount = formatSignedMoney(change.amount)
   if (change.percent == null) return amount
   const percent = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 1,

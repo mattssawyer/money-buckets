@@ -61,7 +61,7 @@ const logoUrl = `${import.meta.env.BASE_URL}logo.svg`
 }
 
 h1 {
-  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  font-size: var(--text-2xl);
   font-weight: 550;
   line-height: 1.15;
   letter-spacing: -0.04em;
@@ -70,7 +70,7 @@ h1 {
 .legal-updated {
   margin-top: 0.5rem;
   color: var(--app-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .legal-body {
@@ -80,7 +80,7 @@ h1 {
 
 .legal-body :deep(h2) {
   margin: 2.25rem 0 0.5rem;
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   line-height: 1.35;
   letter-spacing: -0.02em;
@@ -111,7 +111,7 @@ h1 {
   margin-top: 3rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--app-divider);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .legal-footer a {

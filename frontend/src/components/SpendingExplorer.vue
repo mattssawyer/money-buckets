@@ -190,7 +190,7 @@ function amount(value: number) {
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--app-canvas);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .explorer-header {
@@ -207,7 +207,7 @@ function amount(value: number) {
 
 h2 {
   margin: 0;
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.02em;
@@ -222,7 +222,7 @@ h2 {
 .explorer-empty {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -243,7 +243,7 @@ h2 {
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .text-action {
@@ -253,7 +253,7 @@ h2 {
   background: transparent;
   border: 0;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
 }
@@ -285,7 +285,7 @@ h2 {
   background: transparent;
   border: 0;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   outline: none;
 }
 
@@ -303,7 +303,7 @@ h2 {
   margin: 0.35rem 0 0.1rem;
   padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--app-divider);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
@@ -316,7 +316,7 @@ h2 {
 .part-heading {
   margin: 0.5rem 0 0;
   color: var(--app-text-subdued);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -332,7 +332,7 @@ h2 {
   padding-left: 0.6rem;
   border-left: 1px solid var(--app-divider);
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .pick-row {

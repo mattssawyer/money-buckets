@@ -86,7 +86,7 @@ async function createAccount() {
   justify-content: center;
   gap: 0.75rem;
   margin-bottom: 1.75rem;
-  font-size: 1.0625rem;
+  font-size: var(--text-lg);
 }
 
 .sign-in-logo {
@@ -103,13 +103,6 @@ async function createAccount() {
 
 .sign-in-card {
   padding: clamp(1.5rem, 5vw, 2.25rem);
-}
-
-h1 {
-  font-size: clamp(1.5rem, 5vw, 1.75rem);
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
 }
 
 .sign-in-subtitle {
@@ -131,14 +124,14 @@ h1 {
   gap: 0.75rem;
   margin: 0.25rem 0 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
 .sign-in-legal {
   margin-top: 1.25rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   line-height: 1.6;
   text-align: center;
 }

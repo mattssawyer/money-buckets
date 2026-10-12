@@ -5,6 +5,7 @@ import Column from 'primevue/column'
 import DataTable, { type DataTablePageEvent } from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
+import PayeeIcon from './PayeeIcon.vue'
 import TransactionEditor from './TransactionEditor.vue'
 import { getTransactionPage, type PlaidTransaction } from '../api/PlaidService'
 import {
@@ -169,10 +170,7 @@ function formatDay(date: string) {
       <Column v-if="compact" class="compact-column">
         <template #body="{ data }: { data: PlaidTransaction }">
           <button type="button" class="compact-row" aria-haspopup="dialog" @click="edit(data)">
-            <img v-if="data.logo_url" class="logo compact-logo" :src="data.logo_url" alt="" />
-            <span v-else class="logo compact-logo logo-fallback" aria-hidden="true">
-              {{ transactionLabel(data).charAt(0) }}
-            </span>
+            <PayeeIcon :logo-url="data.logo_url" :category="data.category" />
             <span class="compact-details">
               <span class="compact-name">
                 <span class="name">{{ transactionLabel(data) }}</span>
@@ -206,10 +204,7 @@ function formatDay(date: string) {
       <Column v-if="!compact" header="Description">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="description">
-            <img v-if="data.logo_url" class="logo" :src="data.logo_url" alt="" />
-            <span v-else class="logo logo-fallback" aria-hidden="true">
-              {{ transactionLabel(data).charAt(0) }}
-            </span>
+            <PayeeIcon class="logo" :logo-url="data.logo_url" :category="data.category" />
             <button
               type="button"
               class="name name-button"
@@ -262,7 +257,7 @@ function formatDay(date: string) {
 
 .dialog-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -274,7 +269,7 @@ function formatDay(date: string) {
 .dialog-subtitle {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .dialog-notice {
@@ -292,12 +287,12 @@ function formatDay(date: string) {
 
 .transactions-table :deep(th) {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
 .transactions-table :deep(td) {
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 .transactions-table :deep(.date-column) {
@@ -320,21 +315,8 @@ function formatDay(date: string) {
 }
 
 .logo {
-  flex: none;
-  display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  place-items: center;
-  object-fit: cover;
-  background: var(--app-inset);
-  border-radius: 50%;
-}
-
-.logo-fallback {
-  color: var(--app-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 550;
-  text-transform: uppercase;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .name {
@@ -372,7 +354,7 @@ function formatDay(date: string) {
   flex: none;
   padding: 0.125rem 0.375rem;
   color: var(--app-text-secondary);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 500;
   background: var(--app-inset);
   border-radius: var(--app-radius-chip);
@@ -415,7 +397,7 @@ function formatDay(date: string) {
 
 .day {
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 550;
   letter-spacing: 0.01em;
 }
@@ -449,11 +431,6 @@ function formatDay(date: string) {
   border-radius: var(--app-radius-chip);
 }
 
-.compact-logo {
-  width: 2rem;
-  height: 2rem;
-}
-
 .compact-details {
   display: grid;
   flex: 1;
@@ -474,7 +451,7 @@ function formatDay(date: string) {
   gap: 0.375rem;
   min-width: 0;
   color: var(--app-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .compact-meta-text {
@@ -494,7 +471,7 @@ function formatDay(date: string) {
 
 .transactions-compact :deep(.p-paginator-current) {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .table-empty {

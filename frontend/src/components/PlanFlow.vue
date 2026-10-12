@@ -179,7 +179,7 @@ const sourceLabelStyle = {
   position: absolute;
   transform: translateY(-50%);
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1;
 }
@@ -195,14 +195,14 @@ const sourceLabelStyle = {
 
 .flow-label-name {
   color: var(--app-text);
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 
 .flow-label-range {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 

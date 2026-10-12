@@ -218,7 +218,7 @@ function plannedLines(lines: PlanLineDraft[]) {
 .saved-on {
   margin: 0 auto 0 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .summary-panel {
@@ -229,21 +229,21 @@ function plannedLines(lines: PlanLineDraft[]) {
 
 h2 {
   margin: 0;
-  font-size: 1.0625rem;
+  font-size: var(--text-md);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .income h2 {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: 0;
 }
 
 .income-amount {
   margin: 0.25rem 0 0;
-  font-size: 2rem;
+  font-size: var(--text-2xl);
   font-weight: 550;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
@@ -253,7 +253,7 @@ h2 {
 .income-detail {
   margin: 0.35rem 0 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .split-bar {
@@ -293,7 +293,7 @@ h2 {
 
 .legend-title {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .legend-amount,
@@ -302,7 +302,7 @@ h2 {
 }
 
 .legend-amount {
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
@@ -313,12 +313,12 @@ h2 {
   align-items: baseline;
   gap: 0.15rem 0.5rem;
   color: var(--app-text-subdued);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .legend-share {
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
@@ -369,7 +369,7 @@ h2 {
   padding-left: 0.75rem;
   border-left: 1px solid var(--app-divider);
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .line-row {
@@ -395,7 +395,7 @@ h2 {
   color: var(--app-text-secondary);
   background: var(--app-inset);
   border-radius: 999px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   white-space: nowrap;
 }
 
@@ -429,17 +429,13 @@ h2 {
 .bucket-empty {
   margin: 0;
   color: var(--app-text-subdued);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 @media (max-width: 640px) {
   .summary-panel,
   .bucket-card {
     padding: 1.25rem;
-  }
-
-  .income-amount {
-    font-size: 1.625rem;
   }
 }
 </style>

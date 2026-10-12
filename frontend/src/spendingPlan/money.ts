@@ -1,3 +1,5 @@
+import { formatMoney, formatWholeDollars } from '../money'
+
 export function parseAmount(value: string): number | null {
   const cleaned = value.replace(/[^0-9.]/g, '')
   if (!cleaned) return null
@@ -5,12 +7,9 @@ export function parseAmount(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+// A typed plan amount keeps the cents it was given: $3,200 or $126.10.
 export function formatPlanAmount(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-  }).format(amount)
+  return amount % 1 === 0 ? formatWholeDollars(amount) : formatMoney(amount)
 }
 
 export function roundCents(value: number): number {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { BUCKET_STYLES } from '../api/plaidLabels'
+import { formatWholeDollars } from '../money'
 import type { GuiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
 
 /** How much of the plan's guilt-free spending a month has used, along the foot of its card. */
@@ -17,16 +18,8 @@ const spentPercent = computed(() => {
   return spent > 0 ? 100 : 0
 })
 const summary = computed(
-  () => `${wholeDollars(Math.abs(props.guiltFree.left))} ${over.value ? 'over' : 'left'}`,
+  () => `${formatWholeDollars(Math.abs(props.guiltFree.left))} ${over.value ? 'over' : 'left'}`,
 )
-
-function wholeDollars(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
 </script>
 
 <template>
@@ -74,14 +67,14 @@ function wholeDollars(amount: number) {
 .guilt-free-title {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: normal;
 }
 
 .guilt-free-summary {
   color: var(--app-text);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

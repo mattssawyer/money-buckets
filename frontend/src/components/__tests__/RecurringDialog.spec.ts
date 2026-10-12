@@ -138,15 +138,15 @@ describe('recurring dialog', () => {
 
     expect(tabs(wrapper)).toEqual(['Recurring 2', 'Possibly recurring 1', 'Not recurring 1'])
     expect(rowTexts(wrapper)).toEqual([
-      'AAlabama PowerMonthly · Next Oct 17-$155.59Not recurring',
-      'SSterling GroupEvery 3 months · Next Dec 29 · Confirmed by you-$1,554.91Not recurring',
+      'Alabama PowerMonthly · Next Oct 17-$155.59Not recurring',
+      'Sterling GroupEvery 3 months · Next Dec 29 · Confirmed by you-$1,554.91Not recurring',
     ])
 
     await showTab(wrapper, 'Possibly recurring')
-    expect(rowTexts(wrapper)).toEqual(['CCursorMonthly? · Last Sep 1-$20.00YesNo'])
+    expect(rowTexts(wrapper)).toEqual(['CursorMonthly? · Last Sep 1-$20.00YesNo'])
 
     await showTab(wrapper, 'Not recurring')
-    expect(rowTexts(wrapper)).toEqual(['YYouTubeLast Sep 17-$13.99Undo'])
+    expect(rowTexts(wrapper)).toEqual(['YouTubeLast Sep 17-$13.99Undo'])
   })
 
   it('moves a row to its new list in one click, then catches up without a loading state', async () => {

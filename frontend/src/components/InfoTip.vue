@@ -127,7 +127,7 @@ onBeforeUnmount(hide)
   border-radius: var(--app-radius-chip);
   box-shadow: var(--app-shadow-sm);
   font-family: var(--app-font);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 400;
   letter-spacing: normal;
   line-height: 1.45;

@@ -3,8 +3,8 @@ import { Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
+import SkeletonCard from '../components/SkeletonCard.vue'
 import UserMenu from '../components/UserMenu.vue'
 import BalanceChart from '../components/BalanceChart.vue'
 import AddInvestments from '../components/AddInvestments.vue'
@@ -27,12 +27,12 @@ import {
   changeOver,
   formatChange,
   formatDay,
-  formatMoney,
   latestValue,
   rangeStart,
   type Change,
   type Range,
 } from '../investments/history'
+import { formatMoney } from '../money'
 import { closePlaidLink, linkItem } from '../plaid/plaidLink'
 
 const NET_WORTH_COLOR = '#171717'
@@ -344,10 +344,10 @@ function changeIcon(change: Change) {
       <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 
       <div v-if="loading" class="page-loading" aria-label="Loading your investments">
-        <Skeleton height="22rem" />
+        <SkeletonCard height="22rem" :lines="2" />
         <div class="account-grid">
-          <Skeleton height="14rem" />
-          <Skeleton height="14rem" />
+          <SkeletonCard height="14rem" />
+          <SkeletonCard height="14rem" />
         </div>
       </div>
 
@@ -610,19 +610,6 @@ function changeIcon(change: Change) {
   gap: 0.75rem;
 }
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: 550;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.page-heading :deep(.cl-userButtonTrigger),
-.page-heading :deep(.cl-avatarBox) {
-  width: 2rem;
-  height: 2rem;
-}
-
 .page-loading {
   display: grid;
   gap: 1.25rem;
@@ -657,14 +644,14 @@ h1 {
 }
 
 .prompt h2 {
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
   font-weight: 550;
   line-height: 1.25;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.04em;
 }
 
 .prompt h3 {
-  font-size: 1rem;
+  font-size: var(--text-md);
   font-weight: 550;
 }
 
@@ -689,7 +676,8 @@ h1 {
   display: inline-flex;
   gap: 0.125rem;
   padding: 0.1875rem;
-  background: var(--app-inset);
+  /* It sits on the page, not a card, so it takes the darker grey to stand out from it. */
+  background: var(--app-inset-hover);
   border-radius: var(--app-radius-control);
 }
 
@@ -728,10 +716,10 @@ h1 {
 
 .figure-label,
 .section-heading {
-  color: var(--app-text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
 .figure-title {
@@ -754,10 +742,10 @@ h1 {
 
 .hero-figure {
   margin-top: 0.25rem;
-  font-size: 3rem;
+  font-size: var(--text-3xl);
   font-weight: 550;
   line-height: 1.1;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.04em;
 }
 
 .change {
@@ -772,7 +760,7 @@ h1 {
   justify-content: flex-end;
   margin-top: 0.125rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .change .up {
@@ -801,13 +789,13 @@ h1 {
   gap: 0.25rem 1.25rem;
   padding: 0;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   list-style: none;
 }
 
 .footnote {
   color: var(--app-text-subdued);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .accounts-section {
@@ -947,7 +935,7 @@ h1 {
 }
 
 .account-card h3 {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
   font-weight: 550;
   overflow-wrap: anywhere;
 }
@@ -955,7 +943,7 @@ h1 {
 .account-kind {
   margin-top: 0.125rem;
   color: var(--app-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 .account-figures {
@@ -963,7 +951,7 @@ h1 {
 }
 
 .account-value {
-  font-size: 1.125rem;
+  font-size: var(--text-lg);
   font-weight: 550;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -972,10 +960,6 @@ h1 {
 @media (max-width: 900px) {
   .investments-page {
     padding: 1.25rem 1.25rem calc(var(--app-tabbar-height) + env(safe-area-inset-bottom) + 1.5rem);
-  }
-
-  h1 {
-    font-size: 1.375rem;
   }
 }
 
@@ -1002,10 +986,6 @@ h1 {
 
   .net-worth {
     padding: 1.125rem 1rem 1.25rem;
-  }
-
-  .hero-figure {
-    font-size: 2.25rem;
   }
 
   .prompt {
