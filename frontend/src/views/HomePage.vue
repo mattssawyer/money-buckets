@@ -588,7 +588,7 @@ async function openPlaidLink() {
     <div class="home-page">
       <main class="page-content" aria-label="Dashboard">
         <div class="overview-heading">
-          <div>
+          <div class="overview-title">
             <h1>{{ greeting }}</h1>
             <p>Here's what's happening with your finances</p>
           </div>
@@ -599,6 +599,7 @@ async function openPlaidLink() {
               :loading="linking"
               :disabled="linking"
               :aria-busy="linking"
+              :aria-label="linking ? 'Connecting…' : 'Add an account'"
               class="add-account-button"
               @click="openPlaidLink"
             >
@@ -2003,6 +2004,79 @@ li.spending-legend-row {
 }
 
 @media (max-width: 640px) {
+  /* The greeting keeps the row, with adding an account shrunk to an icon beside the avatar. */
+  .overview-heading {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    margin-bottom: 1.25rem;
+  }
+
+  .overview-title {
+    min-width: 0;
+  }
+
+  .overview-heading p {
+    font-size: 0.875rem;
+  }
+
+  .overview-actions {
+    gap: 0.5rem;
+    padding-top: 0.125rem;
+  }
+
+  .add-account-button {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .add-account-button :deep(.p-button-label) {
+    display: none;
+  }
+
+  /*
+   * A list that scrolls inside a page that scrolls is awkward on a phone, so each list shows its
+   * first few rows in full and View all opens the rest.
+   */
+  .transactions-list,
+  .transactions-card .transactions-list,
+  .recurring-card .transactions-list,
+  .recurring-card .candidates-list {
+    max-height: none;
+    padding-right: 0;
+    overflow: visible;
+  }
+
+  .transactions-card .transactions-list > li:nth-child(n + 6),
+  .recurring-card .transactions-list:not(.candidates-list) > li:nth-child(n + 6) {
+    display: none;
+  }
+
+  .transactions-list > li:nth-child(5) > .transaction-button::after,
+  .recurring-card .transactions-list:not(.candidates-list) > li:nth-child(5)::after {
+    display: none;
+  }
+
+  .transaction-row {
+    min-height: 3.5rem;
+  }
+
+  .transaction-logo {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .transaction-row:not(:last-child)::after,
+  .transactions-list > li:not(:last-child) > .transaction-button::after {
+    left: 2.75rem;
+  }
+
+  .account-select {
+    min-width: 0;
+    max-width: 12rem;
+  }
+
   .balance-card,
   .transactions-card,
   .recurring-card,

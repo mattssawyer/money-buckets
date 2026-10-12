@@ -80,8 +80,10 @@ function onOlderRemoved() {
           <Button
             v-if="accounts.length"
             :label="linking ? 'Connecting…' : 'Add an account'"
+            :aria-label="linking ? 'Connecting…' : 'Add an account'"
             :loading="linking"
             :disabled="linking"
+            class="add-account-button"
             @click="linkAccount"
           >
             <template #icon v-if="!linking">
@@ -251,6 +253,24 @@ h1 {
 
   h1 {
     font-size: 1.375rem;
+  }
+}
+
+/* Adding an account shrinks to an icon beside the avatar, as on Home. */
+@media (max-width: 640px) {
+  .page-heading {
+    gap: 0.5rem;
+  }
+
+  .add-account-button {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .add-account-button :deep(.p-button-label) {
+    display: none;
   }
 }
 </style>
