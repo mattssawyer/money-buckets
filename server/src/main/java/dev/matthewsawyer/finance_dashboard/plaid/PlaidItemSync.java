@@ -119,7 +119,7 @@ public class PlaidItemSync {
     }
 
     public void removed(String itemId) {
-        if (!locks.run(itemId, () -> transaction.executeWithoutResult(status -> {
+        if (!locks.run(itemId, Duration.ofSeconds(30), () -> transaction.executeWithoutResult(status -> {
             items.markRemoved(itemId, LocalDate.now(clock));
             accounts.dropAll(itemId, LocalDate.now(clock));
             transactions.forget(itemId);

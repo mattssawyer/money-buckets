@@ -1,5 +1,9 @@
 ALTER TABLE plaid_items ADD COLUMN transactions_enabled BOOLEAN;
 ALTER TABLE plaid_items ADD COLUMN transaction_history_ready BOOLEAN NOT NULL DEFAULT FALSE;
+-- An existing recurring sync proves this Item already reached recurring initialization.
+-- A transactions cursor alone can exist before the historical pull has finished.
+UPDATE plaid_items SET transaction_history_ready = TRUE WHERE recurring_synced_at IS NOT NULL;
+
 ALTER TABLE plaid_items ADD COLUMN registered_webhook_url VARCHAR(255);
 
 CREATE TABLE plaid_sync_jobs (

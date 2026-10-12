@@ -8,9 +8,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -26,7 +28,7 @@ class PlaidItemRemovalTests {
         doThrow(new IllegalStateException("database unavailable")).when(recurringStreamsSync).forget("item-id");
         PlaidItemRepository items = mock(PlaidItemRepository.class);
         PlaidItemLocks locks = mock(PlaidItemLocks.class);
-        doAnswer(invocation -> { invocation.<Runnable>getArgument(1).run(); return true; }).when(locks).run(any(), any());
+        doAnswer(invocation -> { invocation.<Runnable>getArgument(2).run(); return true; }).when(locks).run(any(), eq(Duration.ofSeconds(30)), any());
         PlaidItemSync itemSync = new PlaidItemSync(
                 items, mock(AccountsSync.class), mock(TransactionsSync.class), recurringStreamsSync,
                 mock(BucketSorting.class), mock(BalanceHistory.class), Clock.systemUTC(),
