@@ -683,7 +683,7 @@ async function openPlaidLink() {
                 role="status"
                 aria-label="Loading balances"
               >
-                <Skeleton width="min(100%, 11rem)" height="calc(var(--text-2xl) * 1.1)" />
+                <Skeleton width="min(100%, 12.5rem)" height="calc(var(--text-3xl) * 1.1)" />
               </div>
               <template v-else>
                 <p
@@ -1846,7 +1846,7 @@ li.spending-legend-row {
 .balance-amount {
   overflow-wrap: anywhere;
   color: var(--app-text);
-  font-size: var(--text-2xl);
+  font-size: var(--text-3xl);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;

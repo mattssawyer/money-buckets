@@ -58,14 +58,16 @@
   --text-lg: 1.125rem; /* dialog and panel titles, small figures */
   --text-xl: 1.5rem; /* page titles, empty-state headings */
   --text-2xl: 2rem; /* figures inside a card */
-  --text-3xl: 2.75rem; /* a page's headline figure */
+  --text-3xl: 2.375rem; /* Home's balance */
+  --text-4xl: 2.75rem; /* a page's headline figure */
 }
 
 @media (max-width: 900px) {
   :root {
     --text-xl: 1.375rem;
     --text-2xl: 1.75rem;
-    --text-3xl: 2.25rem;
+    --text-3xl: 2rem;
+    --text-4xl: 2.25rem;
   }
 }
 
