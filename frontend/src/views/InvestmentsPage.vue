@@ -728,10 +728,10 @@ h1 {
 
 .figure-label,
 .section-heading {
-  color: var(--app-text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
 .figure-title {

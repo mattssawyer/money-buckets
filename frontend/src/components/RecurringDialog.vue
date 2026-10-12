@@ -7,6 +7,7 @@ import Menu from 'primevue/menu'
 import type { MenuItem } from 'primevue/menuitem'
 import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
+import PayeeIcon from './PayeeIcon.vue'
 import RecurringEditor from './RecurringEditor.vue'
 import {
   answerRecurringCandidate,
@@ -315,7 +316,7 @@ function formatAmount(stream: RecurringStream) {
             class="row"
             :class="{ 'row-suggested': row.status === 'SUGGESTED' }"
           >
-            <span class="logo" aria-hidden="true">{{ recurringLabel(row).charAt(0) }}</span>
+            <PayeeIcon class="logo" :category="row.category" />
             <span class="details">
               <button type="button" class="name" aria-haspopup="dialog" @click="edit(row)">
                 {{ recurringLabel(row) }}
@@ -512,23 +513,9 @@ function formatAmount(stream: RecurringStream) {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 2.5rem;
+  left: 2.75rem;
   height: 1px;
   background: var(--app-divider);
-}
-
-.logo {
-  display: grid;
-  flex: none;
-  width: 1.75rem;
-  height: 1.75rem;
-  place-items: center;
-  color: var(--app-text-secondary);
-  background: var(--app-inset);
-  border-radius: 50%;
-  font-size: 0.75rem;
-  font-weight: 550;
-  text-transform: uppercase;
 }
 
 .details {
@@ -606,15 +593,6 @@ function formatAmount(stream: RecurringStream) {
     gap: 0.75rem;
     min-height: 3.75rem;
     padding: 0.625rem 0;
-  }
-
-  .logo {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .row:not(:last-child)::after {
-    left: 2.75rem;
   }
 
   .answers {

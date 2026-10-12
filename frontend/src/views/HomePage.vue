@@ -17,6 +17,7 @@ import RecurringDialog from '../components/RecurringDialog.vue'
 import ReconnectNotice from '../components/ReconnectNotice.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
 import UserMenu from '../components/UserMenu.vue'
+import PayeeIcon from '../components/PayeeIcon.vue'
 import {
   createLinkToken,
   exchangePublicToken,
@@ -590,7 +591,6 @@ async function openPlaidLink() {
         <div class="overview-heading">
           <div class="overview-title">
             <h1>{{ greeting }}</h1>
-            <p>Here's what's happening with your finances</p>
           </div>
           <div class="overview-actions">
             <Button
@@ -652,7 +652,7 @@ async function openPlaidLink() {
           aria-label="Loading your accounts"
           aria-busy="true"
         >
-          <p class="card-label">Balance</p>
+          <p class="card-title">Balance</p>
           <Skeleton width="min(100%, 20rem)" height="4.5rem" />
         </section>
 
@@ -676,7 +676,7 @@ async function openPlaidLink() {
             >
               <div class="balance-heading">
                 <div class="balance-title">
-                  <h2 id="balance-heading" class="card-label">Balance</h2>
+                  <h2 id="balance-heading" class="card-title">Balance</h2>
                   <InfoTip
                     v-if="leavesOutShared"
                     label="About your balance"
@@ -746,7 +746,7 @@ async function openPlaidLink() {
               :aria-busy="loadingTransactions"
             >
               <div class="card-heading">
-                <h2 id="recent-transactions-heading" class="card-label">Recent transactions</h2>
+                <h2 id="recent-transactions-heading" class="card-title">Recent transactions</h2>
                 <Button
                   v-if="transactions.length"
                   label="View all"
@@ -789,19 +789,11 @@ async function openPlaidLink() {
                     aria-haspopup="dialog"
                     @click="edit(transaction)"
                   >
-                    <img
-                      v-if="transaction.logo_url"
+                    <PayeeIcon
                       class="transaction-logo"
-                      :src="transaction.logo_url"
-                      alt=""
+                      :logo-url="transaction.logo_url"
+                      :category="transaction.category"
                     />
-                    <span
-                      v-else
-                      class="transaction-logo transaction-logo-fallback"
-                      aria-hidden="true"
-                    >
-                      {{ transactionLabel(transaction).charAt(0) }}
-                    </span>
                     <span class="transaction-details">
                       <span class="transaction-name">{{ transactionLabel(transaction) }}</span>
                       <span class="transaction-meta">
@@ -830,7 +822,7 @@ async function openPlaidLink() {
               :aria-busy="loadingRecurring"
             >
               <div class="card-heading">
-                <h2 id="recurring-heading" class="card-label">Recurring</h2>
+                <h2 id="recurring-heading" class="card-title">Recurring</h2>
                 <Button
                   label="View all"
                   severity="secondary"
@@ -875,9 +867,7 @@ async function openPlaidLink() {
                     :key="stream.stream_id"
                     class="transaction-row"
                   >
-                    <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
-                      {{ recurringLabel(stream).charAt(0) }}
-                    </span>
+                    <PayeeIcon class="transaction-logo" :category="stream.category" />
                     <span class="transaction-details">
                       <span class="transaction-name">{{ recurringLabel(stream) }}</span>
                       <span class="transaction-meta">
@@ -925,9 +915,7 @@ async function openPlaidLink() {
                       :key="candidate.stream_id"
                       class="transaction-row"
                     >
-                      <span class="transaction-logo transaction-logo-fallback" aria-hidden="true">
-                        {{ recurringLabel(candidate).charAt(0) }}
-                      </span>
+                      <PayeeIcon class="transaction-logo" :category="candidate.category" />
                       <span class="transaction-details">
                         <span class="transaction-name">{{ recurringLabel(candidate) }}</span>
                         <span class="transaction-meta">
@@ -967,7 +955,7 @@ async function openPlaidLink() {
             :aria-busy="loadingSpending"
           >
             <div class="card-heading">
-              <h2 id="spending-heading" class="card-label">Spending</h2>
+              <h2 id="spending-heading" class="card-title">Spending</h2>
               <select
                 class="period-select"
                 aria-label="Spending period"
@@ -1260,11 +1248,6 @@ h1 {
 .reconnect-notice,
 .same-institution-notice {
   margin-bottom: 1.125rem;
-}
-
-.overview-heading p {
-  margin-top: 0.35rem;
-  color: var(--app-text-secondary);
 }
 
 .overview-actions {
@@ -1649,14 +1632,6 @@ li.spending-legend-row {
   font-weight: 500;
 }
 
-.card-label {
-  margin: 0;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-}
-
 .card-heading {
   display: flex;
   align-items: center;
@@ -1808,7 +1783,7 @@ li.spending-legend-row {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 2.375rem;
+  left: 2.75rem;
   height: 1px;
   background: var(--app-divider);
 }
@@ -1842,27 +1817,9 @@ li.spending-legend-row {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 2.375rem;
+  left: 2.75rem;
   height: 1px;
   background: var(--app-divider);
-}
-
-.transaction-logo {
-  flex: none;
-  display: grid;
-  width: 1.75rem;
-  height: 1.75rem;
-  place-items: center;
-  object-fit: cover;
-  background: var(--app-inset);
-  border-radius: 50%;
-}
-
-.transaction-logo-fallback {
-  color: var(--app-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 550;
-  text-transform: uppercase;
 }
 
 .transaction-details {
@@ -2007,7 +1964,6 @@ li.spending-legend-row {
   /* The greeting keeps the row, with adding an account shrunk to an icon beside the avatar. */
   .overview-heading {
     flex-wrap: nowrap;
-    align-items: flex-start;
     margin-bottom: 1.25rem;
   }
 
@@ -2015,13 +1971,8 @@ li.spending-legend-row {
     min-width: 0;
   }
 
-  .overview-heading p {
-    font-size: 0.875rem;
-  }
-
   .overview-actions {
     gap: 0.5rem;
-    padding-top: 0.125rem;
   }
 
   .add-account-button {
@@ -2060,16 +2011,6 @@ li.spending-legend-row {
 
   .transaction-row {
     min-height: 3.5rem;
-  }
-
-  .transaction-logo {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  .transaction-row:not(:last-child)::after,
-  .transactions-list > li:not(:last-child) > .transaction-button::after {
-    left: 2.75rem;
   }
 
   .account-select {

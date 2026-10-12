@@ -64,7 +64,7 @@ function isOwed(account: PlaidAccount) {
       :aria-labelledby="`account-group-${group.id}`"
     >
       <table class="account-table">
-        <caption :id="`account-group-${group.id}`" class="card-label">
+        <caption :id="`account-group-${group.id}`" class="card-title">
           {{
             group.title
           }}
@@ -177,12 +177,8 @@ function isOwed(account: PlaidAccount) {
   table-layout: fixed;
 }
 
-.card-label {
+.card-title {
   padding-bottom: 0.5rem;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.005em;
   text-align: left;
 }
 

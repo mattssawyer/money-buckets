@@ -57,7 +57,7 @@ async function deleteAccount() {
       </header>
 
       <section class="panel settings-card" aria-labelledby="account-heading">
-        <h2 id="account-heading" class="card-label">Your account</h2>
+        <h2 id="account-heading" class="card-title">Your account</h2>
         <div class="setting-row">
           <div class="setting-text">
             <span class="setting-name">Email</span>
@@ -174,12 +174,8 @@ h1 {
   padding: 1rem 1.25rem 0.25rem;
 }
 
-.card-label {
+.card-title {
   padding-bottom: 0.5rem;
-  color: var(--app-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: -0.005em;
 }
 
 .setting-row {

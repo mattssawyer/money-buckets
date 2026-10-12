@@ -5,6 +5,7 @@ import Column from 'primevue/column'
 import DataTable, { type DataTablePageEvent } from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
+import PayeeIcon from './PayeeIcon.vue'
 import TransactionEditor from './TransactionEditor.vue'
 import { getTransactionPage, type PlaidTransaction } from '../api/PlaidService'
 import {
@@ -169,10 +170,7 @@ function formatDay(date: string) {
       <Column v-if="compact" class="compact-column">
         <template #body="{ data }: { data: PlaidTransaction }">
           <button type="button" class="compact-row" aria-haspopup="dialog" @click="edit(data)">
-            <img v-if="data.logo_url" class="logo compact-logo" :src="data.logo_url" alt="" />
-            <span v-else class="logo compact-logo logo-fallback" aria-hidden="true">
-              {{ transactionLabel(data).charAt(0) }}
-            </span>
+            <PayeeIcon :logo-url="data.logo_url" :category="data.category" />
             <span class="compact-details">
               <span class="compact-name">
                 <span class="name">{{ transactionLabel(data) }}</span>
@@ -206,10 +204,7 @@ function formatDay(date: string) {
       <Column v-if="!compact" header="Description">
         <template #body="{ data }: { data: PlaidTransaction }">
           <span class="description">
-            <img v-if="data.logo_url" class="logo" :src="data.logo_url" alt="" />
-            <span v-else class="logo logo-fallback" aria-hidden="true">
-              {{ transactionLabel(data).charAt(0) }}
-            </span>
+            <PayeeIcon class="logo" :logo-url="data.logo_url" :category="data.category" />
             <button
               type="button"
               class="name name-button"
@@ -320,21 +315,8 @@ function formatDay(date: string) {
 }
 
 .logo {
-  flex: none;
-  display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  place-items: center;
-  object-fit: cover;
-  background: var(--app-inset);
-  border-radius: 50%;
-}
-
-.logo-fallback {
-  color: var(--app-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 550;
-  text-transform: uppercase;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .name {
@@ -447,11 +429,6 @@ function formatDay(date: string) {
 .compact-row:focus-visible {
   outline-offset: -2px;
   border-radius: var(--app-radius-chip);
-}
-
-.compact-logo {
-  width: 2rem;
-  height: 2rem;
 }
 
 .compact-details {

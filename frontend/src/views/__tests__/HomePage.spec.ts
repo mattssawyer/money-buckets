@@ -1349,7 +1349,8 @@ describe('homepage recurring transactions', () => {
     await flushPromises()
 
     expect(wrapper.get('.recurring-card .transaction-name').text()).toBe('Rent & utilities')
-    expect(wrapper.get('.recurring-card .transaction-logo-fallback').text()).toBe('R')
+    // With no logo, the category's icon stands in for one.
+    expect(wrapper.find('.recurring-card .payee-icon-fallback svg').exists()).toBe(true)
   })
 
   it('renders every recurring stream in a scrollable list', async () => {
