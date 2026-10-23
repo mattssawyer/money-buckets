@@ -133,6 +133,7 @@ it up somewhere safe, such as a password manager.
 | `TYPESAFE_API_KEY` | No | [TypeSafe](https://docs.typesafe.ai). Without it the app runs, but transactions show as not sorted yet and nothing is put on plan lines or suggested as recurring. |
 | `PRIMEUI_LICENSE_KEY` | No | A PrimeUI license key, if you have one. |
 | `PLAID_TOKEN_ENCRYPTION_KEYSET` | No | Encrypts Plaid's access tokens in the database. Left empty, the server generates one on first start. To manage your own, see [the encryption guide](docs/plaid-token-encryption.md). |
+| `PLAID_REFRESH_ACCESS_TOKENS` | No | Set to `true` for one start after a leak: gets new Plaid access tokens and encrypts them with the keyset's primary key. Remove it afterwards. See [the encryption guide](docs/plaid-token-encryption.md#storage-and-rotation). |
 | `COMPOSE_PROFILES`, `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` | No | For faster syncing, below. |
 | `FRONTEND_URL`, `API_URL` | No | Only for serving the API from a different address than the app; see the comments in `.env.example`. |
 

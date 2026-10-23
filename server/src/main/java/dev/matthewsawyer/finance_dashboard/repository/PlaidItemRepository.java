@@ -101,4 +101,9 @@ public interface PlaidItemRepository extends JpaRepository<PlaidItem, String> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE PlaidItem i SET i.reconnect = NULL WHERE i.itemId = :itemId")
     void clearReconnect(@Param("itemId") String itemId);
+
+    @Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE PlaidItem i SET i.encryptedAccessToken = :token WHERE i.itemId = :itemId")
+    void updateEncryptedAccessToken(@Param("itemId") String itemId, @Param("token") String token);
 }
