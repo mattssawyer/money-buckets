@@ -450,7 +450,7 @@ function meta(stream: RecurringStream) {
 }
 
 .tab-count {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -574,6 +574,27 @@ function meta(stream: RecurringStream) {
   gap: 0.25rem;
   min-width: 7.5rem;
   margin-left: 0.5rem;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  /* The segmented tabs are as tall as a finger-sized target, with their inset padding. */
+  .tab {
+    min-height: calc(var(--app-touch-target) - 0.375rem);
+  }
+
+  /*
+   * The name's target covers the name and the meta line under it, out to the row's edges. It's
+   * placed against .details, so the name's own clipping of long text doesn't cut it off.
+   */
+  .details {
+    position: relative;
+  }
+
+  .name::after {
+    position: absolute;
+    inset: -0.5rem 0;
+    content: '';
+  }
 }
 
 @media (max-width: 640px) {

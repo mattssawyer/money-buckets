@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { BUCKET_STYLES } from '../api/plaidLabels'
 import { formatWholeDollars } from '../money'
+import InfoTip from './InfoTip.vue'
 import type { GuiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
 
 /** How much of the plan's guilt-free spending a month has used, along the foot of its card. */
@@ -9,6 +10,10 @@ const props = defineProps<{
   guiltFree: GuiltFreeLeft
   /** Only one account is shown above, but the plan covers every tracked account. */
   allAccounts: boolean
+  /** The ring above already says what's left, so this line says how much of it is spent. */
+  leftShownAbove?: boolean
+  /** Why the number may still change, such as spending that isn't sorted yet. */
+  note?: string
 }>()
 
 const over = computed(() => props.guiltFree.left < 0)
@@ -17,9 +22,15 @@ const spentPercent = computed(() => {
   if (budget > 0) return Math.min(100, (spent / budget) * 100)
   return spent > 0 ? 100 : 0
 })
-const summary = computed(
-  () => `${formatWholeDollars(Math.abs(props.guiltFree.left))} ${over.value ? 'over' : 'left'}`,
-)
+const summary = computed(() => {
+  const { budget, spent, left } = props.guiltFree
+  if (props.leftShownAbove) {
+    // A plan whose other buckets use up all its income leaves nothing to measure against.
+    if (budget <= 0) return `${formatWholeDollars(spent)} spent, none planned`
+    return `${formatWholeDollars(spent)} of ${formatWholeDollars(budget)} spent`
+  }
+  return `${formatWholeDollars(Math.abs(left))} ${over.value ? 'over' : 'left'}`
+})
 </script>
 
 <template>
@@ -29,9 +40,15 @@ const summary = computed(
     aria-labelledby="guilt-free-progress-title"
   >
     <div class="guilt-free-heading">
-      <h3 id="guilt-free-progress-title" class="guilt-free-title">
-        Guilt-free spending<template v-if="allAccounts"> · all accounts</template>
-      </h3>
+      <span class="guilt-free-title-row">
+        <h3 id="guilt-free-progress-title" class="guilt-free-title">
+          Guilt-free spending<template v-if="allAccounts"> · all accounts</template>
+        </h3>
+        <InfoTip
+          label="About guilt-free spending"
+          text="What your plan leaves to spend freely each month, minus what you've spent from it."
+        />
+      </span>
       <span class="guilt-free-summary">{{ summary }}</span>
     </div>
     <div class="guilt-free-bar" aria-hidden="true">
@@ -43,6 +60,7 @@ const summary = computed(
         }"
       />
     </div>
+    <p v-if="note" class="guilt-free-note">{{ note }}</p>
   </section>
 </template>
 
@@ -62,6 +80,13 @@ const summary = computed(
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.guilt-free-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .guilt-free-title {
@@ -90,6 +115,12 @@ const summary = computed(
 .guilt-free-bar-fill {
   height: 100%;
   border-radius: inherit;
+}
+
+.guilt-free-note {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: var(--text-xs);
 }
 
 .guilt-free-over .guilt-free-bar-fill {

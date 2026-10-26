@@ -80,7 +80,7 @@ defineProps<{ home: boolean }>()
 
 /* On the bare page, the card skeleton's grey would barely show. */
 .boot-heading :deep(.p-skeleton) {
-  background: rgb(11 11 11 / 7%);
+  background: var(--app-divider);
 }
 
 .boot-grid {

@@ -1,6 +1,7 @@
 import type { PlaidTransaction, Bucket, RecurringStream } from './PlaidService'
 import { PLAN_COLORS, PLAN_TITLES } from '../spendingPlan/plan'
 import { formatSignedMoney } from '../money'
+import { gray } from '../palette'
 
 // Same colors as the spending plan page. Unsorted is grey so it reads as not yet decided.
 export const BUCKET_STYLES: Record<Bucket | 'NOT_COUNTED', { label: string; color: string }> = {
@@ -8,8 +9,8 @@ export const BUCKET_STYLES: Record<Bucket | 'NOT_COUNTED', { label: string; colo
   GUILT_FREE: { label: PLAN_TITLES.guiltFree, color: PLAN_COLORS.guiltFree },
   SAVINGS: { label: PLAN_TITLES.savings, color: PLAN_COLORS.savings },
   INVESTMENTS: { label: PLAN_TITLES.investments, color: PLAN_COLORS.investments },
-  UNSORTED: { label: 'Not sorted yet', color: '#9e9e9e' },
-  NOT_COUNTED: { label: 'Not counted', color: '#cfcfcf' },
+  UNSORTED: { label: 'Not sorted yet', color: gray[400] },
+  NOT_COUNTED: { label: 'Not counted', color: gray[300] },
 }
 
 // Money coming in sits outside the plan's buckets, so it gets the same quiet grey as money

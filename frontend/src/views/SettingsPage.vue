@@ -84,8 +84,8 @@ async function deleteAccount() {
       </section>
 
       <nav class="legal-links" aria-label="Legal">
-        <RouterLink to="/privacy">Privacy policy</RouterLink>
-        <RouterLink to="/terms">Terms of service</RouterLink>
+        <RouterLink to="/privacy" class="hit-area">Privacy policy</RouterLink>
+        <RouterLink to="/terms" class="hit-area">Terms of service</RouterLink>
       </nav>
     </main>
 

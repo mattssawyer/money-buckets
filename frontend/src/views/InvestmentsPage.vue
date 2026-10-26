@@ -33,17 +33,20 @@ import {
   type Range,
 } from '../investments/history'
 import { formatMoney } from '../money'
+import { gray } from '../palette'
+import { PLAN_COLORS } from '../spendingPlan/plan'
 import { closePlaidLink, linkItem } from '../plaid/plaidLink'
 
-const NET_WORTH_COLOR = '#171717'
+const NET_WORTH_COLOR = gray[900]
 
 /** What net worth is made of, in the order it's listed: what's invested, what's in the bank, what's owed. */
 type Group = 'investments' | 'bank' | 'debts'
 
 const GROUPS: { id: Group; heading: string; color: string }[] = [
-  { id: 'investments', heading: 'Investment accounts', color: '#eb6834' },
-  { id: 'bank', heading: 'Bank accounts', color: '#2a78d6' },
-  { id: 'debts', heading: 'Credit cards and loans', color: '#737373' },
+  // Borrows two bucket colors: investments keep the Investments bucket's, the bank the Fixed costs'.
+  { id: 'investments', heading: 'Investment accounts', color: PLAN_COLORS.investments },
+  { id: 'bank', heading: 'Bank accounts', color: PLAN_COLORS.fixedCosts },
+  { id: 'debts', heading: 'Credit cards and loans', color: gray[500] },
 ]
 
 // "brokerage" is Plaid's legacy name for the investment type.
@@ -386,7 +389,7 @@ function changeIcon(change: Change) {
               :key="option"
               type="button"
               role="radio"
-              class="range-option"
+              class="range-option hit-area"
               :aria-checked="range === option"
               @click="selectRange(option)"
             >
@@ -491,7 +494,7 @@ function changeIcon(change: Change) {
               >
                 <button
                   type="button"
-                  class="account-leave-out"
+                  class="account-leave-out hit-area"
                   :disabled="savingId !== undefined"
                   :aria-label="`Leave ${card.name} out of net worth`"
                   title="Leave out of net worth"
@@ -731,7 +734,7 @@ function changeIcon(change: Change) {
 }
 
 .figure-detail {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-weight: 400;
 }
 
@@ -794,7 +797,7 @@ function changeIcon(change: Change) {
 }
 
 .footnote {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-sm);
 }
 
@@ -846,7 +849,7 @@ function changeIcon(change: Change) {
   width: 1.4rem;
   height: 1.4rem;
   place-items: center;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: 50%;

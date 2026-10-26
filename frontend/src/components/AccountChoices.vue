@@ -45,7 +45,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
           <span class="choice-kind">{{ kindLabel(account) }}</span>
           <span v-if="isShared(account)" class="choice-share">
             Your share
-            <span class="share-field">
+            <label class="share-field">
               <input
                 type="number"
                 min="1"
@@ -57,7 +57,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
                 @change="onShareChange(account, $event)"
               />
               <span aria-hidden="true">%</span>
-            </span>
+            </label>
           </span>
         </div>
         <input
@@ -96,7 +96,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
 }
 
 .choice-heading {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   font-weight: 500;
 }

@@ -183,7 +183,7 @@ function plannedLines(lines: PlanLineDraft[]) {
           <li v-if="hasBuffer(bucket)" class="buffer-line">
             <button
               type="button"
-              class="line-row buffer-button"
+              class="line-row buffer-button hit-area"
               aria-haspopup="dialog"
               aria-label="Change the miscellaneous buffer"
               @click="emit('editBuffer')"
@@ -312,7 +312,7 @@ h2 {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.15rem 0.5rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
 }
 
@@ -428,7 +428,7 @@ h2 {
 
 .bucket-empty {
   margin: 0;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-base);
 }
 

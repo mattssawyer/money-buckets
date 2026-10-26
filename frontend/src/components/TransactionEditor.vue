@@ -403,4 +403,15 @@ function formatDate(date: string) {
   font-size: var(--text-sm);
   color: var(--app-text-secondary);
 }
+@media (max-width: 900px), (pointer: coarse) {
+  .field-select {
+    min-height: var(--app-touch-target);
+  }
+
+  /* The whole label is the checkbox's target. */
+  .counting-option {
+    align-items: center;
+    min-height: var(--app-touch-target);
+  }
+}
 </style>

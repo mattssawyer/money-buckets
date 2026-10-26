@@ -133,7 +133,7 @@ function isOwed(account: PlaidAccount) {
                   :aria-label="`${accountLabel(account)} is shared`"
                   @change="onSharedChange(account, $event)"
                 />
-                <span v-if="isShared(account)" class="share-field">
+                <label v-if="isShared(account)" class="share-field">
                   <input
                     type="number"
                     min="1"
@@ -145,7 +145,7 @@ function isOwed(account: PlaidAccount) {
                     @change="onShareChange(account, $event)"
                   />
                   <span aria-hidden="true">%</span>
-                </span>
+                </label>
               </span>
             </td>
           </tr>
@@ -184,7 +184,7 @@ function isOwed(account: PlaidAccount) {
 
 .account-table thead th {
   padding: 0 0 0.5rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   font-weight: 500;
   text-align: left;
@@ -275,7 +275,7 @@ function isOwed(account: PlaidAccount) {
 }
 
 .not-applicable {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
 }
 
 /* In narrow places each account becomes a small card with its settings labelled. */
@@ -317,7 +317,17 @@ function isOwed(account: PlaidAccount) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 2.25rem;
+    /* A switch per row, so rows are as tall as a finger-sized target and theirs never overlap. */
+    min-height: var(--app-touch-target);
+  }
+
+  /*
+   * The share field sits left of the switch, so every switch lines up at the right edge. The gap
+   * clears the switch's enlarged target so it doesn't cover the field.
+   */
+  .shared-cell {
+    flex-direction: row-reverse;
+    gap: 1rem;
   }
 
   .account-table td.column-balance,

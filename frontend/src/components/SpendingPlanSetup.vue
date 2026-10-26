@@ -684,7 +684,7 @@ function amountValue(amount: number | null) {
               <div class="sheet-row" :class="{ 'has-paycheck-toggle': bucket.paycheckOption }">
                 <button
                   type="button"
-                  class="row-remove"
+                  class="row-remove hit-area"
                   :aria-label="`Remove ${row.name || bucket.lineNoun.toLowerCase()}`"
                   @click="removeLine(bucket.id, row.id)"
                 >
@@ -692,7 +692,7 @@ function amountValue(amount: number | null) {
                 </button>
                 <button
                   type="button"
-                  class="row-toggle"
+                  class="row-toggle hit-area"
                   :class="{ 'row-toggle-open': expandedRows.has(row.id) }"
                   :aria-expanded="expandedRows.has(row.id)"
                   :aria-controls="`breakdown-${row.id}`"
@@ -719,6 +719,7 @@ function amountValue(amount: number | null) {
                 >
                   <button
                     type="button"
+                    class="hit-area"
                     :aria-pressed="row.percentOfGross == null"
                     aria-label="Dollars"
                     @click="setPercent(row, false)"
@@ -727,6 +728,7 @@ function amountValue(amount: number | null) {
                   </button>
                   <button
                     type="button"
+                    class="hit-area"
                     :aria-pressed="row.percentOfGross != null"
                     aria-label="Percent of gross pay"
                     :disabled="!hasGrossPay && row.percentOfGross == null"
@@ -807,7 +809,7 @@ function amountValue(amount: number | null) {
                 <div v-for="item in row.items" :key="item.id" class="sheet-row item-row">
                   <button
                     type="button"
-                    class="row-remove"
+                    class="row-remove hit-area"
                     :aria-label="`Remove ${item.name || 'item'}`"
                     @click="removeItem(row, item.id)"
                   >
@@ -834,7 +836,7 @@ function amountValue(amount: number | null) {
                 </div>
                 <button
                   type="button"
-                  class="add-cost add-item"
+                  class="add-cost add-item hit-area"
                   :disabled="loadingDefaults"
                   @click="addItem(row)"
                 >
@@ -844,7 +846,7 @@ function amountValue(amount: number | null) {
               </div>
             </div>
 
-            <button type="button" class="add-cost add-line" @click="addLine(bucket.id)">
+            <button type="button" class="add-cost add-line hit-area" @click="addLine(bucket.id)">
               <Plus :size="14" :stroke-width="1.75" aria-hidden="true" />
               {{ bucket.addLabel }}
             </button>
@@ -949,7 +951,11 @@ function amountValue(amount: number | null) {
             <Repeat :size="15" :stroke-width="1.75" aria-hidden="true" />
           </template>
         </Button>
-        <button type="button" class="spending-toggle" @click="showSpending = !showSpending">
+        <button
+          type="button"
+          class="spending-toggle hit-area"
+          @click="showSpending = !showSpending"
+        >
           {{ showSpending ? 'Back to your plan' : 'See your spending' }}
         </button>
       </div>
@@ -1171,7 +1177,7 @@ function amountValue(amount: number | null) {
   height: 1.75rem;
   padding: 0;
   place-items: center;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: var(--app-radius-chip);
@@ -1283,7 +1289,7 @@ h2 {
 
 .block-hint {
   margin: 0;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-sm);
 }
 
@@ -1317,7 +1323,7 @@ h2 {
 }
 
 .name-input::placeholder {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-weight: 400;
 }
 
@@ -1381,7 +1387,7 @@ h2 {
   height: 1.5rem;
   margin-right: -0.25rem;
   place-items: center;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: var(--app-radius-chip);
@@ -1522,7 +1528,7 @@ h2 {
 .unit-switch button {
   min-width: 1.5rem;
   padding: 0.05rem 0.4rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: 999px;
@@ -1614,7 +1620,7 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   white-space: nowrap;
   cursor: pointer;
@@ -1664,6 +1670,16 @@ h2 {
 .guilt-free-warning {
   margin: 0;
   font-size: var(--text-sm);
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  /* Finger-sized rows and fields; the small icons get hit areas from the shared rule. */
+  .sheet-row,
+  .name-input,
+  .amount-field,
+  .paycheck-toggle {
+    min-height: var(--app-touch-target);
+  }
 }
 
 @media (max-width: 1000px) {
