@@ -426,6 +426,13 @@ function formatDay(date: string) {
   border: 0;
 }
 
+/* A tap shows where it landed, as on Home's lists. */
+.compact-row:active {
+  background: var(--app-inset);
+  border-radius: var(--app-radius-chip);
+  box-shadow: 0 0 0 0.375rem var(--app-inset);
+}
+
 .compact-row:focus-visible {
   outline-offset: -2px;
   border-radius: var(--app-radius-chip);

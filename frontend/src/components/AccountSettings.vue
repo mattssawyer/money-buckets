@@ -184,7 +184,7 @@ function isOwed(account: PlaidAccount) {
 
 .account-table thead th {
   padding: 0 0 0.5rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   font-weight: 500;
   text-align: left;
@@ -275,7 +275,7 @@ function isOwed(account: PlaidAccount) {
 }
 
 .not-applicable {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
 }
 
 /* In narrow places each account becomes a small card with its settings labelled. */
@@ -317,7 +317,13 @@ function isOwed(account: PlaidAccount) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 2.25rem;
+    /* A switch per row, so rows are as tall as a finger-sized target and theirs never overlap. */
+    min-height: var(--app-touch-target);
+  }
+
+  /* Clears the switch's enlarged target so it doesn't cover the share field beside it. */
+  .shared-cell {
+    gap: 1rem;
   }
 
   .account-table td.column-balance,

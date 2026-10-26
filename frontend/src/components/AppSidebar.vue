@@ -154,7 +154,7 @@ const items = [
     width: auto;
     height: calc(var(--app-tabbar-height) + env(safe-area-inset-bottom));
     padding: 0 0 env(safe-area-inset-bottom);
-    background: rgb(238 238 238 / 86%);
+    background: color-mix(in srgb, var(--app-canvas) 86%, transparent);
     border-top: 1px solid var(--app-divider);
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);

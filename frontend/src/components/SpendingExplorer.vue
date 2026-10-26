@@ -120,7 +120,7 @@ function amount(value: number) {
 
     <div v-else-if="loadError" class="explorer-empty" role="alert">
       <p>We couldn’t load your spending.</p>
-      <button type="button" class="text-action" @click="load">Try again</button>
+      <button type="button" class="text-action hit-area" @click="load">Try again</button>
     </div>
 
     <p v-else-if="!history || history.groups.length === 0" class="explorer-empty">
@@ -154,7 +154,7 @@ function amount(value: number) {
               <div class="pick-row">
                 <button
                   type="button"
-                  class="row-toggle"
+                  class="row-toggle hit-area"
                   :class="{ 'row-toggle-open': isOpen(category) }"
                   :aria-expanded="isOpen(category)"
                   :aria-label="`Show ${category.label} payees`"
@@ -267,7 +267,7 @@ h2 {
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0.6rem;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: var(--app-surface);
   border: 1px solid var(--app-control-border);
   border-radius: var(--app-radius-chip);
@@ -315,7 +315,7 @@ h2 {
 
 .part-heading {
   margin: 0.5rem 0 0;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   font-weight: 500;
 }
@@ -353,7 +353,7 @@ h2 {
   height: 1.4rem;
   margin-left: -0.3rem;
   place-items: center;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: var(--app-radius-chip);

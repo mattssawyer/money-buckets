@@ -857,11 +857,11 @@ async function finish() {
 
 @keyframes ring {
   from {
-    box-shadow: 0 0 0 0 rgb(23 23 23 / 30%);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--app-text) 30%, transparent);
   }
 
   to {
-    box-shadow: 0 0 0 1.25rem rgb(23 23 23 / 0%);
+    box-shadow: 0 0 0 1.25rem transparent;
   }
 }
 

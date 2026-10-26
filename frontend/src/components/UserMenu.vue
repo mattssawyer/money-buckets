@@ -58,8 +58,10 @@ const items: MenuItem[] = [
   cursor: pointer;
 }
 
-.user-menu-button:focus-visible {
-  outline: 2px solid var(--app-ring);
-  outline-offset: 2px;
+@media (max-width: 640px) {
+  .user-menu-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
 }
 </style>

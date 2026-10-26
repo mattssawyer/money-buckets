@@ -67,7 +67,7 @@ onBeforeUnmount(hide)
     <button
       ref="button"
       type="button"
-      class="info-tip-button"
+      class="info-tip-button hit-area"
       :aria-label="label"
       :aria-describedby="id"
       @focus="show"
@@ -103,7 +103,7 @@ onBeforeUnmount(hide)
   height: 1.25rem;
   padding: 0;
   place-items: center;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   background: transparent;
   border: 0;
   border-radius: 50%;

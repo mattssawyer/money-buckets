@@ -26,6 +26,7 @@
   --app-divider: rgb(11 11 11 / 8%);
   --app-ring: rgb(11 11 11 / 5%);
   --app-control-border: rgb(11 11 11 / 10%);
+  --app-scrollbar-thumb: rgb(11 11 11 / 28%);
 
   --app-shadow-xs: 0 1px 2px rgb(11 11 11 / 6%);
   --app-shadow-sm: 0 1px 6px rgb(11 11 11 / 6%);
@@ -42,6 +43,9 @@
    */
   --app-control-height: calc(var(--text-base) * 1.5 + 1rem + 2px);
   --app-control-height-sm: calc(var(--text-sm) * 1.5 + 0.75rem + 2px);
+
+  /* The smallest a finger can reliably hit, in real pixels whatever the root size. */
+  --app-touch-target: 44px;
 
   --app-rail-width: 5.5rem;
   --app-tabbar-height: 4rem;
@@ -215,6 +219,71 @@ h1 {
 
   .p-dialog.app-sheet .p-dialog-content {
     padding: 0 1.25rem env(safe-area-inset-bottom);
+  }
+}
+
+/*
+ * Touch screens: every control gets a finger-sized target (--app-touch-target) without changing how
+ * it looks. Buttons and anything marked .hit-area carry an invisible box at least that big, centred
+ * on them. PrimeVue clips buttons to their edges, so they stop clipping here to let the box out.
+ */
+@media (max-width: 900px), (pointer: coarse) {
+  .p-button,
+  .p-paginator button,
+  .hit-area {
+    position: relative;
+  }
+
+  /* Two classes, to win over PrimeVue's own styles, which load after these. */
+  .p-button.p-component,
+  .p-paginator.p-component button {
+    overflow: visible;
+  }
+
+  .p-button::after,
+  .p-paginator button::after,
+  .hit-area::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--app-touch-target));
+    height: max(100%, var(--app-touch-target));
+    content: '';
+    transform: translate(-50%, -50%);
+  }
+
+  /*
+   * The switch draws its knob with ::after, so its target grows with a transparent border instead,
+   * pulled back by an equal negative margin so the layout doesn't move.
+   */
+  .switch {
+    --switch-reach: calc((var(--app-touch-target) - 1.25rem) / 2);
+
+    box-sizing: content-box;
+    margin: calc(var(--switch-reach) * -1);
+    background-clip: padding-box;
+    border: var(--switch-reach) solid transparent;
+  }
+
+  .switch:focus-visible {
+    outline-offset: calc(2px - var(--switch-reach));
+  }
+
+  .share-field {
+    min-height: var(--app-touch-target);
+  }
+}
+
+/*
+ * Phones zoom the whole page into any field whose text is under 16px, so fields on touch devices
+ * never go below it.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .p-inputtext.p-component {
+    font-size: max(16px, 1em);
   }
 }
 

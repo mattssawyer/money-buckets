@@ -96,7 +96,7 @@ const spendable = computed(() => accounts.value.filter((account) => account.trac
 }
 
 .choice-heading {
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
   font-size: var(--text-xs);
   font-weight: 500;
 }

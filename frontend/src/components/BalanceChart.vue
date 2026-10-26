@@ -5,6 +5,8 @@ import Chart from 'primevue/chart'
 import type { AccountChange, BalancePoint } from '../api/InvestmentsService'
 import { formatDay } from '../investments/history'
 import { formatCompactMoney, formatMoney } from '../money'
+import { gray } from '../palette'
+import { useMediaQuery } from '../useMediaQuery'
 
 const props = defineProps<{
   points: BalancePoint[]
@@ -16,14 +18,16 @@ const props = defineProps<{
   dropped?: AccountChange[]
 }>()
 
-const GRID = '#f0f0f0'
-const TICK = '#9e9e9e'
-const MARKER = '#cfcfcf'
+const GRID = gray[100]
+// Axis labels are text, so they get the secondary grey that's readable on white.
+const TICK = gray[500]
+const MARKER = gray[300]
 // The crosshair's grey, as r, g, b: it fades in and out with the tooltip.
-const CROSSHAIR = '158, 158, 158'
+const CROSSHAIR = [1, 3, 5].map((at) => parseInt(gray[400].slice(at, at + 2), 16)).join(', ')
 const FONT = 'Geist Variable'
 // How long the tooltip, crosshair and hovered point take to move to another day.
-const HOVER_MS = 140
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+const hoverMs = computed(() => (prefersReducedMotion.value ? 0 : 140))
 
 /**
  * What's drawn. With a single day of history the line runs flat across the chart at that day's
@@ -65,7 +69,7 @@ const chartData = computed(() => ({
       pointRadius: 0,
       pointHoverRadius: 4,
       pointHoverBackgroundColor: props.color,
-      pointHoverBorderColor: '#ffffff',
+      pointHoverBorderColor: gray[0],
       pointHoverBorderWidth: 2,
       tension: 0,
     },
@@ -78,7 +82,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
   // The line itself appears at once. Turning animation off outright would also stop the tooltip
   // and the hovered point from moving smoothly between days, which is what the next two set.
   animation: { duration: 0 },
-  transitions: { active: { animation: { duration: HOVER_MS, easing: 'easeOutQuart' } } },
+  transitions: { active: { animation: { duration: hoverMs.value, easing: 'easeOutQuart' } } },
   interaction: { mode: 'index', intersect: false },
   layout: { padding: { top: 8 } },
   scales: {
@@ -110,21 +114,21 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
     legend: { display: false },
     tooltip: {
       displayColors: false,
-      backgroundColor: '#171717',
+      backgroundColor: gray[900],
       padding: { top: 8, right: 12, bottom: 9, left: 12 },
       cornerRadius: 10,
       // No arrow: the crosshair already says which day, and the box sits clear of the point.
       caretSize: 0,
       caretPadding: 14,
-      titleColor: '#a3a3a3',
+      titleColor: gray[400],
       titleFont: { family: FONT, size: 11, weight: 500 },
       titleMarginBottom: 3,
-      bodyColor: '#ffffff',
+      bodyColor: gray[0],
       bodyFont: { family: FONT, size: 14, weight: 600 },
-      footerColor: '#a3a3a3',
+      footerColor: gray[400],
       footerFont: { family: FONT, size: 11, weight: 400 },
       footerMarginTop: 5,
-      animation: { duration: HOVER_MS, easing: 'easeOutQuart' },
+      animation: { duration: hoverMs.value, easing: 'easeOutQuart' },
       filter: (item) => series.value[item.dataIndex]?.date != null,
       callbacks: {
         title: (items) => {

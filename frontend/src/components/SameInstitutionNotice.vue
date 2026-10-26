@@ -46,7 +46,7 @@ async function removeOlder() {
 </script>
 
 <template>
-  <Message severity="warn" class="same-institution" role="alert">
+  <Message severity="warn" class="same-institution" role="status">
     <div class="notice-body">
       <p>
         You already had {{ institution }} connected, so its accounts are now here twice and net

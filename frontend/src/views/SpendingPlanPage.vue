@@ -60,7 +60,7 @@ function onSaved(plan: SavedPlan) {
       <header class="page-heading">
         <h1 id="spending-plan-heading">Spending Plan</h1>
         <div class="page-actions">
-          <RouterLink to="/accounts" class="accounts-link">Tracked accounts</RouterLink>
+          <RouterLink to="/accounts" class="accounts-link hit-area">Tracked accounts</RouterLink>
           <UserMenu />
         </div>
       </header>
