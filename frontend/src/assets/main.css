@@ -132,7 +132,7 @@ h1 {
   margin: 0;
   vertical-align: middle;
   appearance: none;
-  background: var(--app-inset-hover);
+  background-color: var(--app-inset-hover);
   border-radius: 999px;
   cursor: pointer;
   transition: background-color 150ms ease;
@@ -152,7 +152,8 @@ h1 {
 }
 
 .switch:checked {
-  background: var(--app-text);
+  /* Color only: the shorthand would reset background-clip, which keeps the touch border clear. */
+  background-color: var(--app-text);
 }
 
 .switch:checked::after {
