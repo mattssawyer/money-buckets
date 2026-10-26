@@ -935,9 +935,9 @@ describe('homepage spending breakdown', () => {
       const progress = wrapper.get('.spending-body > :last-child')
       expect(progress.classes()).toContain('guilt-free-progress')
       expect(progress.get('.guilt-free-title').text()).toBe('Guilt-free spending')
-      expect(progress.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
-      // What's left leads the ring, in place of the month's total.
-      expect(wrapper.get('.spending-total').text()).toBe('$1,988guilt-free left')
+      expect(progress.get('.guilt-free-summary').text()).toBe('$1,988 left')
+      // The ring keeps the month's total; what's left is the bar's job.
+      expect(wrapper.get('.spending-total-label').text()).toBe('out this month')
       expect(getSpendingByBucket).toHaveBeenCalledOnce()
     })
 
@@ -950,9 +950,7 @@ describe('homepage spending breakdown', () => {
       await flushPromises()
 
       expect(wrapper.get('.guilt-free-progress').classes()).toContain('guilt-free-over')
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,150 of $2,000 spent')
-      expect(wrapper.get('.spending-total').text()).toBe('$150guilt-free over')
-      expect(wrapper.get('.spending-total-amount').classes()).toContain('spending-total-over')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$150 over')
     })
 
     it('counts every tracked account, as the plan does, when one account is picked', async () => {
@@ -1006,7 +1004,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.spending-total').text()).toBe('$0guilt-free left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$0 left')
       expect(wrapper.get('.guilt-free-bar-fill').attributes('style')).toContain('width: 0%')
     })
 
@@ -1015,7 +1013,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.spending-total').text()).toBe('$1,988guilt-free left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
     it('shows at the foot of the card even when nothing guilt-free was spent', async () => {
@@ -1026,7 +1024,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$0 of $2,000 spent')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,000 left')
     })
 
     it('says when unsorted spending may still change what is left', async () => {
@@ -1055,14 +1053,6 @@ describe('homepage spending breakdown', () => {
       )
     })
 
-    it('says the plan leaves nothing rather than measuring against $0', async () => {
-      vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: 2000 })
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 spent, none planned')
-    })
-
     it('says guilt-free spending is tracked by month for rolling periods', async () => {
       localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_30_DAYS')
       const wrapper = mountHome()
@@ -1075,7 +1065,7 @@ describe('homepage spending breakdown', () => {
       await button(wrapper, 'See this month').trigger('click')
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
     it('says when the plan could not load, and tries again', async () => {
@@ -1090,7 +1080,7 @@ describe('homepage spending breakdown', () => {
       await flushPromises()
 
       expect(wrapper.find('.guilt-free-missing').exists()).toBe(false)
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
     it('counts every tracked account for last month too when one account is picked', async () => {

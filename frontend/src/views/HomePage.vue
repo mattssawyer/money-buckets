@@ -197,19 +197,6 @@ const guiltFreeNote = computed(() => {
 const guiltFreeByMonthOnly = computed(
   () => !showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome != null,
 )
-// What's left of guilt-free spending leads the ring when the ring covers the same money: every
-// tracked account. With one account picked, the ring shows that account's total instead, and the
-// bar below says what's left across all of them.
-const ringGuiltFree = computed(() =>
-  selectedAccountId.value === undefined ? guiltFree.value : null,
-)
-// In whole dollars from the same rounded figures the bar shows, so "$511 left" and "$300 of $811
-// spent" always agree.
-const ringLeft = computed(() =>
-  ringGuiltFree.value
-    ? Math.round(ringGuiltFree.value.budget) - Math.round(ringGuiltFree.value.spent)
-    : 0,
-)
 // Without take-home pay the plan has no guilt-free budget, so say what's missing.
 const needsTakeHome = computed(
   () => showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome == null,
@@ -1082,17 +1069,7 @@ async function openPlaidLink() {
                   role="img"
                   :aria-label="`Spending by bucket for ${spendingPeriodName}`"
                 />
-                <div v-if="ringGuiltFree" class="spending-total">
-                  <span
-                    class="spending-total-amount"
-                    :class="{ 'spending-total-over': ringLeft < 0 }"
-                    >{{ formatWholeDollars(Math.abs(ringLeft)) }}</span
-                  >
-                  <span class="spending-total-label">{{
-                    ringLeft < 0 ? 'guilt-free over' : 'guilt-free left'
-                  }}</span>
-                </div>
-                <div v-else class="spending-total">
+                <div class="spending-total">
                   <span class="spending-total-amount">{{ formatWholeDollars(spendingTotal) }}</span>
                   <span class="spending-total-label">{{
                     spendingPeriod === 'THIS_MONTH'
@@ -1229,7 +1206,6 @@ async function openPlaidLink() {
                 v-if="guiltFree"
                 :guilt-free="guiltFree"
                 :all-accounts="selectedAccountId !== undefined"
-                :left-shown-above="!!ringGuiltFree"
                 :note="guiltFreeNote"
               />
               <div v-else-if="planFailed" class="guilt-free-missing" role="status">
@@ -1510,10 +1486,6 @@ async function openPlaidLink() {
 .spending-total-label {
   color: var(--app-text-secondary);
   font-size: var(--text-sm);
-}
-
-.spending-total-over {
-  color: var(--app-over-target);
 }
 
 /* Holds the guilt-free bar's place at the foot of the card when it can't show. */
