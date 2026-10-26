@@ -270,8 +270,19 @@ h1 {
     outline-offset: calc(2px - var(--switch-reach));
   }
 
+  /* The field keeps its size; being a label, its hit area focuses the number inside. */
   .share-field {
-    min-height: var(--app-touch-target);
+    position: relative;
+  }
+
+  .share-field::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--app-touch-target));
+    height: max(100%, var(--app-touch-target));
+    content: '';
+    transform: translate(-50%, -50%);
   }
 }
 

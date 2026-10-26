@@ -133,7 +133,7 @@ function isOwed(account: PlaidAccount) {
                   :aria-label="`${accountLabel(account)} is shared`"
                   @change="onSharedChange(account, $event)"
                 />
-                <span v-if="isShared(account)" class="share-field">
+                <label v-if="isShared(account)" class="share-field">
                   <input
                     type="number"
                     min="1"
@@ -145,7 +145,7 @@ function isOwed(account: PlaidAccount) {
                     @change="onShareChange(account, $event)"
                   />
                   <span aria-hidden="true">%</span>
-                </span>
+                </label>
               </span>
             </td>
           </tr>
@@ -321,8 +321,12 @@ function isOwed(account: PlaidAccount) {
     min-height: var(--app-touch-target);
   }
 
-  /* Clears the switch's enlarged target so it doesn't cover the share field beside it. */
+  /*
+   * The share field sits left of the switch, so every switch lines up at the right edge. The gap
+   * clears the switch's enlarged target so it doesn't cover the field.
+   */
   .shared-cell {
+    flex-direction: row-reverse;
     gap: 1rem;
   }
 
