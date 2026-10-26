@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import {
@@ -13,6 +13,8 @@ import { closePlaidLink, openPlaidLink } from '../plaid/plaidLink'
 const emit = defineEmits<{
   /** An item synced again after the user signed in to its bank. */
   reconnected: []
+  /** How many banks have stopped updating until the user signs in again. */
+  signinNeeded: [count: number]
 }>()
 
 const items = ref<PlaidItem[]>([])
@@ -21,6 +23,10 @@ const failedItemId = ref<string | null>(null)
 let disposed = false
 
 const needing = computed(() => items.value.filter((item) => item.reconnect))
+watch(
+  () => items.value.filter((item) => item.reconnect === 'LOGIN_REQUIRED').length,
+  (count) => emit('signinNeeded', count),
+)
 
 onMounted(load)
 
@@ -69,7 +75,7 @@ async function reconnect(item: PlaidItem) {
       v-for="item in needing"
       :key="item.item_id"
       :severity="item.reconnect === 'LOGIN_REQUIRED' ? 'warn' : 'info'"
-      role="alert"
+      role="status"
     >
       <div class="notice-body">
         <p v-if="item.reconnect === 'LOGIN_REQUIRED'">

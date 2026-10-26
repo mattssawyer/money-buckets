@@ -260,7 +260,15 @@ beforeEach(() => {
   vi.mocked(getSpendingByBucket).mockResolvedValue(spending)
   vi.mocked(getRecurringTransactions).mockResolvedValue([rent])
   vi.mocked(getRecurringCandidates).mockResolvedValue([])
-  vi.mocked(getSpendingPlan).mockResolvedValue({} as SpendingPlanResponse)
+  // A saved plan with nothing filled in yet.
+  vi.mocked(getSpendingPlan).mockResolvedValue({
+    account_id: null,
+    take_home: null,
+    gross_pay: null,
+    fixed_cost_buffer_percent: 0,
+    lines: [],
+    updated_at: '2026-10-01T00:00:00Z',
+  })
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
   vi.stubGlobal('Plaid', {
@@ -276,12 +284,12 @@ afterEach(() => vi.unstubAllGlobals())
 describe('homepage balances', () => {
   it('waits for saved connections before showing onboarding', async () => {
     const wrapper = mountHome()
-    expect(wrapper.text()).not.toContain('Start with an account.')
+    expect(wrapper.text()).not.toContain('Add your first account')
     expect(wrapper.find('[aria-label="Loading balances"]').exists()).toBe(true)
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Start with an account.')
+    expect(wrapper.text()).toContain('Add your first account')
   })
 
   it('asks for accounts and every card at once instead of one after another', async () => {
@@ -327,7 +335,7 @@ describe('homepage balances', () => {
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
     expect(wrapper.get('.balance-card').text()).toContain('Balance')
     expect(wrapper.get('.balance-card').text()).toContain('$1,250.50')
-    expect(wrapper.text()).not.toContain('Start with an account.')
+    expect(wrapper.text()).not.toContain('Add your first account')
   })
 
   it('offers to remove the older connection when an institution is linked again', async () => {
@@ -451,7 +459,7 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
-    expect(wrapper.text()).not.toContain('Start with an account.')
+    expect(wrapper.text()).not.toContain('Add your first account')
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
   })
 
@@ -464,9 +472,9 @@ describe('homepage balances', () => {
     linkOptions.onSuccess('public-token', {})
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Start with an account.')
+    expect(wrapper.text()).not.toContain('Add your first account')
     expect(wrapper.text()).toContain('We couldn’t load your accounts.')
-    expect(wrapper.text()).not.toContain('could not be saved')
+    expect(wrapper.text()).not.toContain('finish connecting')
     await button(wrapper, 'Try again').trigger('click')
     await flushPromises()
 
@@ -480,7 +488,7 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('We couldn’t load your connected accounts.')
-    expect(wrapper.text()).not.toContain('Start with an account.')
+    expect(wrapper.text()).not.toContain('Add your first account')
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     await button(wrapper, 'Try again').trigger('click')
     await flushPromises()
@@ -496,7 +504,7 @@ describe('homepage balances', () => {
     linkOptions.onSuccess('public-token', {})
     await flushPromises()
 
-    expect(wrapper.text()).toContain('could not be saved')
+    expect(wrapper.text()).toContain('We couldn’t finish connecting your account.')
 
     await button(wrapper, 'Try again').trigger('click')
     await flushPromises()
@@ -660,7 +668,7 @@ describe('homepage spending breakdown', () => {
     expect(wrapper.get('.spending-total-amount').text()).toBe('$1,845')
   })
 
-  it('breaks each bucket down by Plaid category, open at first', async () => {
+  it('breaks each bucket down by Plaid category, closed at first', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
     const wrapper = mountHome()
     await flushPromises()
@@ -668,6 +676,11 @@ describe('homepage spending breakdown', () => {
     const fixedCosts = wrapper.get('.spending-legend > li')
     const toggle = fixedCosts.get('button')
     const panel = wrapper.get(`#${toggle.attributes('aria-controls')}`)
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(panel.attributes('inert')).toBeDefined()
+
+    await toggle.trigger('click')
+
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(panel.attributes('inert')).toBeUndefined()
     const categories = fixedCosts.findAll('.spending-category-row').map((row) => row.text())
@@ -675,11 +688,6 @@ describe('homepage spending breakdown', () => {
     expect(wrapper.get('[aria-label="Savings by category"] .spending-category-row').text()).toBe(
       'Transfers out$300.00',
     )
-
-    await toggle.trigger('click')
-
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(panel.attributes('inert')).toBeDefined()
   })
 
   it('lists the transactions behind a category when it opens', async () => {
@@ -886,6 +894,8 @@ describe('homepage spending breakdown', () => {
 
   it('does not ask for a spending plan once there is one', async () => {
     vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    const saved = await getSpendingPlan()
+    vi.mocked(getSpendingPlan).mockResolvedValue({ ...saved!, take_home: 4000 })
     const wrapper = mountHome()
     await flushPromises()
 
@@ -925,7 +935,9 @@ describe('homepage spending breakdown', () => {
       const progress = wrapper.get('.spending-body > :last-child')
       expect(progress.classes()).toContain('guilt-free-progress')
       expect(progress.get('.guilt-free-title').text()).toBe('Guilt-free spending')
-      expect(progress.get('.guilt-free-summary').text()).toBe('$1,988 left')
+      expect(progress.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
+      // What's left leads the ring, in place of the month's total.
+      expect(wrapper.get('.spending-total').text()).toBe('$1,988guilt-free left')
       expect(getSpendingByBucket).toHaveBeenCalledOnce()
     })
 
@@ -938,7 +950,9 @@ describe('homepage spending breakdown', () => {
       await flushPromises()
 
       expect(wrapper.get('.guilt-free-progress').classes()).toContain('guilt-free-over')
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$150 over')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,150 of $2,000 spent')
+      expect(wrapper.get('.spending-total').text()).toBe('$150guilt-free over')
+      expect(wrapper.get('.spending-total-amount').classes()).toContain('spending-total-over')
     })
 
     it('counts every tracked account, as the plan does, when one account is picked', async () => {
@@ -955,6 +969,8 @@ describe('homepage spending breakdown', () => {
       expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('THIS_MONTH'))
       expect(wrapper.get('.guilt-free-title').text()).toBe('Guilt-free spending · all accounts')
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
+      // The ring shows the picked account, so it keeps that account's total.
+      expect(wrapper.get('.spending-total-label').text()).toBe('out this month')
     })
 
     it('catches up with sorting when one account is picked', async () => {
@@ -990,7 +1006,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$0 left')
+      expect(wrapper.get('.spending-total').text()).toBe('$0guilt-free left')
       expect(wrapper.get('.guilt-free-bar-fill').attributes('style')).toContain('width: 0%')
     })
 
@@ -999,7 +1015,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
+      expect(wrapper.get('.spending-total').text()).toBe('$1,988guilt-free left')
     })
 
     it('shows at the foot of the card even when nothing guilt-free was spent', async () => {
@@ -1010,7 +1026,71 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,000 left')
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$0 of $2,000 spent')
+    })
+
+    it('says when unsorted spending may still change what is left', async () => {
+      vi.mocked(getSpendingByBucket).mockResolvedValue({
+        ...spending,
+        buckets: [...spending.buckets, { bucket: 'UNSORTED', amount: 4252.88, categories: [] }],
+      })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-note').text()).toBe(
+        '$4,253 is still being sorted, so this may change.',
+      )
+    })
+
+    it('says it may be out of date while a bank needs signing in again', async () => {
+      const wrapper = mountHome()
+      await flushPromises()
+      expect(wrapper.find('.guilt-free-note').exists()).toBe(false)
+
+      wrapper.findComponent({ name: 'ReconnectNotice' }).vm.$emit('signinNeeded', 1)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-note').text()).toBe(
+        'A bank needs you to sign in again, so this may be out of date.',
+      )
+    })
+
+    it('says the plan leaves nothing rather than measuring against $0', async () => {
+      vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: 2000 })
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 spent, none planned')
+    })
+
+    it('says guilt-free spending is tracked by month for rolling periods', async () => {
+      localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_30_DAYS')
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.find('.guilt-free-progress').exists()).toBe(false)
+      expect(wrapper.get('.guilt-free-missing').text()).toContain(
+        'Guilt-free spending is tracked by calendar month.',
+      )
+      await button(wrapper, 'See this month').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
+    })
+
+    it('says when the plan could not load, and tries again', async () => {
+      vi.mocked(getSpendingPlan).mockRejectedValueOnce(new Error('offline'))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-missing').text()).toContain(
+        'We couldn’t load your spending plan.',
+      )
+      await button(wrapper, 'Try again').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('.guilt-free-missing').exists()).toBe(false)
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$12 of $2,000 spent')
     })
 
     it('counts every tracked account for last month too when one account is picked', async () => {
@@ -1273,6 +1353,31 @@ describe('homepage recurring candidates', () => {
     expect(wrapper.get('.candidates .transaction-meta').text()).toBe(
       'Monthly? · Last Sep 19 · -$15.49',
     )
+  })
+
+  it('asks about three at a time and opens the rest in the Recurring dialog', async () => {
+    vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
+    vi.mocked(getRecurringCandidates).mockResolvedValue(
+      ['Netflix', 'Hulu', 'Spotify', 'Gym', 'Patreon'].map((name) => ({
+        ...netflix,
+        stream_id: `candidate-${name}`,
+        merchant_key: name.toLowerCase(),
+        merchant_name: name,
+        description: name,
+      })),
+    )
+    const wrapper = mountHome()
+    await flushPromises()
+
+    const names = wrapper.findAll('.candidates .transaction-name').map((name) => name.text())
+    expect(names).toEqual(['Netflix', 'Hulu', 'Spotify'])
+
+    await wrapper.get('.candidates-more').trigger('click')
+
+    const dialog = wrapper.findComponent({ name: 'RecurringDialog' })
+    expect(wrapper.get('.candidates-more').text()).toBe('2 more')
+    expect(dialog.props('visible')).toBe(true)
+    expect(dialog.props('startOn')).toBe('possible')
   })
 
   it('moves a confirmed payment into the recurring list', async () => {

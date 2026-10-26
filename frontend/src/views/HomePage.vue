@@ -10,6 +10,8 @@ import Skeleton from 'primevue/skeleton'
 import AppSidebar from '../components/AppSidebar.vue'
 import GuiltFreeProgress from '../components/GuiltFreeProgress.vue'
 import InfoTip from '../components/InfoTip.vue'
+import { gray } from '../palette'
+import { useMediaQuery } from '../useMediaQuery'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
 import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
 import SkeletonRows from '../components/SkeletonRows.vue'
@@ -81,6 +83,7 @@ const itemIds = ref<string[]>([])
 const transactions = ref<PlaidTransaction[]>([])
 const allTransactionsVisible = ref(false)
 const allRecurringVisible = ref(false)
+const recurringStartTab = ref<'recurring' | 'possible'>('recurring')
 // The transaction whose payee the user is correcting or saying repeats.
 const editing = ref<PlaidTransaction>()
 const editorVisible = ref(false)
@@ -95,13 +98,17 @@ const spending = ref<SpendingByBucket>()
 const planMonthSpending = ref<{ period: SpendingPeriod; summary: SpendingByBucket }>()
 // Undefined until loaded, so the plan prompt never flashes for someone who has a plan.
 const savedPlan = ref<SavedPlan | null>()
+const planFailed = ref(false)
+// Banks that need the user to sign in again, so their spending has stopped updating.
+const banksNeedingSignIn = ref(0)
 const hasSpendingPlan = computed(() =>
   savedPlan.value === undefined ? undefined : savedPlan.value !== null,
 )
 // Onboarding leaves the plan for later, so until there is one it's a to-do here.
 const planDialogVisible = ref(false)
-// Legend rows the user has flipped from how they start. Buckets start open and categories start
-// closed. Category keys include the bucket, since the same category can appear under two buckets.
+// Legend rows the user has opened or closed. Every row starts closed, so the card shows four bucket
+// totals before any detail. Category keys include the bucket, since the same category can appear
+// under two buckets.
 const toggledRows = ref(new Set<string>())
 let unsortedRecheck: ReturnType<typeof setTimeout> | undefined
 let unsortedRechecks = 0
@@ -149,6 +156,12 @@ const recurringList = computed(() =>
 const suggestedCandidates = computed(() =>
   candidates.value.filter((candidate) => candidate.status === 'SUGGESTED'),
 )
+// Home asks about a few at a time; the rest wait in the Recurring dialog.
+const CANDIDATES_SHOWN = 3
+const shownCandidates = computed(() => suggestedCandidates.value.slice(0, CANDIDATES_SHOWN))
+const moreCandidates = computed(
+  () => suggestedCandidates.value.length - shownCandidates.value.length,
+)
 const spendingTotal = computed(() => spending.value?.total ?? 0)
 // What the spending card covers; remembered across visits.
 const spendingPeriod = ref<SpendingPeriod>(recallPeriod())
@@ -157,16 +170,46 @@ const spendingPeriodName = computed(() => periodName(spendingPeriod.value))
 // what's left of this month, or how last month ended.
 const PLAN_MONTHS: readonly SpendingPeriod[] = ['THIS_MONTH', 'LAST_MONTH']
 const showsPlanMonth = computed(() => PLAN_MONTHS.includes(spendingPeriod.value))
-const guiltFree = computed(() => {
-  if (!savedPlan.value || !showsPlanMonth.value) return null
-  const month =
-    selectedAccountId.value === undefined
-      ? spending.value
-      : planMonthSpending.value?.period === spendingPeriod.value
-        ? planMonthSpending.value.summary
-        : undefined
-  return month ? guiltFreeLeft(savedPlan.value, month) : null
+// The month the plan is measured against: every tracked account, whatever the card shows.
+const planMonth = computed(() => {
+  if (!showsPlanMonth.value) return undefined
+  if (selectedAccountId.value === undefined) return spending.value
+  return planMonthSpending.value?.period === spendingPeriod.value
+    ? planMonthSpending.value.summary
+    : undefined
 })
+const guiltFree = computed(() =>
+  savedPlan.value && planMonth.value ? guiltFreeLeft(savedPlan.value, planMonth.value) : null,
+)
+// Why what's left may not be the final word yet, shown under the bar.
+const guiltFreeNote = computed(() => {
+  if (banksNeedingSignIn.value > 0) {
+    return banksNeedingSignIn.value === 1
+      ? 'A bank needs you to sign in again, so this may be out of date.'
+      : 'Some banks need you to sign in again, so this may be out of date.'
+  }
+  const unsorted = planMonth.value?.buckets.find((entry) => entry.bucket === 'UNSORTED')?.amount
+  return unsorted
+    ? `${formatWholeDollars(unsorted)} is still being sorted, so this may change.`
+    : ''
+})
+// A plan with rolling periods picked still has a guilt-free amount; it's just measured by month.
+const guiltFreeByMonthOnly = computed(
+  () => !showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome != null,
+)
+// What's left of guilt-free spending leads the ring when the ring covers the same money: every
+// tracked account. With one account picked, the ring shows that account's total instead, and the
+// bar below says what's left across all of them.
+const ringGuiltFree = computed(() =>
+  selectedAccountId.value === undefined ? guiltFree.value : null,
+)
+// In whole dollars from the same rounded figures the bar shows, so "$511 left" and "$300 of $811
+// spent" always agree.
+const ringLeft = computed(() =>
+  ringGuiltFree.value
+    ? Math.round(ringGuiltFree.value.budget) - Math.round(ringGuiltFree.value.spent)
+    : 0,
+)
 // Without take-home pay the plan has no guilt-free budget, so say what's missing.
 const needsTakeHome = computed(
   () => showsPlanMonth.value && !!savedPlan.value && savedPlan.value.takeHome == null,
@@ -179,7 +222,7 @@ const spendingLegend = computed(() => {
     ...entry,
     ...BUCKET_STYLES[entry.bucket],
     key: entry.bucket,
-    startsOpen: true,
+    startsOpen: false,
     categories: entry.categories.map((category) => ({
       ...category,
       key: `${entry.bucket}/${category.category}`,
@@ -193,7 +236,7 @@ const spendingEmpty = computed(() => !spendingLegend.value.length)
 const EMPTY_BUCKETS = (['FIXED_COSTS', 'GUILT_FREE', 'SAVINGS', 'INVESTMENTS'] as const).map(
   (bucket) => ({ key: bucket, ...BUCKET_STYLES[bucket] }),
 )
-const EMPTY_RING_COLOR = '#ececec'
+const EMPTY_RING_COLOR = gray[200]
 const spendingChartData = computed(() => {
   const slices = spendingEmpty.value
     ? [{ label: '', amount: 1, color: EMPTY_RING_COLOR }]
@@ -205,13 +248,14 @@ const spendingChartData = computed(() => {
         data: slices.map((entry) => entry.amount),
         backgroundColor: slices.map((entry) => entry.color),
         hoverBackgroundColor: slices.map((entry) => entry.color),
-        borderColor: '#ffffff',
+        borderColor: gray[0],
         borderWidth: spendingEmpty.value ? 0 : 3,
         hoverOffset: 0,
       },
     ],
   }
 })
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 const spendingChartOptions = computed<ChartOptions<'doughnut'>>(() => ({
   ...SPENDING_CHART_OPTIONS,
   plugins: {
@@ -219,6 +263,8 @@ const spendingChartOptions = computed<ChartOptions<'doughnut'>>(() => ({
     // The empty ring is only a placeholder, so there's nothing to point at.
     tooltip: { ...SPENDING_CHART_OPTIONS.plugins?.tooltip, enabled: !spendingEmpty.value },
   },
+  // The ring sweeps in on every load; CSS can't reach a canvas, so reduced motion is honoured here.
+  ...(prefersReducedMotion.value ? { animation: false as const } : {}),
 }))
 const SPENDING_CHART_OPTIONS: ChartOptions<'doughnut'> = {
   responsive: true,
@@ -228,7 +274,7 @@ const SPENDING_CHART_OPTIONS: ChartOptions<'doughnut'> = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#171717',
+      backgroundColor: gray[900],
       titleFont: { family: 'Geist Variable', weight: 500 },
       bodyFont: { family: 'Geist Variable' },
       padding: 10,
@@ -256,6 +302,11 @@ onUnmounted(() => {
 function edit(transaction: PlaidTransaction) {
   editing.value = transaction
   editorVisible.value = true
+}
+
+function openRecurring(tab: 'recurring' | 'possible') {
+  recurringStartTab.value = tab
+  allRecurringVisible.value = true
 }
 
 function isOpen(row: { key: string; startsOpen: boolean }) {
@@ -359,9 +410,12 @@ function onAccountChange(event: Event) {
 async function loadSpendingPlan() {
   try {
     const plan = await getSpendingPlan()
-    if (!disposed) savedPlan.value = plan && fromSaved(plan)
+    if (disposed) return
+    savedPlan.value = plan && fromSaved(plan)
+    planFailed.value = false
   } catch {
-    // The prompt and what's left are only extras, so leave them hidden when the plan can't load.
+    // The card still shows spending; the foot says what's missing and offers to try again.
+    if (!disposed) planFailed.value = true
   }
 }
 
@@ -523,7 +577,7 @@ async function finishLink(publicToken: string) {
     void loadSpendingPlan()
     await loadCards()
   } catch {
-    if (!disposed) linkError.value = 'Your account connection could not be saved. Please try again.'
+    if (!disposed) linkError.value = 'We couldn’t finish connecting your account. Please try again.'
   } finally {
     if (!disposed) linking.value = false
   }
@@ -558,13 +612,13 @@ async function openPlaidLink() {
       onExit(error) {
         if (disposed) return
         linking.value = false
-        if (error) linkError.value = 'Unable to connect your account. Please try again.'
+        if (error) linkError.value = 'We couldn’t connect your account. Please try again.'
       },
     })
     handler.open()
   } catch {
     if (disposed) return
-    linkError.value = 'Unable to open account connection. Please try again.'
+    linkError.value = 'We couldn’t open the bank connection. Please try again.'
     linking.value = false
   }
 }
@@ -598,7 +652,11 @@ async function openPlaidLink() {
           </div>
         </div>
 
-        <ReconnectNotice class="reconnect-notice" @reconnected="loadConnections" />
+        <ReconnectNotice
+          class="reconnect-notice"
+          @reconnected="loadConnections"
+          @signin-needed="banksNeedingSignIn = $event"
+        />
 
         <SameInstitutionNotice
           v-if="sameInstitution.length"
@@ -652,7 +710,7 @@ async function openPlaidLink() {
               :aria-busy="initialLoading || loadingAccounts"
             >
               <div class="balance-heading">
-                <div class="balance-title">
+                <div class="card-title-row">
                   <h2 id="balance-heading" class="card-title">Balance</h2>
                   <InfoTip
                     v-if="leavesOutShared"
@@ -761,7 +819,7 @@ async function openPlaidLink() {
                 No transactions yet. They’ll appear here once your bank sends them.
               </p>
 
-              <ul v-else class="transactions-list" tabindex="0">
+              <ul v-else class="transactions-list" tabindex="0" aria-label="Recent transactions">
                 <li v-for="transaction in transactions" :key="transaction.transaction_id">
                   <button
                     type="button"
@@ -810,7 +868,7 @@ async function openPlaidLink() {
                   text
                   class="view-all-button"
                   aria-haspopup="dialog"
-                  @click="allRecurringVisible = true"
+                  @click="openRecurring('recurring')"
                 />
               </div>
               <div
@@ -836,11 +894,19 @@ async function openPlaidLink() {
                   v-if="!recurringList.length && !suggestedCandidates.length"
                   class="transactions-empty"
                 >
-                  No recurring transactions found yet. Plaid can take up to a day to find them after
-                  you link a bank.
+                  No recurring transactions found yet.
+                  <InfoTip
+                    label="About recurring transactions"
+                    text="Bills and paychecks can take up to a day to show up after you link a bank."
+                  />
                 </p>
 
-                <ul v-if="recurringList.length" class="transactions-list" tabindex="0">
+                <ul
+                  v-if="recurringList.length"
+                  class="transactions-list"
+                  tabindex="0"
+                  aria-label="Recurring transactions"
+                >
                   <li
                     v-for="stream in recurringList"
                     :key="stream.stream_id"
@@ -855,7 +921,7 @@ async function openPlaidLink() {
                           · Confirmed by you ·
                           <button
                             type="button"
-                            class="candidate-undo"
+                            class="candidate-undo hit-area"
                             :disabled="answeringKey !== undefined"
                             :aria-label="`Undo confirming ${recurringLabel(stream)}`"
                             @click="answerCandidate(stream, null)"
@@ -884,13 +950,16 @@ async function openPlaidLink() {
                   role="group"
                   aria-labelledby="candidates-heading"
                 >
-                  <h3 id="candidates-heading" class="candidates-heading">Possibly recurring</h3>
-                  <p class="candidates-hint">
-                    Plaid hasn’t seen these enough times to be sure. Do they repeat?
-                  </p>
-                  <ul class="transactions-list candidates-list" tabindex="0">
+                  <div class="candidates-title">
+                    <h3 id="candidates-heading" class="candidates-heading">Possibly recurring</h3>
+                    <InfoTip
+                      label="About possibly recurring"
+                      text="These have come up more than once, but not enough times to be sure they repeat."
+                    />
+                  </div>
+                  <ul class="transactions-list candidates-list">
                     <li
-                      v-for="candidate in suggestedCandidates"
+                      v-for="candidate in shownCandidates"
                       :key="candidate.stream_id"
                       class="transaction-row"
                     >
@@ -922,6 +991,16 @@ async function openPlaidLink() {
                       </span>
                     </li>
                   </ul>
+                  <Button
+                    v-if="moreCandidates > 0"
+                    :label="`${moreCandidates} more`"
+                    severity="secondary"
+                    size="small"
+                    text
+                    class="candidates-more"
+                    aria-haspopup="dialog"
+                    @click="openRecurring('possible')"
+                  />
                 </div>
               </template>
             </section>
@@ -934,7 +1013,13 @@ async function openPlaidLink() {
             :aria-busy="initialLoading || loadingSpending"
           >
             <div class="card-heading">
-              <h2 id="spending-heading" class="card-title">Spending</h2>
+              <div class="card-title-row">
+                <h2 id="spending-heading" class="card-title">Spending</h2>
+                <InfoTip
+                  label="About spending"
+                  text="Each purchase lands in one of your plan's four buckets: fixed costs, investments, savings or guilt-free spending. New purchases can show as “Not sorted yet” for a short time. Open a transaction to change its bucket."
+                />
+              </div>
               <select
                 class="period-select"
                 aria-label="Spending period"
@@ -994,12 +1079,25 @@ async function openPlaidLink() {
                   :data="spendingChartData"
                   :options="spendingChartOptions"
                   class="spending-chart-canvas"
+                  role="img"
                   :aria-label="`Spending by bucket for ${spendingPeriodName}`"
                 />
-                <div class="spending-total" aria-hidden="true">
+                <div v-if="ringGuiltFree" class="spending-total">
+                  <span
+                    class="spending-total-amount"
+                    :class="{ 'spending-total-over': ringLeft < 0 }"
+                    >{{ formatWholeDollars(Math.abs(ringLeft)) }}</span
+                  >
+                  <span class="spending-total-label">{{
+                    ringLeft < 0 ? 'guilt-free over' : 'guilt-free left'
+                  }}</span>
+                </div>
+                <div v-else class="spending-total">
                   <span class="spending-total-amount">{{ formatWholeDollars(spendingTotal) }}</span>
                   <span class="spending-total-label">{{
-                    spendingPeriod === 'THIS_MONTH' ? 'this month' : `in ${spendingPeriodName}`
+                    spendingPeriod === 'THIS_MONTH'
+                      ? 'out this month'
+                      : `out in ${spendingPeriodName}`
                   }}</span>
                 </div>
               </div>
@@ -1131,7 +1229,29 @@ async function openPlaidLink() {
                 v-if="guiltFree"
                 :guilt-free="guiltFree"
                 :all-accounts="selectedAccountId !== undefined"
+                :left-shown-above="!!ringGuiltFree"
+                :note="guiltFreeNote"
               />
+              <div v-else-if="planFailed" class="guilt-free-missing" role="status">
+                <span>We couldn’t load your spending plan.</span>
+                <Button
+                  label="Try again"
+                  severity="secondary"
+                  size="small"
+                  text
+                  @click="loadSpendingPlan"
+                />
+              </div>
+              <div v-else-if="guiltFreeByMonthOnly" class="guilt-free-missing">
+                <span>Guilt-free spending is tracked by calendar month.</span>
+                <Button
+                  label="See this month"
+                  severity="secondary"
+                  size="small"
+                  text
+                  @click="choosePeriod('THIS_MONTH')"
+                />
+              </div>
             </div>
           </section>
         </div>
@@ -1141,8 +1261,8 @@ async function openPlaidLink() {
             <div class="account-icon" aria-hidden="true">
               <Landmark :size="22" :stroke-width="1.5" />
             </div>
-            <h2 id="account-prompt-heading">Start with an account.</h2>
-            <p>Connect a bank or credit card account to bring your finances into view.</p>
+            <h2 id="account-prompt-heading">Add your first account</h2>
+            <p>Connect a bank or credit card to see your balance, spending and bills here.</p>
             <Button
               :label="linking ? 'Connecting…' : 'Add an account'"
               :loading="linking"
@@ -1178,6 +1298,7 @@ async function openPlaidLink() {
     />
     <RecurringDialog
       v-model:visible="allRecurringVisible"
+      :start-on="recurringStartTab"
       :account-id="selectedAccountId"
       :account-label="selectedAccountLabel"
       @changed="loadCards"
@@ -1391,9 +1512,34 @@ async function openPlaidLink() {
   font-size: var(--text-sm);
 }
 
+.spending-total-over {
+  color: var(--app-over-target);
+}
+
+/* Holds the guilt-free bar's place at the foot of the card when it can't show. */
+.guilt-free-missing {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  color: var(--app-text-secondary);
+  font-size: var(--text-sm);
+  border-top: 1px solid var(--app-divider);
+}
+
+.guilt-free-missing .p-button {
+  margin-right: -0.5rem;
+}
+
 /* Opened buckets scroll within the card instead of stretching it. */
 .spending-legend {
   display: grid;
+  /* One column that never grows past the card, so a long payee name truncates instead. */
+  grid-template-columns: minmax(0, 1fr);
   flex: 0 1 auto;
   align-content: start;
   gap: 0.125rem;
@@ -1406,7 +1552,7 @@ async function openPlaidLink() {
   /* Room for the scrollbar up front, so amounts don't shift when the list starts scrolling. */
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgb(11 11 11 / 28%) transparent;
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
 }
 
 .spending-legend-row {
@@ -1476,6 +1622,7 @@ async function openPlaidLink() {
 
 .spending-categories {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.125rem;
   margin: 0;
   /* Lines category names up with the bucket name, past the swatch. */
@@ -1495,6 +1642,7 @@ async function openPlaidLink() {
 
 .spending-transactions {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   /* Amounts line up with the category amounts, left of the chevron column. */
   padding: 0 1.5rem 0.25rem 0.75rem;
@@ -1524,7 +1672,7 @@ async function openPlaidLink() {
 
 .spending-transaction-date {
   flex: none;
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
 }
 
 .spending-transaction-row .spending-legend-amount {
@@ -1638,7 +1786,7 @@ li.spending-legend-row {
   margin-bottom: 0.75rem;
 }
 
-.balance-title {
+.card-title-row {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -1677,7 +1825,7 @@ li.spending-legend-row {
   overscroll-behavior: contain;
   list-style: none;
   scrollbar-width: thin;
-  scrollbar-color: rgb(11 11 11 / 28%) transparent;
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
 }
 
 .transactions-card .transactions-list,
@@ -1708,16 +1856,20 @@ li.spending-legend-row {
   font-weight: 550;
 }
 
-.candidates-hint {
-  margin: 0.25rem 0 0;
-  color: var(--app-text-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
+.candidates-title {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .recurring-card .candidates-list {
-  max-height: 11rem;
+  max-height: none;
   margin-top: 0.25rem;
+  overflow: visible;
+}
+
+.candidates-more {
+  margin-left: -0.5rem;
 }
 
 .candidate-actions {
@@ -1752,7 +1904,7 @@ li.spending-legend-row {
 }
 
 .transactions-list::-webkit-scrollbar-thumb {
-  background: rgb(11 11 11 / 28%);
+  background: var(--app-scrollbar-thumb);
   border-radius: 999px;
 }
 
@@ -1903,12 +2055,43 @@ li.spending-legend-row {
   display: block;
   margin-top: 0.75rem;
   font-size: var(--text-xs);
-  color: var(--app-text-subdued);
+  color: var(--app-text-secondary);
 }
 
 .account-notice {
   margin-top: 1rem;
   text-align: left;
+}
+
+/* A tap shows where it landed, since touch has no hover. The highlight reaches past the row's edges
+   so the content doesn't look cramped inside it. */
+.transaction-button:active,
+.spending-legend-row:active {
+  background: var(--app-inset);
+  box-shadow: 0 0 0 0.375rem var(--app-inset);
+}
+
+/*
+ * On touch screens every target is finger-sized. Rows grow to the full height; buttons get an
+ * invisible hit area from the shared rule in main.css.
+ */
+@media (max-width: 900px), (pointer: coarse) {
+  .spending-legend-row,
+  .spending-transaction-row {
+    min-height: var(--app-touch-target);
+  }
+
+  .spending-transaction-row {
+    align-items: center;
+  }
+
+  .candidate-actions {
+    gap: 0.5rem;
+  }
+
+  .candidate-actions .p-button {
+    min-width: 2.75rem;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1955,8 +2138,8 @@ li.spending-legend-row {
   }
 
   .add-account-button {
-    width: 2rem;
-    height: 2rem;
+    width: 2.5rem;
+    height: 2.5rem;
     padding: 0;
     border-radius: 50%;
   }
