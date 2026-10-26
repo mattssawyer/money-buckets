@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T20:18:43+00:00",
+  "title": "Design System: Money Buckets",
+  "extensions": {
+    "colorMeta": {
+      "fixed-costs-blue": {
+        "role": "secondary",
+        "displayName": "Fixed-costs Blue",
+        "canonical": "#2a78d6",
+        "tonalRamp": [
+          "oklch(15% 0.080 256)",
+          "oklch(26% 0.102 256)",
+          "oklch(38% 0.124 256)",
+          "oklch(49% 0.146 256)",
+          "oklch(61% 0.156 256)",
+          "oklch(72% 0.134 256)",
+          "oklch(84% 0.112 256)",
+          "oklch(95% 0.089 256)"
+        ]
+      },
+      "investments-orange": {
+        "role": "secondary",
+        "displayName": "Investments Orange",
+        "canonical": "#eb6834",
+        "tonalRamp": [
+          "oklch(15% 0.066 41)",
+          "oklch(26% 0.090 41)",
+          "oklch(38% 0.114 41)",
+          "oklch(49% 0.138 41)",
+          "oklch(61% 0.162 41)",
+          "oklch(72% 0.164 41)",
+          "oklch(84% 0.140 41)",
+          "oklch(95% 0.116 41)"
+        ]
+      },
+      "savings-green": {
+        "role": "secondary",
+        "displayName": "Savings Green",
+        "canonical": "#1baf7a",
+        "tonalRamp": [
+          "oklch(15% 0.053 162)",
+          "oklch(26% 0.072 162)",
+          "oklch(38% 0.092 162)",
+          "oklch(49% 0.111 162)",
+          "oklch(61% 0.130 162)",
+          "oklch(72% 0.132 162)",
+          "oklch(84% 0.113 162)",
+          "oklch(95% 0.093 162)"
+        ]
+      },
+      "guilt-free-gold": {
+        "role": "secondary",
+        "displayName": "Guilt-free Gold",
+        "canonical": "#eda100",
+        "tonalRamp": [
+          "oklch(15% 0.042 75)",
+          "oklch(26% 0.064 75)",
+          "oklch(38% 0.087 75)",
+          "oklch(49% 0.109 75)",
+          "oklch(61% 0.131 75)",
+          "oklch(72% 0.153 75)",
+          "oklch(84% 0.147 75)",
+          "oklch(95% 0.125 75)"
+        ]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink",
+        "canonical": "#171717",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Ink Secondary",
+        "canonical": "#737373",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "ink-subdued": {
+        "role": "neutral",
+        "displayName": "Ink Subdued (decoration only)",
+        "canonical": "#9e9e9e",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "ink-inverse": {
+        "role": "neutral",
+        "displayName": "Ink Inverse",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#eeeeee",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "inset": {
+        "role": "neutral",
+        "displayName": "Inset",
+        "canonical": "#f0f0f0",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "inset-hover": {
+        "role": "neutral",
+        "displayName": "Inset Hover",
+        "canonical": "#e7e7e7",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "not-counted-gray": {
+        "role": "neutral",
+        "displayName": "Not-counted Gray",
+        "canonical": "#cfcfcf",
+        "tonalRamp": [
+          "#171717",
+          "#242424",
+          "#363636",
+          "#5c5c5c",
+          "#737373",
+          "#9e9e9e",
+          "#e7e7e7",
+          "#f7f7f7"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Success",
+        "canonical": "#10a861",
+        "tonalRamp": [
+          "oklch(15% 0.064 155)",
+          "oklch(26% 0.085 155)",
+          "oklch(38% 0.107 155)",
+          "oklch(49% 0.128 155)",
+          "oklch(61% 0.149 155)",
+          "oklch(72% 0.142 155)",
+          "oklch(84% 0.120 155)",
+          "oklch(95% 0.099 155)"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Danger",
+        "canonical": "#c91313",
+        "tonalRamp": [
+          "oklch(15% 0.114 28)",
+          "oklch(26% 0.142 28)",
+          "oklch(38% 0.171 28)",
+          "oklch(49% 0.200 28)",
+          "oklch(61% 0.190 28)",
+          "oklch(72% 0.161 28)",
+          "oklch(84% 0.133 28)",
+          "oklch(95% 0.104 28)"
+        ]
+      },
+      "over-target": {
+        "role": "tertiary",
+        "displayName": "Over Target",
+        "canonical": "#c0444e",
+        "tonalRamp": [
+          "oklch(15% 0.080 19)",
+          "oklch(26% 0.102 19)",
+          "oklch(38% 0.124 19)",
+          "oklch(49% 0.146 19)",
+          "oklch(61% 0.150 19)",
+          "oklch(72% 0.128 19)",
+          "oklch(84% 0.106 19)",
+          "oklch(95% 0.085 19)"
+        ]
+      },
+      "danger-surface": {
+        "role": "tertiary",
+        "displayName": "Danger Surface",
+        "canonical": "#fff1f0",
+        "tonalRamp": [
+          "oklch(15% 0.004 22)",
+          "oklch(26% 0.004 22)",
+          "oklch(38% 0.004 22)",
+          "oklch(49% 0.007 22)",
+          "oklch(61% 0.009 22)",
+          "oklch(72% 0.011 22)",
+          "oklch(84% 0.013 22)",
+          "oklch(95% 0.015 22)"
+        ]
+      },
+      "danger-border": {
+        "role": "tertiary",
+        "displayName": "Danger Border",
+        "canonical": "#ffdedb",
+        "tonalRamp": [
+          "oklch(15% 0.009 24)",
+          "oklch(26% 0.009 24)",
+          "oklch(38% 0.013 24)",
+          "oklch(49% 0.018 24)",
+          "oklch(61% 0.023 24)",
+          "oklch(72% 0.028 24)",
+          "oklch(84% 0.033 24)",
+          "oklch(95% 0.036 24)"
+        ]
+      },
+      "divider": {
+        "role": "neutral",
+        "displayName": "Divider",
+        "canonical": "rgb(11 11 11 / 8%)"
+      },
+      "ring": {
+        "role": "neutral",
+        "displayName": "Card Ring",
+        "canonical": "rgb(11 11 11 / 5%)"
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Control Border",
+        "canonical": "rgb(11 11 11 / 10%)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display figure",
+        "purpose": "Big money figures: 2rem in cards, 2.375rem for Home's balance, 2.75rem for a page's headline figure; one step smaller on phones."
+      },
+      "headline": {
+        "displayName": "Page title",
+        "purpose": "The global h1 and empty-state headings."
+      },
+      "title": {
+        "displayName": "Card title",
+        "purpose": "Card and section titles (.card-title); dialog titles step up to 1.125rem."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "List rows, paragraphs, controls."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Secondary text and compact controls."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Meta lines under rows and legend meta."
+      }
+    },
+    "shadows": [
+      {
+        "name": "hairline-lift",
+        "value": "0 1px 2px rgb(11 11 11 / 6%), 0 0 0 1px rgb(11 11 11 / 5%)",
+        "purpose": "Every card (.panel)."
+      },
+      {
+        "name": "float",
+        "value": "0 1px 6px rgb(11 11 11 / 6%), 0 0 0 1px rgb(11 11 11 / 5%)",
+        "purpose": "Popovers; tooltips use it without the ring."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "120ms ease",
+        "purpose": "Hover tiles, button backgrounds, tooltip fade."
+      },
+      {
+        "name": "state",
+        "value": "150ms ease",
+        "purpose": "Switch track and knob."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "640px",
+        "purpose": "Big dialogs become full-screen sheets."
+      },
+      {
+        "name": "tablet",
+        "value": "900px",
+        "purpose": "Rail becomes bottom tab bar; columns stack; big type steps shrink."
+      },
+      {
+        "name": "touch",
+        "value": "(max-width: 900px), (pointer: coarse)",
+        "purpose": "Tap targets grow to 44px (--app-touch-target)."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action on a screen or dialog. Ink, not a brand hue.",
+      "html": "<button class=\"ds-btn-primary\">Save plan</button>",
+      "css": ".ds-btn-primary { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); display:inline-flex; align-items:center; gap:0.375rem; padding:0.5rem 0.75rem; font-size:0.875rem; font-weight:500; line-height:1.5; color:#ffffff; background:#171717; border:1px solid #171717; border-radius:0.625rem; cursor:pointer; transition:background-color 120ms ease; } .ds-btn-primary:hover { background:#242424; border-color:#242424; } .ds-btn-primary:active { background:#363636; } .ds-btn-primary:focus-visible { outline:2px solid #171717; outline-offset:2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The everyday button: white with a hairline border.",
+      "html": "<button class=\"ds-btn-secondary\">Link a bank</button>",
+      "css": ".ds-btn-secondary { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); display:inline-flex; align-items:center; gap:0.375rem; padding:0.5rem 0.75rem; font-size:0.875rem; font-weight:500; line-height:1.5; color:#171717; background:#ffffff; border:1px solid rgb(11 11 11 / 10%); border-radius:0.625rem; cursor:pointer; transition:background-color 120ms ease; } .ds-btn-secondary:hover { background:#f7f7f7; } .ds-btn-secondary:active { background:#f0f0f0; } .ds-btn-secondary:focus-visible { outline:2px solid #171717; outline-offset:2px; }"
+    },
+    {
+      "name": "Text Button",
+      "kind": "button",
+      "description": "Card-header actions like View all.",
+      "html": "<button class=\"ds-btn-text\">View all</button>",
+      "css": ".ds-btn-text { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); padding:0.375rem 0.5rem; font-size:0.8125rem; font-weight:500; color:#171717; background:transparent; border:0; border-radius:0.625rem; cursor:pointer; transition:background-color 120ms ease; } .ds-btn-text:hover { background:#f7f7f7; } .ds-btn-text:focus-visible { outline:2px solid #171717; outline-offset:2px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The one container: white, hairline ring, faint lift, on the gray canvas.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">Balance</h2><p class=\"ds-card-figure\">$4,218.36</p><p class=\"ds-card-meta\">Everyday Checking</p></section>",
+      "css": ".ds-card { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); width:18rem; padding:1.125rem 1.25rem 1.25rem; background:#ffffff; border-radius:0.75rem; box-shadow:0 1px 2px rgb(11 11 11 / 6%), 0 0 0 1px rgb(11 11 11 / 5%); color:#171717; } .ds-card-title { margin:0 0 0.75rem; font-size:1rem; font-weight:600; line-height:1.3; letter-spacing:-0.02em; } .ds-card-figure { margin:0; font-size:2.375rem; font-weight:550; line-height:1.1; letter-spacing:-0.04em; font-variant-numeric:tabular-nums; } .ds-card-meta { margin:0.375rem 0 0; font-size:0.875rem; color:#737373; }"
+    },
+    {
+      "name": "Compact Select",
+      "kind": "input",
+      "refersTo": "input-compact",
+      "description": "Small selects in card headings, like the account picker.",
+      "html": "<select class=\"ds-select\"><option>All accounts</option><option>Everyday Checking</option></select>",
+      "css": ".ds-select { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); min-width:11rem; padding:0.375rem 1.75rem 0.375rem 0.625rem; font-size:0.8125rem; color:#171717; background:#ffffff url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\") no-repeat right 0.5rem center; border:1px solid rgb(11 11 11 / 10%); border-radius:0.5rem; appearance:none; cursor:pointer; } .ds-select:hover { background-color:#f7f7f7; } .ds-select:focus-visible { outline:2px solid #171717; outline-offset:2px; }"
+    },
+    {
+      "name": "Navigation Rail",
+      "kind": "nav",
+      "description": "Desktop rail; becomes a bottom tab bar under 900px.",
+      "html": "<nav class=\"ds-rail\"><a class=\"ds-rail-item ds-active\" href=\"#\"><span class=\"ds-rail-bar\"></span><span class=\"ds-rail-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\"/><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/></svg></span><span class=\"ds-rail-label\">Home</span></a><a class=\"ds-rail-item\" href=\"#\"><span class=\"ds-rail-bar\"></span><span class=\"ds-rail-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1\"/><path d=\"M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4\"/></svg></span><span class=\"ds-rail-label\">Spending Plan</span></a></nav>",
+      "css": ".ds-rail { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); display:flex; flex-direction:column; gap:0.5rem; width:5.5rem; padding:1rem 0; background:#eeeeee; } .ds-rail-item { position:relative; display:grid; row-gap:0.25rem; padding:0 0 0.25rem; color:#737373; text-decoration:none; border-radius:0.5rem; } .ds-rail-bar { position:absolute; top:0.5rem; left:0; width:0.25rem; height:1rem; border-radius:0 2px 2px 0; } .ds-rail-icon { display:grid; width:2rem; height:2rem; margin:0 auto; place-items:center; border-radius:0.5rem; transition:background-color 120ms ease; } .ds-rail-item:hover .ds-rail-icon { background:#e7e7e7; } .ds-rail-item:focus-visible { outline:2px solid #171717; outline-offset:-2px; } .ds-active { color:#171717; } .ds-active .ds-rail-bar { background:#171717; } .ds-active .ds-rail-icon { background:#ffffff; box-shadow:0 1px 2px rgb(11 11 11 / 6%); } .ds-rail-label { font-size:0.6875rem; font-weight:500; line-height:1.2; text-align:center; white-space:nowrap; }"
+    },
+    {
+      "name": "Switch",
+      "kind": "input",
+      "refersTo": "switch-on",
+      "description": "Native checkbox drawn as a switch; Ink when on.",
+      "html": "<input type=\"checkbox\" class=\"ds-switch\" checked aria-label=\"Counts toward spending\"> <input type=\"checkbox\" class=\"ds-switch\" aria-label=\"Shared\">",
+      "css": ".ds-switch { position:relative; width:2.25rem; height:1.25rem; margin:0; vertical-align:middle; appearance:none; background:#e7e7e7; border-radius:999px; cursor:pointer; transition:background-color 150ms ease; } .ds-switch::after { position:absolute; top:0.125rem; left:0.125rem; width:1rem; height:1rem; content:''; background:#ffffff; border-radius:50%; box-shadow:0 1px 2px rgb(11 11 11 / 6%); transition:transform 150ms ease; } .ds-switch:checked { background:#171717; } .ds-switch:checked::after { transform:translateX(1rem); } .ds-switch:focus-visible { outline:2px solid #171717; outline-offset:2px; }"
+    },
+    {
+      "name": "Info Tip",
+      "kind": "custom",
+      "refersTo": "tooltip",
+      "description": "The only home for explanations: an info icon that opens an Ink bubble.",
+      "html": "<span class=\"ds-tip\"><button class=\"ds-tip-btn\" aria-label=\"About guilt-free spending\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 16v-4\"/><path d=\"M12 8h.01\"/></svg></button><span class=\"ds-tip-bubble\" role=\"tooltip\">What's left after fixed costs, investments and savings.</span></span>",
+      "css": ".ds-tip { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); position:relative; display:inline-flex; } .ds-tip-btn { display:grid; width:1.25rem; height:1.25rem; padding:0; place-items:center; color:#737373; background:transparent; border:0; border-radius:50%; cursor:help; } .ds-tip-btn:hover, .ds-tip-btn:focus-visible { color:#171717; } .ds-tip-btn:focus-visible { outline:2px solid #171717; outline-offset:2px; } .ds-tip-bubble { position:absolute; top:1.5rem; left:0; width:max-content; max-width:16rem; padding:0.5rem 0.65rem; font-size:0.8125rem; line-height:1.45; color:#ffffff; background:#171717; border-radius:0.5rem; box-shadow:0 1px 6px rgb(11 11 11 / 6%); opacity:0; visibility:hidden; transition:opacity 120ms ease; } .ds-tip:hover .ds-tip-bubble, .ds-tip-btn:focus-visible + .ds-tip-bubble { opacity:1; visibility:visible; }"
+    },
+    {
+      "name": "Transaction Row",
+      "kind": "custom",
+      "refersTo": "payee-icon",
+      "description": "Payee icon, name and meta, amount in tabular figures; inflows green.",
+      "html": "<ul class=\"ds-rows\"><li><button class=\"ds-row\"><span class=\"ds-payee\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\"/><path d=\"M3 6h18\"/><path d=\"M16 10a4 4 0 0 1-8 0\"/></svg></span><span class=\"ds-row-text\"><span class=\"ds-row-name\">Trader Joe's</span><span class=\"ds-row-meta\">Oct 24 · Groceries</span></span><span class=\"ds-row-amt\">−$64.12</span></button></li><li><button class=\"ds-row\"><span class=\"ds-payee\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><rect x=\"2\" y=\"6\" width=\"20\" height=\"12\" rx=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/></svg></span><span class=\"ds-row-text\"><span class=\"ds-row-name\">Payroll</span><span class=\"ds-row-meta\">Oct 23 · Income</span></span><span class=\"ds-row-amt ds-in\">+$2,480.00</span></button></li></ul>",
+      "css": ".ds-rows { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); width:22rem; margin:0; padding:0; list-style:none; } .ds-rows li + li { border-top:1px solid rgb(11 11 11 / 8%); } .ds-row { display:flex; align-items:center; gap:0.75rem; width:100%; min-height:3.25rem; padding:0.625rem 0; font:inherit; color:inherit; text-align:left; background:none; border:0; border-radius:0.5rem; cursor:pointer; } .ds-row:focus-visible { outline:2px solid #171717; outline-offset:2px; } .ds-payee { display:grid; flex:none; width:2rem; height:2rem; place-items:center; color:#737373; background:#f0f0f0; border-radius:50%; } .ds-row-text { display:grid; gap:0.0625rem; min-width:0; } .ds-row-name { overflow:hidden; font-size:0.875rem; font-weight:500; color:#171717; text-overflow:ellipsis; white-space:nowrap; } .ds-row-meta { font-size:0.75rem; color:#737373; } .ds-row-amt { margin-left:auto; padding-left:0.5rem; font-size:0.875rem; font-weight:550; font-variant-numeric:tabular-nums; color:#171717; white-space:nowrap; } .ds-in { color:#10a861; }"
+    },
+    {
+      "name": "Guilt-free Progress",
+      "kind": "custom",
+      "description": "Gold fill on an inset pill track; turns Over Target red when over.",
+      "html": "<section class=\"ds-gf\"><div class=\"ds-gf-head\"><span class=\"ds-gf-title\">Guilt-free spending</span><span class=\"ds-gf-sum\">$312 left</span></div><div class=\"ds-gf-track\"><div class=\"ds-gf-fill\" style=\"width:62%\"></div></div></section>",
+      "css": ".ds-gf { font-family: var(--app-font, 'Geist Variable', system-ui, sans-serif); display:grid; gap:0.5rem; width:20rem; padding-top:1rem; border-top:1px solid rgb(11 11 11 / 8%); } .ds-gf-head { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; } .ds-gf-title { font-size:0.8125rem; font-weight:500; color:#737373; } .ds-gf-sum { font-size:0.875rem; font-weight:600; font-variant-numeric:tabular-nums; color:#171717; } .ds-gf-track { height:0.375rem; overflow:hidden; background:#f0f0f0; border-radius:999px; } .ds-gf-fill { height:100%; background:#eda100; border-radius:inherit; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Ledger",
+    "overview": "Money Buckets is black ink on gray paper. Almost everything is a neutral: near-black type, white cards resting on a light gray page, gray secondary text, hairline dividers. Color is kept for one job, which is showing where money went. The four bucket colors (fixed costs, investments, savings, guilt-free spending) are the only hues that appear in ordinary use. Success green, danger red and the softer over-target red show up only when they carry meaning. Because there's so little color, a bucket color tells you something every time it appears.\n\nThe feel is calm and crafted. Calm means nothing shouts: going over plan is a muted red, not an alarm. Explanations sit behind an info tooltip instead of filling the screen, and the page doesn't move unless you ask it to. Crafted means the small things line up. Money uses tabular figures. Type sizes come from one scale. Hairlines are alpha black so they read the same on any surface. Heading rows keep their height while a button or select loads in, so nothing jumps. Density is moderate: there's room to breathe, but it's a working tool, not a landing page.\n\nFuture screens should not drift toward bank-app blue (corporate blue headers or brand chrome) or a crypto/neon dashboard (dark glow, gradients, flashy charts). The blue in this system belongs to fixed costs and nothing else.",
+    "keyCharacteristics": [
+      "Neutral gray scale with near-black as the primary \"accent\"; color reserved for buckets and meaning",
+      "One font (Geist Variable) on one type scale, with tight negative tracking on headings and figures",
+      "White cards with a 5% hairline ring and a faint shadow, on a #eeeeee page",
+      "Tabular figures for every amount",
+      "The same layout at every size: a left rail on desktop becomes a bottom tab bar on phones, and big dialogs become full-screen sheets"
+    ],
+    "rules": [
+      {
+        "name": "The Ink Is the Accent Rule",
+        "body": "Primary actions, selection and focus are near-black. Don't add a brand hue to make buttons, links or active states \"pop\".",
+        "section": "colors"
+      },
+      {
+        "name": "The Bucket Color Rule",
+        "body": "The four bucket colors mean their buckets and nothing else. Never use Fixed-costs Blue as a link color, Savings Green as a generic success, or Guilt-free Gold as a warning. Each bucket keeps its color on every chart, legend, tag and bar.",
+        "section": "colors"
+      },
+      {
+        "name": "The Soft Over Rule",
+        "body": "Going over a plan target uses Over Target red, never Danger. Danger is for errors and destructive actions only.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Scale Rule",
+        "body": "Every font size is a `--text-*` token. The same kind of text is the same size on every page. If a size you need doesn't exist, the design is wrong, not the scale.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Money Rule",
+        "body": "Every amount uses `font-variant-numeric: tabular-nums` and is formatted by `money.ts`: cents for balances and transactions, whole dollars for summaries, and a + or − sign for money in and out.",
+        "section": "typography"
+      },
+      {
+        "name": "The Same Task Everywhere Rule",
+        "body": "Phone and desktop get the same tasks and the same information. Phones re-flow layout; they never drop features.",
+        "section": "layout"
+      },
+      {
+        "name": "The Paper, Not Glass Rule",
+        "body": "Depth is a sheet of paper on a desk, not a floating panel. Don't use large, colored or layered shadows. The only blur in the app is the phone tab bar's backdrop.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every color, radius, shadow and font size from the `--app-*` and `--text-*` tokens in `frontend/src/assets/main.css`, or from the gray scale in `frontend/src/palette.ts` where CSS variables can't reach (charts, the PrimeVue preset).",
+      "**Do** keep primary actions, selection and focus in Ink (#171717).",
+      "**Do** show each bucket in its own color, in the order its view uses: fixed costs, guilt-free, savings, investments in spending views; fixed costs, investments, savings, guilt-free in the plan.",
+      "**Do** make every tap target at least 44px on touch screens (`--app-touch-target`): add `.hit-area` to small custom controls rather than resizing them.",
+      "**Do** use tabular numerals and `money.ts` formatting for every amount.",
+      "**Do** put explanations behind the Info Tip, not in paragraphs of hint text.",
+      "**Do** show loading as skeleton cards shaped like the final layout, and reserve control heights so nothing shifts.",
+      "**Do** make every screen work at phone and desktop widths: rail to tab bar, two columns to one, and big dialogs to full-screen sheets.",
+      "**Do** respect `prefers-reduced-motion`. Motion is limited to short (120–150ms) fades and slides on state changes."
+    ],
+    "donts": [
+      "**Don't** add a brand hue, gradients or colored backgrounds to make the app feel livelier. No bank-app blue headers or brand chrome.",
+      "**Don't** drift toward a crypto/neon dashboard: no dark-mode glow, no gradient fills and no flashy chart effects.",
+      "**Don't** reuse a bucket color for anything that isn't that bucket.",
+      "**Don't** use Danger red for \"over plan\". Use Over Target.",
+      "**Don't** use hard-coded hex values or one-off font sizes in components. Add a token if one is really missing.",
+      "**Don't** put cards inside cards. Group things inside a card with hairline dividers and inset tones.",
+      "**Don't** use shadows heavier than Float, and don't use blur anywhere except the phone tab bar."
+    ]
+  }
+}
