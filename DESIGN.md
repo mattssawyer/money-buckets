@@ -258,7 +258,7 @@ The only place for explanations. A 14px Lucide info icon in Ink Secondary turns 
 A 2rem round payee icon (the merchant's logo, or a category icon on an inset circle), then the name (500 weight, cut off with an ellipsis) above a caption meta line, then the amount on the right in tabular figures. Inflows are Success green. The whole row is a button that opens the payee correction dialog.
 
 ### Bucket Legend and Progress
-On Home, the Spending ring's centre leads with guilt-free left (figure size, Over Target once over) when the ring covers every tracked account; otherwise it shows the period's total "out". Bucket rows below have a 0.5rem dot in the bucket's color, start collapsed, and open to categories and transactions. The guilt-free bar at the card's foot is a 0.375rem pill track in Inset, filled with Guilt-free Gold, with "$X of $Y spent" and a caption when the number may still change (unsorted spending, a bank needing sign-in). When it can't show, the same slot says why. The Spending Plan page's legend uses 0.625rem square swatches with a 1.125rem/550 figure.
+On Home, the Spending ring's centre shows the period's total money out ("out this month"); what's left of guilt-free spending lives in the bar at the card's foot. Bucket rows below have a 0.5rem dot in the bucket's color, start collapsed, and open to categories and transactions. The guilt-free bar at the card's foot is a 0.375rem pill track in Inset, filled with Guilt-free Gold, with "$X left" (or "over", in Over Target) and a caption when the number may still change (unsorted spending, a bank needing sign-in). When it can't show, the same slot says why. The Spending Plan page's legend uses 0.625rem square swatches with a 1.125rem/550 figure.
 
 ## Do's and Don'ts
 

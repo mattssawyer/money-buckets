@@ -10,8 +10,6 @@ const props = defineProps<{
   guiltFree: GuiltFreeLeft
   /** Only one account is shown above, but the plan covers every tracked account. */
   allAccounts: boolean
-  /** The ring above already says what's left, so this line says how much of it is spent. */
-  leftShownAbove?: boolean
   /** Why the number may still change, such as spending that isn't sorted yet. */
   note?: string
 }>()
@@ -22,15 +20,9 @@ const spentPercent = computed(() => {
   if (budget > 0) return Math.min(100, (spent / budget) * 100)
   return spent > 0 ? 100 : 0
 })
-const summary = computed(() => {
-  const { budget, spent, left } = props.guiltFree
-  if (props.leftShownAbove) {
-    // A plan whose other buckets use up all its income leaves nothing to measure against.
-    if (budget <= 0) return `${formatWholeDollars(spent)} spent, none planned`
-    return `${formatWholeDollars(spent)} of ${formatWholeDollars(budget)} spent`
-  }
-  return `${formatWholeDollars(Math.abs(left))} ${over.value ? 'over' : 'left'}`
-})
+const summary = computed(
+  () => `${formatWholeDollars(Math.abs(props.guiltFree.left))} ${over.value ? 'over' : 'left'}`,
+)
 </script>
 
 <template>
