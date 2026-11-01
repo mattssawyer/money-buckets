@@ -48,7 +48,7 @@ export function fakeEvaluation(request: SpendingPlanRequest): PlanEvaluationResp
   }
 
   return {
-    income,
+    plan_income: income,
     from_paycheck: fromPaycheck,
     fixed_cost_subtotal: fixedCostSubtotal,
     buffer,

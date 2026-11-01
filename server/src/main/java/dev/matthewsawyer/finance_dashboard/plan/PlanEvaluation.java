@@ -18,16 +18,16 @@ import java.util.Objects;
  */
 public record PlanEvaluation(
         /** Take-home pay plus paycheck contributions; null until take-home pay is known. */
-        BigDecimal income,
+        BigDecimal planIncome,
         /** Investments taken from the paycheck, added back onto take-home pay. */
         BigDecimal fromPaycheck,
         /** Fixed cost lines before the buffer. */
         BigDecimal fixedCostSubtotal,
         BigDecimal buffer,
-        /** Fixed costs include the buffer. */
-        Map<SpendingPlanBucket, BucketEvaluation> buckets,
-        /** Guilt-free spending isn't a bucket: it's what the buckets leave. */
-        GuiltFreeEvaluation guiltFree
+        /** The three buckets that hold lines. Fixed costs include the buffer. */
+        Map<SpendingPlanBucket, Share> buckets,
+        /** The fourth bucket: what the other three leave, so it holds no lines. */
+        Share guiltFree
 ) {
 
     /** Suggested share of plan income, in percent. */
@@ -45,18 +45,15 @@ public record PlanEvaluation(
     public enum Status { BELOW, WITHIN, ABOVE }
 
     /**
-     * @param share  percent of plan income, rounded; null until plan income is known
-     * @param status null until plan income is known
-     * @param flagged needs the user's attention: fixed costs above target only
+     * A bucket's amount and how it measures against plan income.
+     *
+     * @param amount  for guilt-free spending, negative when the plan spends more than plan
+     *                income, and null until take-home pay is known
+     * @param share   percent of plan income, rounded; null until plan income is known
+     * @param status  null until plan income is known
+     * @param flagged needs the user's attention: fixed costs above target, or guilt-free spending below zero
      */
-    public record BucketEvaluation(BigDecimal amount, Integer share, Target target, Status status, boolean flagged) {
-    }
-
-    /**
-     * @param amount negative when the plan spends more than plan income; null until take-home pay is known
-     * @param flagged below zero
-     */
-    public record GuiltFreeEvaluation(BigDecimal amount, Integer share, Target target, Status status, boolean flagged) {
+    public record Share(BigDecimal amount, Integer share, Target target, Status status, boolean flagged) {
     }
 
     /** A blank buffer percent means no buffer. */
@@ -76,23 +73,23 @@ public record PlanEvaluation(
         BigDecimal planned = amounts.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal guiltFree = income == null ? null : income.subtract(planned);
 
-        Map<SpendingPlanBucket, BucketEvaluation> buckets = new EnumMap<>(SpendingPlanBucket.class);
+        Map<SpendingPlanBucket, Share> buckets = new EnumMap<>(SpendingPlanBucket.class);
         amounts.forEach((bucket, amount) -> {
             Target target = BUCKET_TARGETS.get(bucket);
             Integer share = share(amount, income);
             Status status = status(share, target);
             boolean flagged = bucket == SpendingPlanBucket.FIXED_COSTS && status == Status.ABOVE;
-            buckets.put(bucket, new BucketEvaluation(amount, share, target, status, flagged));
+            buckets.put(bucket, new Share(amount, share, target, status, flagged));
         });
-        Integer guiltFreeShare = share(guiltFree, income);
-        GuiltFreeEvaluation guiltFreeEvaluation = new GuiltFreeEvaluation(
+        Integer guiltFreePercent = share(guiltFree, income);
+        Share guiltFreeBucket = new Share(
                 guiltFree,
-                guiltFreeShare,
+                guiltFreePercent,
                 GUILT_FREE_TARGET,
-                status(guiltFreeShare, GUILT_FREE_TARGET),
+                status(guiltFreePercent, GUILT_FREE_TARGET),
                 guiltFree != null && guiltFree.signum() < 0);
 
-        return new PlanEvaluation(income, fromPaycheck, fixedCostSubtotal, buffer, buckets, guiltFreeEvaluation);
+        return new PlanEvaluation(income, fromPaycheck, fixedCostSubtotal, buffer, buckets, guiltFreeBucket);
     }
 
     /** A line broken into items is their sum, with blank items as zero; otherwise its typed amount. */
@@ -138,7 +135,7 @@ public record PlanEvaluation(
 
     /**
      * Rounds halves toward positive infinity, like JavaScript's Math.round, so -12.5 becomes -12.
-     * The web app rounded this way before the math moved here.
+     * The web app rounded this way before the math moved here, though on floating-point values.
      */
     static BigDecimal roundHalfUp(BigDecimal value, int scale) {
         BigDecimal half = BigDecimal.ONE.movePointLeft(scale).divide(BigDecimal.TWO);

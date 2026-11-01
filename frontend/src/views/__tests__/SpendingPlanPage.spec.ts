@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/t
 import PrimeVue from 'primevue/config'
 import SpendingPlanPage from '../SpendingPlanPage.vue'
 import { getSpendingPlan, type SpendingPlanResponse } from '../../api/SpendingPlanService'
-import { evaluationResponse } from '../../spendingPlan/evaluationFixture'
+import { evaluationResponse } from '../../spendingPlan/__tests__/evaluationFixture'
 import { fromEvaluation } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
@@ -32,7 +32,7 @@ const savedResponse: SpendingPlanResponse = {
   updated_at: '2026-09-22T19:30:00Z',
   // 1,450 rent plus the 15% buffer.
   evaluation: evaluationResponse({
-    income: 5200,
+    plan_income: 5200,
     fixed_cost_subtotal: 1450,
     buffer: 217.5,
     buckets: {
@@ -137,7 +137,7 @@ describe('spending plan page', () => {
       bufferPercent: 15,
       updatedAt: '2026-09-22T19:30:00Z',
       plan: { fixedCosts: [], investments: [], savings: [] },
-      evaluation: fromEvaluation(evaluationResponse({ income: 4000 })),
+      evaluation: fromEvaluation(evaluationResponse({ plan_income: 4000 })),
     })
     await flushPromises()
 

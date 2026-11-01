@@ -182,8 +182,8 @@ const planMonth = computed(() =>
 )
 const guiltFree = computed(() => {
   const month = planMonth.value
-  if (!savedPlan.value || month?.budget == null || month.left == null) return null
-  return { budget: month.budget, spent: month.spent, left: month.left }
+  if (!savedPlan.value || month?.planned == null || month.left == null) return null
+  return { planned: month.planned, spent: month.spent, left: month.left }
 })
 const guiltFreeMissing = computed(
   () => showsPlanMonth.value && !!savedPlan.value && guiltFreeLeftFailed.value,

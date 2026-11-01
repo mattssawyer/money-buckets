@@ -47,7 +47,7 @@ export interface PlanShareResponse {
 /** How a plan splits its income. */
 export interface PlanEvaluationResponse {
   /** Take-home pay plus paycheck contributions; null until take-home pay is known. */
-  income: number | null
+  plan_income: number | null
   from_paycheck: number
   /** Fixed cost lines before the buffer. */
   fixed_cost_subtotal: number
@@ -65,10 +65,10 @@ export interface SpendingPlanResponse extends SpendingPlanRequest {
 
 /** What's left of the plan's guilt-free spending for a calendar month, across every tracked account. */
 export interface GuiltFreeLeftResponse {
-  /** Null until the plan has take-home pay. */
-  budget: number | null
+  /** What the plan leaves for guilt-free spending; null until the plan has take-home pay. */
+  planned: number | null
   spent: number
-  /** Negative once spending passes the budget; null until the plan has take-home pay. */
+  /** Negative once spending passes what was planned; null until the plan has take-home pay. */
   left: number | null
   /** The month's spending not sorted into a bucket yet. */
   unsorted: number

@@ -67,28 +67,43 @@ public class Spending {
                 .toList();
     }
 
-    /** The key for spending that isn't sorted into a bucket yet. */
+    /** Transactions sorting hasn't reached yet. */
     public static final String UNSORTED = "UNSORTED";
 
+    /** The bucket a transaction's spending is grouped under: its bucket's name, or {@link #UNSORTED}. */
+    public static String bucketKey(PlaidTransaction transaction) {
+        return transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
+    }
+
+    /** Plaid always assigns a category, but the column is nullable. */
+    public static String categoryKey(String category) {
+        return Objects.requireNonNullElse(category, "UNCATEGORIZED");
+    }
+
     /**
-     * Each bucket's total, keyed by bucket name or {@link #UNSORTED}: the sum of its categories'
-     * totals, where a category that refunds bring to zero or below counts as nothing. The
-     * spending chart totals buckets the same way.
+     * Whether a category's total counts toward its bucket's. Refunds can net a category to zero
+     * or below, and then it counts as nothing, as a pie chart can't show it.
+     */
+    public static boolean countsTowardBucket(BigDecimal categoryTotal) {
+        return categoryTotal.signum() > 0;
+    }
+
+    /**
+     * Each bucket's total, keyed by {@link #bucketKey}: the sum of its categories' totals that
+     * {@link #countsTowardBucket count}. The spending chart's buckets add up the same way.
      */
     public static Map<String, BigDecimal> bucketTotals(
             List<Spent> spent, Function<PlaidTransaction, String> category) {
         Map<String, Map<String, BigDecimal>> byBucketAndCategory = new HashMap<>();
         for (Spent each : spent) {
             PlaidTransaction transaction = each.transaction();
-            String bucket = transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
-            String categoryName = Objects.requireNonNullElse(category.apply(transaction), "UNCATEGORIZED");
             byBucketAndCategory
-                    .computeIfAbsent(bucket, key -> new HashMap<>())
-                    .merge(categoryName, each.amount(), BigDecimal::add);
+                    .computeIfAbsent(bucketKey(transaction), key -> new HashMap<>())
+                    .merge(categoryKey(category.apply(transaction)), each.amount(), BigDecimal::add);
         }
         Map<String, BigDecimal> totals = new HashMap<>();
         byBucketAndCategory.forEach((bucket, categories) -> totals.put(bucket, categories.values().stream()
-                .filter(amount -> amount.signum() > 0)
+                .filter(Spending::countsTowardBucket)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)));
         return totals;
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SpendingPlanResponse } from '../api/SpendingPlanService'
 import { defaultPlan, type PlanDraft } from './plan'
-import { evaluationResponse } from './evaluationFixture'
+import { evaluationResponse } from './__tests__/evaluationFixture'
 import { fromEvaluation, fromSaved, toSaveRequest } from './savedPlan'
 
 const plan: PlanDraft = {
@@ -86,7 +86,7 @@ describe('fromEvaluation', () => {
   it("puts the server's evaluation in the app's bucket names", () => {
     const evaluation = fromEvaluation(
       evaluationResponse({
-        income: 5800,
+        plan_income: 5800,
         from_paycheck: 600,
         fixed_cost_subtotal: 1477.48,
         buffer: 221.62,

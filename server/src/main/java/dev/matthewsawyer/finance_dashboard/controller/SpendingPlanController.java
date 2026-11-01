@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/spending-plan")
@@ -141,19 +140,22 @@ public class SpendingPlanController {
         if (end.isBefore(start) || ChronoUnit.DAYS.between(start, end) > MAX_MONTH_DAYS) {
             throw badRequest("end must be on or after start, at most a month later");
         }
-        // Wrapped, since a plan without take-home pay has no budget but is still a plan.
-        BigDecimal budget = planService.find(user.getId(), plan -> Optional.ofNullable(PlanEvaluation.of(
-                        plan.getTakeHome(), plan.getFixedCostBufferPercent(), plan.getLines()).guiltFree().amount()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No spending plan saved"))
-                .orElse(null);
+        PlanEvaluation evaluation = planService.find(user.getId(), SpendingPlanController::evaluate)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No spending plan saved"));
+        // Null until the plan has take-home pay.
+        BigDecimal planned = evaluation.guiltFree().amount();
         Map<String, BigDecimal> totals = Spending.bucketTotals(
                 spending.between(user.getId(), start, end, null), payeeLookup.forUser(user.getId())::category);
         BigDecimal spent = totals.getOrDefault(Bucket.GUILT_FREE.name(), BigDecimal.ZERO);
         return new GuiltFreeLeftResponse(
-                stripZeros(budget),
+                stripZeros(planned),
                 stripZeros(spent),
-                budget == null ? null : stripZeros(budget.subtract(spent)),
+                planned == null ? null : stripZeros(planned.subtract(spent)),
                 stripZeros(totals.getOrDefault(Spending.UNSORTED, BigDecimal.ZERO)));
+    }
+
+    private static PlanEvaluation evaluate(SpendingPlan plan) {
+        return PlanEvaluation.of(plan.getTakeHome(), plan.getFixedCostBufferPercent(), plan.getLines());
     }
 
     private static List<SpendingPlanLine> toLines(List<LineRequest> lines, BigDecimal grossPay) {
@@ -297,15 +299,14 @@ public class SpendingPlanController {
                     stripZeros(plan.getFixedCostBufferPercent()),
                     plan.getLines().stream().map(LineResponse::from).toList(),
                     plan.getUpdatedAt(),
-                    PlanEvaluationResponse.from(PlanEvaluation.of(
-                            plan.getTakeHome(), plan.getFixedCostBufferPercent(), plan.getLines()))
+                    PlanEvaluationResponse.from(evaluate(plan))
             );
         }
     }
 
     /** See {@link PlanEvaluation}. Statuses are lower case: below, within or above. */
     public record PlanEvaluationResponse(
-            @JsonProperty("income") BigDecimal income,
+            @JsonProperty("plan_income") BigDecimal planIncome,
             @JsonProperty("from_paycheck") BigDecimal fromPaycheck,
             @JsonProperty("fixed_cost_subtotal") BigDecimal fixedCostSubtotal,
             @JsonProperty("buffer") BigDecimal buffer,
@@ -314,21 +315,14 @@ public class SpendingPlanController {
     ) {
         static PlanEvaluationResponse from(PlanEvaluation evaluation) {
             Map<SpendingPlanBucket, ShareResponse> buckets = new EnumMap<>(SpendingPlanBucket.class);
-            evaluation.buckets().forEach((bucket, share) -> buckets.put(bucket, new ShareResponse(
-                    stripZeros(share.amount()), share.share(), share.target(), status(share.status()), share.flagged())));
-            PlanEvaluation.GuiltFreeEvaluation guiltFree = evaluation.guiltFree();
+            evaluation.buckets().forEach((bucket, share) -> buckets.put(bucket, ShareResponse.from(share)));
             return new PlanEvaluationResponse(
-                    stripZeros(evaluation.income()),
+                    stripZeros(evaluation.planIncome()),
                     stripZeros(evaluation.fromPaycheck()),
                     stripZeros(evaluation.fixedCostSubtotal()),
                     stripZeros(evaluation.buffer()),
                     buckets,
-                    new ShareResponse(stripZeros(guiltFree.amount()), guiltFree.share(), guiltFree.target(),
-                            status(guiltFree.status()), guiltFree.flagged()));
-        }
-
-        private static String status(PlanEvaluation.Status status) {
-            return status == null ? null : status.name().toLowerCase(Locale.ROOT);
+                    ShareResponse.from(evaluation.guiltFree()));
         }
     }
 
@@ -340,15 +334,20 @@ public class SpendingPlanController {
             @JsonProperty("status") String status,
             @JsonProperty("flagged") boolean flagged
     ) {
+        static ShareResponse from(PlanEvaluation.Share share) {
+            String status = share.status() == null ? null : share.status().name().toLowerCase(Locale.ROOT);
+            return new ShareResponse(stripZeros(share.amount()), share.share(), share.target(), status, share.flagged());
+        }
     }
 
     /**
-     * {@code budget} and {@code left} are null until the plan has take-home pay; {@code left} goes
+     * {@code planned} is what the plan leaves for guilt-free spending. It and {@code left} are
+     * null until the plan has take-home pay; {@code left} goes
      * below zero once spending passes the budget. {@code unsorted} is the month's spending not
      * sorted into a bucket yet, which may still turn out to be guilt-free.
      */
     public record GuiltFreeLeftResponse(
-            @JsonProperty("budget") BigDecimal budget,
+            @JsonProperty("planned") BigDecimal planned,
             @JsonProperty("spent") BigDecimal spent,
             @JsonProperty("left") BigDecimal left,
             @JsonProperty("unsorted") BigDecimal unsorted

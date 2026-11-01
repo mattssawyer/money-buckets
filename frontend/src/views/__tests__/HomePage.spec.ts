@@ -30,7 +30,7 @@ import {
   type SpendingPlanResponse,
 } from '../../api/SpendingPlanService'
 import { periodName, periodRange } from '../../spending/period'
-import { evaluationResponse } from '../../spendingPlan/evaluationFixture'
+import { evaluationResponse } from '../../spendingPlan/__tests__/evaluationFixture'
 import { fromSaved } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../api/SpendingPlanService', () => ({
@@ -278,8 +278,13 @@ beforeEach(() => {
     updated_at: '2026-10-01T00:00:00Z',
     evaluation: evaluationResponse(),
   })
-  // Without take-home pay the plan has no guilt-free budget.
-  vi.mocked(getGuiltFreeLeft).mockResolvedValue({ budget: null, spent: 0, left: null, unsorted: 0 })
+  // Without take-home pay the plan leaves nothing planned for guilt-free spending.
+  vi.mocked(getGuiltFreeLeft).mockResolvedValue({
+    planned: null,
+    spent: 0,
+    left: null,
+    unsorted: 0,
+  })
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
   vi.stubGlobal('Plaid', {
@@ -875,7 +880,7 @@ describe('homepage spending breakdown', () => {
         fixed_cost_buffer_percent: 0,
         lines: [],
         updated_at: '2026-10-11T00:00:00Z',
-        evaluation: evaluationResponse({ income: 4000 }),
+        evaluation: evaluationResponse({ plan_income: 4000 }),
       }),
     )
     await flushPromises()
@@ -933,7 +938,7 @@ describe('homepage spending breakdown', () => {
       ],
       updated_at: '2026-10-01T00:00:00Z',
       evaluation: evaluationResponse({
-        income: 4000,
+        plan_income: 4000,
         guilt_free: {
           amount: 2000,
           share: 50,
@@ -944,9 +949,9 @@ describe('homepage spending breakdown', () => {
       }),
     }
 
-    /** The server's answer for a month: what's left of the 2,000 budget. */
+    /** The server's answer for a month: what's left of the 2,000 planned. */
     function left(spent: number, unsorted = 0): GuiltFreeLeftResponse {
-      return { budget: 2000, spent, left: 2000 - spent, unsorted }
+      return { planned: 2000, spent, left: 2000 - spent, unsorted }
     }
 
     beforeEach(() => {
@@ -1020,7 +1025,7 @@ describe('homepage spending breakdown', () => {
     })
 
     it('leaves the bar empty when the plan leaves nothing and nothing is spent', async () => {
-      vi.mocked(getGuiltFreeLeft).mockResolvedValue({ budget: 0, spent: 0, left: 0, unsorted: 0 })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue({ planned: 0, spent: 0, left: 0, unsorted: 0 })
       const wrapper = mountHome()
       await flushPromises()
 
@@ -1118,7 +1123,7 @@ describe('homepage spending breakdown', () => {
     it('asks for take-home pay when the plan has none to work the budget out from', async () => {
       vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: null })
       vi.mocked(getGuiltFreeLeft).mockResolvedValue({
-        budget: null,
+        planned: null,
         spent: 50,
         left: null,
         unsorted: 0,

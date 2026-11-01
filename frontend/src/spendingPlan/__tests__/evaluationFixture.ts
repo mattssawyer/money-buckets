@@ -1,4 +1,4 @@
-import type { PlanEvaluationResponse, PlanShareResponse } from '../api/SpendingPlanService'
+import type { PlanEvaluationResponse, PlanShareResponse } from '../../api/SpendingPlanService'
 
 /** For tests: an evaluation as the server sends it, with every part at zero and no income. */
 export function evaluationResponse(
@@ -15,7 +15,7 @@ export function evaluationResponse(
   })
   const { buckets, ...rest } = overrides
   return {
-    income: null,
+    plan_income: null,
     from_paycheck: 0,
     fixed_cost_subtotal: 0,
     buffer: 0,

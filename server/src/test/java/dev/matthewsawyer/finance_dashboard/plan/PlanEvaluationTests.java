@@ -42,9 +42,9 @@ class PlanEvaluationTests {
 
     @Test
     void addsPaycheckContributionsBackOntoTakeHomePayForPlanIncome() {
-        assertMoney("5700", PlanEvaluation.of(money("5200"), null, List.of(paycheckLine("500"))).income());
-        assertMoney("5200", PlanEvaluation.of(money("5200"), null, List.of()).income());
-        assertNull(PlanEvaluation.of(null, null, List.of(paycheckLine("500"))).income());
+        assertMoney("5700", PlanEvaluation.of(money("5200"), null, List.of(paycheckLine("500"))).planIncome());
+        assertMoney("5200", PlanEvaluation.of(money("5200"), null, List.of()).planIncome());
+        assertNull(PlanEvaluation.of(null, null, List.of(paycheckLine("500"))).planIncome());
     }
 
     @Test
@@ -86,7 +86,7 @@ class PlanEvaluationTests {
 
     @Test
     void guiltFreeSpendingIsUnknownUntilTakeHomePayIsEntered() {
-        PlanEvaluation.GuiltFreeEvaluation guiltFree = simplePlan(null, "1200", "0", "0").guiltFree();
+        PlanEvaluation.Share guiltFree = simplePlan(null, "1200", "0", "0").guiltFree();
 
         assertNull(guiltFree.amount());
         assertNull(guiltFree.share());
@@ -147,8 +147,8 @@ class PlanEvaluationTests {
     }
 
     @Test
-    void roundsHalfASharePointUpTowardPositiveLikeTheWebDid() {
-        // 125 of 1,000 is 12.5%; -125 is -12.5%, which the web's Math.round made -12.
+    void roundsHalfASharePointUpTowardPositive() {
+        // 125 of 1,000 is 12.5%; -125 is -12.5%, which rounds up to -12 as JavaScript's Math.round does.
         assertEquals(13, simplePlan("1000", "775", "50", "50").guiltFree().share());
         assertEquals(-12, simplePlan("1000", "1025", "50", "50").guiltFree().share());
     }

@@ -286,7 +286,7 @@ class SpendingPlanControllerTests {
         PlanEvaluationResponse evaluation = controller.getSpendingPlan(jwt).evaluation();
 
         // 4,000 take-home + 500 from the paycheck, less 2,200 fixed with the buffer, 500 and 300.
-        assertEquals("4500", evaluation.income().toPlainString());
+        assertEquals("4500", evaluation.planIncome().toPlainString());
         assertEquals("200", evaluation.buffer().toPlainString());
         assertEquals("2200", evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).amount().toPlainString());
         assertEquals(49, evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).share());
@@ -307,7 +307,7 @@ class SpendingPlanControllerTests {
                         new LineRequest(SpendingPlanBucket.SAVINGS, "Gifts", new BigDecimal("1200"), false, null, List.of()))));
 
         assertEquals("480", evaluation.fromPaycheck().toPlainString());
-        assertEquals("3480", evaluation.income().toPlainString());
+        assertEquals("3480", evaluation.planIncome().toPlainString());
         assertEquals("-600", evaluation.guiltFree().amount().toPlainString());
         assertTrue(evaluation.guiltFree().flagged());
         verify(planService, never()).save(any(), any(), any(), any(), any(), anyList(), any());
@@ -346,7 +346,7 @@ class SpendingPlanControllerTests {
 
         GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(jwt, start, end);
 
-        assertEquals("1500", left.budget().toPlainString());
+        assertEquals("1500", left.planned().toPlainString());
         assertEquals("612.4", left.spent().toPlainString());
         assertEquals("887.6", left.left().toPlainString());
         assertEquals("35.5", left.unsorted().toPlainString());
@@ -387,7 +387,7 @@ class SpendingPlanControllerTests {
         GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(
                 jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31));
 
-        assertNull(left.budget());
+        assertNull(left.planned());
         assertNull(left.left());
         assertEquals("50", left.spent().toPlainString());
     }

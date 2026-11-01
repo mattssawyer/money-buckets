@@ -92,7 +92,7 @@ export function fromEvaluation(evaluation: PlanEvaluationResponse): PlanEvaluati
   }
   const { amount, share, target, status, flagged } = evaluation.guilt_free
   return {
-    income: evaluation.income,
+    income: evaluation.plan_income,
     fromPaycheck: evaluation.from_paycheck,
     fixedCostSubtotal: evaluation.fixed_cost_subtotal,
     buffer: evaluation.buffer,

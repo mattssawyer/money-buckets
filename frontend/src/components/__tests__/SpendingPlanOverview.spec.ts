@@ -3,7 +3,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SpendingPlanOverview from '../SpendingPlanOverview.vue'
 import type { PlanShareResponse } from '../../api/SpendingPlanService'
-import { evaluationResponse } from '../../spendingPlan/evaluationFixture'
+import { evaluationResponse } from '../../spendingPlan/__tests__/evaluationFixture'
 import { defaultPlan } from '../../spendingPlan/plan'
 import { fromEvaluation, type SavedPlan } from '../../spendingPlan/savedPlan'
 
@@ -22,7 +22,7 @@ function part(
 
 // The server's evaluation of the plan below: 5,200 take-home + 600 from the paycheck.
 const evaluation = evaluationResponse({
-  income: 5800,
+  plan_income: 5800,
   from_paycheck: 600,
   fixed_cost_subtotal: 1477.48,
   buffer: 221.62,
@@ -171,7 +171,7 @@ describe('spending plan overview', () => {
       },
       evaluation: fromEvaluation(
         evaluationResponse({
-          income: 2600,
+          plan_income: 2600,
           from_paycheck: 600,
           fixed_cost_subtotal: 2400,
           buffer: 360,
