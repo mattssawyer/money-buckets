@@ -7,7 +7,6 @@ import {
   BUCKET_IDS,
   PLAN_COLORS,
   PLAN_TITLES,
-  evaluatePlan,
   lineAmount,
   type BucketId,
   type PlanLineDraft,
@@ -24,9 +23,8 @@ const emit = defineEmits<{
   startOver: []
 }>()
 
-const evaluation = computed(() =>
-  evaluatePlan(props.plan.takeHome, props.plan.plan, props.plan.bufferPercent),
-)
+// Worked out by the server when the plan was loaded or saved.
+const evaluation = computed(() => props.plan.evaluation)
 
 const segments = computed(() =>
   [...BUCKET_IDS, 'guiltFree' as const].map((id) => {

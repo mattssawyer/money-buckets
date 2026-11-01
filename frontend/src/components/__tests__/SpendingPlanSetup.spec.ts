@@ -13,9 +13,15 @@ import {
   type SpendingByBucket,
 } from '../../api/PlaidService'
 
-import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
+import {
+  evaluateSpendingPlan,
+  saveSpendingPlan,
+  type PlanEvaluationResponse,
+  type SpendingPlanRequest,
+} from '../../api/SpendingPlanService'
 import { defaultPlan } from '../../spendingPlan/plan'
-import type { SavedPlan } from '../../spendingPlan/savedPlan'
+import { fromEvaluation, toSaveRequest, type SavedPlan } from '../../spendingPlan/savedPlan'
+import { fakeEvaluation } from './fakePlanEvaluation'
 
 vi.mock('../../api/PlaidService', () => ({
   getRecurringTransactions: vi.fn(),
@@ -25,6 +31,7 @@ vi.mock('../../api/PlaidService', () => ({
 
 vi.mock('../../api/SpendingPlanService', () => ({
   saveSpendingPlan: vi.fn(),
+  evaluateSpendingPlan: vi.fn<(plan: SpendingPlanRequest) => Promise<PlanEvaluationResponse>>(),
 }))
 
 enableAutoUnmount(afterEach)
@@ -105,7 +112,9 @@ beforeEach(() => {
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
+    evaluation: fakeEvaluation(request),
   }))
+  vi.mocked(evaluateSpendingPlan).mockImplementation(async (request) => fakeEvaluation(request))
 })
 
 function saveButton(wrapper: ReturnType<typeof mountSetup>) {
@@ -114,24 +123,29 @@ function saveButton(wrapper: ReturnType<typeof mountSetup>) {
   return button
 }
 
+const savedPlanDraft = {
+  ...defaultPlan(),
+  fixedCosts: [
+    { name: 'Rent/mortgage', amount: 1500, items: [], fromPaycheck: false },
+    {
+      name: 'Subscriptions',
+      amount: null,
+      fromPaycheck: false,
+      items: [{ name: 'Netflix', amount: 15.49, streamId: 'netflix' }],
+    },
+  ],
+}
+
 const savedPlan: SavedPlan = {
   accountId: 'checking',
   takeHome: 5200,
   grossPay: null,
   bufferPercent: 10,
   updatedAt: '2026-09-20T12:00:00Z',
-  plan: {
-    ...defaultPlan(),
-    fixedCosts: [
-      { name: 'Rent/mortgage', amount: 1500, items: [], fromPaycheck: false },
-      {
-        name: 'Subscriptions',
-        amount: null,
-        fromPaycheck: false,
-        items: [{ name: 'Netflix', amount: 15.49, streamId: 'netflix' }],
-      },
-    ],
-  },
+  plan: savedPlanDraft,
+  evaluation: fromEvaluation(
+    fakeEvaluation(toSaveRequest('checking', 5200, null, 10, savedPlanDraft)),
+  ),
 }
 
 // Rent Plaid labels home improvement, before Jev has put it on a line.
@@ -1128,5 +1142,91 @@ describe('spending plan setup', () => {
     expect(request?.lines.find((line) => line.name === 'Subscriptions')?.items).toEqual([
       { name: 'Netflix', amount: 15.49, stream_id: 'netflix' },
     ])
+  })
+})
+
+describe('spending plan totals from the server', () => {
+  it('shows a saved plan with the totals it was loaded with', () => {
+    const wrapper = mountSetup({ saved: savedPlan })
+
+    // 1,500 rent + 15.49 Netflix, plus the 10% buffer, before anything is asked again.
+    expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$1,667.04')
+  })
+
+  it("sends what's typed and shows the server's answer", async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    vi.mocked(evaluateSpendingPlan).mockImplementation(async (request) => ({
+      ...fakeEvaluation(request),
+      guilt_free: {
+        amount: 1234.5,
+        share: 31,
+        target: { min: 20, max: 35 },
+        status: 'within',
+        flagged: false,
+      },
+    }))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await flushPromises()
+
+    expect(vi.mocked(evaluateSpendingPlan).mock.lastCall?.[0].take_home).toBe(4000)
+    expect(vi.mocked(evaluateSpendingPlan).mock.lastCall?.[0].fixed_cost_buffer_percent).toBe(15)
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$1,234.5031%')
+  })
+
+  it('keeps the last totals on screen while the server works out new ones', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    const before = wrapper.get('[aria-label="Guilt-free spending total"]').text()
+    vi.mocked(evaluateSpendingPlan).mockReturnValue(new Promise(() => {}))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await flushPromises()
+
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe(before)
+  })
+
+  it('says when the totals could not be updated, and tries again', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    vi.mocked(evaluateSpendingPlan).mockRejectedValueOnce(new Error('offline'))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await flushPromises()
+
+    expect(wrapper.get('.evaluation-error').text()).toContain('We couldn’t update your totals.')
+    const retry = wrapper.get('.evaluation-error').findAll('button')
+    await retry.find((button) => button.text() === 'Try again')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.evaluation-error').exists()).toBe(false)
+    // 4,000 less 1,450 rent with the 15% buffer.
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$2,332.5058%')
+  })
+
+  it('shows only the answer for the latest plan when changes come quickly', async () => {
+    const wrapper = mountSetup()
+    await flushPromises()
+    vi.mocked(evaluateSpendingPlan).mockClear()
+    let answerFirst: () => void = () => {}
+    vi.mocked(evaluateSpendingPlan).mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          answerFirst = () => resolve(fakeEvaluation(request))
+        }),
+    )
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await wrapper.get('#take-home-income').setValue('5000')
+    answerFirst()
+    await flushPromises()
+
+    // One request at a time: the second goes out with the latest take-home once the first answers.
+    expect(
+      vi.mocked(evaluateSpendingPlan).mock.calls.map(([request]) => request.take_home),
+    ).toEqual([4000, 5000])
+    // 5,000 less 1,450 rent with the 15% buffer.
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$3,332.5067%')
   })
 })

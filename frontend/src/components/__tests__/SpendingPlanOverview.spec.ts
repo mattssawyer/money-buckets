@@ -2,12 +2,40 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SpendingPlanOverview from '../SpendingPlanOverview.vue'
+import type { PlanShareResponse } from '../../api/SpendingPlanService'
+import { evaluationResponse } from '../../spendingPlan/evaluationFixture'
 import { defaultPlan } from '../../spendingPlan/plan'
-import type { SavedPlan } from '../../spendingPlan/savedPlan'
+import { fromEvaluation, type SavedPlan } from '../../spendingPlan/savedPlan'
 
 enableAutoUnmount(afterEach)
 
+function part(
+  amount: number,
+  share: number | null,
+  status: PlanShareResponse['status'],
+  min: number,
+  max: number,
+  flagged = false,
+) {
+  return { amount, share, status, target: { min, max }, flagged }
+}
+
+// The server's evaluation of the plan below: 5,200 take-home + 600 from the paycheck.
+const evaluation = evaluationResponse({
+  income: 5800,
+  from_paycheck: 600,
+  fixed_cost_subtotal: 1477.48,
+  buffer: 221.62,
+  buckets: {
+    FIXED_COSTS: part(1699.1, 29, 'below', 50, 60),
+    INVESTMENTS: part(600, 10, 'within', 10, 10),
+    SAVINGS: part(200, 3, 'below', 5, 10),
+  },
+  guilt_free: part(3300.9, 57, 'above', 20, 35),
+})
+
 const plan: SavedPlan = {
+  evaluation: fromEvaluation(evaluation),
   accountId: 'checking',
   takeHome: 5200,
   grossPay: null,
@@ -112,7 +140,15 @@ describe('spending plan overview', () => {
     expect(fixedCosts.get('.buffer-line').text()).toBe('Miscellaneous buffer (15%) $221.62')
     expect(fixedCosts.get('.bucket-total').text()).toBe('$1,699.10')
 
-    const withoutBuffer = mountOverview({ ...plan, bufferPercent: 0 })
+    const withoutBuffer = mountOverview({
+      ...plan,
+      bufferPercent: 0,
+      evaluation: fromEvaluation({
+        ...evaluation,
+        buffer: 0,
+        buckets: { ...evaluation.buckets, FIXED_COSTS: part(1477.48, 25, 'below', 50, 60) },
+      }),
+    })
     expect(withoutBuffer.find('.buffer-line').exists()).toBe(false)
     expect(withoutBuffer.get('[aria-label="Fixed costs amount"]').text()).toBe('$1,477.48')
   })
@@ -133,6 +169,20 @@ describe('spending plan overview', () => {
         ...plan.plan,
         fixedCosts: [{ name: 'Rent/mortgage', amount: 2400, items: [], fromPaycheck: false }],
       },
+      evaluation: fromEvaluation(
+        evaluationResponse({
+          income: 2600,
+          from_paycheck: 600,
+          fixed_cost_subtotal: 2400,
+          buffer: 360,
+          buckets: {
+            FIXED_COSTS: part(2760, 106, 'above', 50, 60, true),
+            INVESTMENTS: part(600, 23, 'above', 10, 10),
+            SAVINGS: part(200, 8, 'within', 5, 10),
+          },
+          guilt_free: part(-960, -37, 'below', 20, 35, true),
+        }),
+      ),
     })
 
     expect(wrapper.get('[aria-label="Fixed costs amount"]').classes()).toContain('legend-over')
@@ -142,7 +192,12 @@ describe('spending plan overview', () => {
   })
 
   it('asks for take-home pay when the plan has none', () => {
-    const wrapper = mountOverview({ ...plan, takeHome: null, plan: defaultPlan() })
+    const wrapper = mountOverview({
+      ...plan,
+      takeHome: null,
+      plan: defaultPlan(),
+      evaluation: fromEvaluation(evaluationResponse()),
+    })
 
     expect(wrapper.text()).toContain('Add your take-home pay to see how it splits.')
     expect(wrapper.find('[role="img"]').exists()).toBe(false)

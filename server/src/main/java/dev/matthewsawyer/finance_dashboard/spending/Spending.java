@@ -10,12 +10,15 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * The user's spending: what left the accounts in view, other than pay, card payments and money
@@ -62,6 +65,32 @@ public class Spending {
                 .filter(transaction -> !sharedTransfers.contains(transaction.getTransactionId()))
                 .map(transaction -> new Spent(transaction, inView.get(transaction.getAccountId())))
                 .toList();
+    }
+
+    /** The key for spending that isn't sorted into a bucket yet. */
+    public static final String UNSORTED = "UNSORTED";
+
+    /**
+     * Each bucket's total, keyed by bucket name or {@link #UNSORTED}: the sum of its categories'
+     * totals, where a category that refunds bring to zero or below counts as nothing. The
+     * spending chart totals buckets the same way.
+     */
+    public static Map<String, BigDecimal> bucketTotals(
+            List<Spent> spent, Function<PlaidTransaction, String> category) {
+        Map<String, Map<String, BigDecimal>> byBucketAndCategory = new HashMap<>();
+        for (Spent each : spent) {
+            PlaidTransaction transaction = each.transaction();
+            String bucket = transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
+            String categoryName = Objects.requireNonNullElse(category.apply(transaction), "UNCATEGORIZED");
+            byBucketAndCategory
+                    .computeIfAbsent(bucket, key -> new HashMap<>())
+                    .merge(categoryName, each.amount(), BigDecimal::add);
+        }
+        Map<String, BigDecimal> totals = new HashMap<>();
+        byBucketAndCategory.forEach((bucket, categories) -> totals.put(bucket, categories.values().stream()
+                .filter(amount -> amount.signum() > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)));
+        return totals;
     }
 
     /** A transaction and how much of it is the user's, in percent. */

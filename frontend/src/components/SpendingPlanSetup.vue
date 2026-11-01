@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, ChevronRight, CircleMinus, Plus, Repeat, X } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
 import {
@@ -10,7 +10,7 @@ import {
   type RecurringStream,
 } from '../api/PlaidService'
 import { recurringLabel } from '../api/plaidLabels'
-import { saveSpendingPlan } from '../api/SpendingPlanService'
+import { evaluateSpendingPlan, saveSpendingPlan } from '../api/SpendingPlanService'
 import {
   estimateMonthlyTakeHome,
   planFromRecurring,
@@ -21,17 +21,22 @@ import {
 import { formatPlanAmount, parseAmount, roundCents } from '../spendingPlan/money'
 import {
   DEFAULT_BUFFER_PERCENT,
-  PLAN_TARGETS,
   PLAN_TITLES,
   defaultPlan,
-  evaluatePlan,
   lineAmount,
   type BucketId,
+  type PlanEvaluation,
   type PlanDraft,
   type PlanItemDraft,
   type PlanLineDraft,
 } from '../spendingPlan/plan'
-import { BUCKET_IDS, fromSaved, toSaveRequest, type SavedPlan } from '../spendingPlan/savedPlan'
+import {
+  BUCKET_IDS,
+  fromEvaluation,
+  fromSaved,
+  toSaveRequest,
+  type SavedPlan,
+} from '../spendingPlan/savedPlan'
 import { withConfirmed } from '../spending/recurring'
 import { historyRange, lineAverages, spendingHistory } from '../spendingPlan/spendingHistory'
 import InfoTip from './InfoTip.vue'
@@ -141,10 +146,49 @@ const filledPlan = computed<PlanDraft>(() => ({
   savings: plan.value.savings.map(filled),
 }))
 
-const evaluation = computed(() =>
-  evaluatePlan(takeHome.value, filledPlan.value, bufferPercent.value),
+/** The plan as the server would be sent it on save; what the totals are worked out from. */
+const planRequest = computed(() =>
+  toSaveRequest(null, takeHome.value, grossPay.value, bufferPercent.value ?? 0, filledPlan.value),
 )
-const guiltFree = computed(() => evaluation.value.guiltFree)
+
+// The server works out the totals. Until it answers, the last answer stays on screen; a saved
+// plan starts with the one it was loaded with.
+const evaluation = ref<PlanEvaluation | undefined>(props.saved?.evaluation)
+const evaluationFailed = ref(false)
+const guiltFree = computed(() => evaluation.value?.guiltFree)
+let evaluating = false
+let evaluateAgain = false
+let disposed = false
+onUnmounted(() => {
+  disposed = true
+})
+
+/**
+ * Asks the server for the totals, one request at a time. Changes made while one is out are
+ * sent together once it answers, so the last answer shown is always for the latest plan.
+ */
+async function evaluate() {
+  if (evaluating) {
+    evaluateAgain = true
+    return
+  }
+  evaluating = true
+  try {
+    do {
+      evaluateAgain = false
+      try {
+        const answer = await evaluateSpendingPlan(planRequest.value)
+        if (disposed || evaluateAgain) continue
+        evaluation.value = fromEvaluation(answer)
+        evaluationFailed.value = false
+      } catch {
+        if (!disposed && !evaluateAgain) evaluationFailed.value = true
+      }
+    } while (evaluateAgain && !disposed)
+  } finally {
+    evaluating = false
+  }
+}
 
 if (props.saved) {
   takeHome.value = props.saved.takeHome
@@ -152,6 +196,8 @@ if (props.saved) {
   bufferPercent.value = props.saved.bufferPercent
   setPlan(props.saved.plan)
 }
+
+watch(planRequest, () => void evaluate(), { immediate: !props.saved })
 
 onMounted(async () => {
   // A saved plan keeps its own amounts; only its blank lines get defaults.
@@ -670,7 +716,9 @@ function amountValue(amount: number | null) {
         >
           <div class="block-heading">
             <h2 :id="`plan-section-heading-${bucket.id}`">{{ bucket.title }}</h2>
-            <p class="block-hint">{{ targetHint(PLAN_TARGETS[bucket.id]) }}</p>
+            <p v-if="evaluation" class="block-hint">
+              {{ targetHint(evaluation.buckets[bucket.id].target) }}
+            </p>
           </div>
 
           <template v-if="loadingEstimates">
@@ -878,12 +926,12 @@ function amountValue(amount: number | null) {
                   class="derived-value"
                   aria-label="Miscellaneous buffer amount"
                 >
-                  {{ evaluation.buffer }}
+                  {{ evaluation?.buffer }}
                 </span>
               </div>
             </div>
 
-            <div class="sheet-row total-row">
+            <div v-if="evaluation" class="sheet-row total-row">
               <span class="row-label">Total</span>
               <div class="total-amount" :aria-label="`${bucket.title} total`">
                 <span>{{ formatPlanAmount(evaluation.buckets[bucket.id].amount) }}</span>
@@ -902,10 +950,10 @@ function amountValue(amount: number | null) {
         <section class="plan-block" aria-labelledby="plan-section-heading-guilt-free">
           <div class="block-heading">
             <h2 id="plan-section-heading-guilt-free">{{ PLAN_TITLES.guiltFree }}</h2>
-            <p class="block-hint">{{ targetHint(PLAN_TARGETS.guiltFree) }}</p>
+            <p v-if="guiltFree" class="block-hint">{{ targetHint(guiltFree.target) }}</p>
           </div>
 
-          <div v-if="loadingEstimates" class="sheet-row">
+          <div v-if="loadingEstimates || !guiltFree" class="sheet-row">
             <Skeleton width="11rem" height="1rem" />
             <Skeleton width="6.5rem" height="1.5rem" />
           </div>
@@ -930,6 +978,10 @@ function amountValue(amount: number | null) {
               Your plan is {{ formatPlanAmount(-guiltFree.amount) }} more than your take-home pay.
             </p>
           </template>
+          <div v-if="evaluationFailed" class="evaluation-error" role="status">
+            <span>We couldn’t update your totals.</span>
+            <Button label="Try again" severity="secondary" size="small" text @click="evaluate" />
+          </div>
         </section>
       </form>
 
@@ -1665,6 +1717,14 @@ h2 {
 
 .guilt-free-empty {
   padding: 0.35rem 0;
+}
+
+.evaluation-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--app-text-secondary);
+  font-size: var(--text-sm);
 }
 
 .guilt-free-warning {

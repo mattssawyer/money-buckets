@@ -4,6 +4,10 @@ import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.Ite
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.LineRequest;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingPlanRequest;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingPlanResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.GuiltFreeLeftResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.PlanEvaluationResponse;
+import dev.matthewsawyer.finance_dashboard.model.Bucket;
+import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
@@ -13,6 +17,9 @@ import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
+import dev.matthewsawyer.finance_dashboard.spending.Spending;
+import dev.matthewsawyer.finance_dashboard.transactions.TransactionExclusions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +33,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.Set;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +49,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,12 +72,19 @@ class SpendingPlanControllerTests {
     @Mock
     private UserService userService;
 
+    @Mock
+    private Spending spending;
+
+    @Mock
+    private PayeeLookup payeeLookup;
+
     private SpendingPlanController controller;
     private Jwt jwt;
 
     @BeforeEach
     void setUp() {
-        controller = new SpendingPlanController(planService, accountRepository, bucketSorting, userService);
+        controller = new SpendingPlanController(
+                planService, accountRepository, bucketSorting, userService, spending, payeeLookup);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject("user_123").build();
         User user = new User("user_123");
         ReflectionTestUtils.setField(user, "id", USER_ID);
@@ -130,7 +149,7 @@ class SpendingPlanControllerTests {
     void savesAPlanWithoutAnAccount() {
         when(planService.save(eq(USER_ID), eq(null), eq(null), eq(null), eq(SpendingPlan.DEFAULT_BUFFER_PERCENT),
                 anyList(), any())).thenReturn(
-                new SpendingPlanResponse(null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(), Instant.now()));
+                new SpendingPlanResponse(null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(), Instant.now(), null));
 
         // A plan saved without a buffer gets the default 15%.
         controller.saveSpendingPlan(jwt, new SpendingPlanRequest("", null, null, null, null));
@@ -151,7 +170,7 @@ class SpendingPlanControllerTests {
         });
         when(planService.save(eq(USER_ID), eq(null), eq(null), eq(null), eq(SpendingPlan.DEFAULT_BUFFER_PERCENT),
                 anyList(), any())).thenReturn(
-                new SpendingPlanResponse(null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(), Instant.now()));
+                new SpendingPlanResponse(null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(), Instant.now(), null));
 
         controller.saveSpendingPlan(jwt, new SpendingPlanRequest(null, null, null, null, List.of()));
 
@@ -245,11 +264,180 @@ class SpendingPlanControllerTests {
     @Test
     void returnsTheSavedPlan() {
         SpendingPlanResponse saved = new SpendingPlanResponse("checking", BigDecimal.TEN, null, BigDecimal.TEN, List.of(),
-                Instant.now());
+                Instant.now(), null);
         when(planService.find(eq(USER_ID), any())).thenReturn(Optional.of(saved));
 
         assertEquals(saved, controller.getSpendingPlan(jwt));
         verify(planService).find(eq(USER_ID), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void returnsTheSavedPlanWithHowItSplitsItsIncome() {
+        when(planService.find(eq(USER_ID), any())).thenAnswer(invocation -> {
+            SpendingPlan plan = new SpendingPlan(USER_ID);
+            plan.replace(null, new BigDecimal("4000.0000"), null, new BigDecimal("10.00"), List.of(
+                    new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Rent", new BigDecimal("2000"), false, null, List.of()),
+                    new SpendingPlanLine(SpendingPlanBucket.INVESTMENTS, "401(k)", new BigDecimal("500"), true, null, List.of()),
+                    new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Emergency fund", new BigDecimal("300"), false, null, List.of())));
+            return Optional.of(((Function<SpendingPlan, ?>) invocation.getArgument(1)).apply(plan));
+        });
+
+        PlanEvaluationResponse evaluation = controller.getSpendingPlan(jwt).evaluation();
+
+        // 4,000 take-home + 500 from the paycheck, less 2,200 fixed with the buffer, 500 and 300.
+        assertEquals("4500", evaluation.income().toPlainString());
+        assertEquals("200", evaluation.buffer().toPlainString());
+        assertEquals("2200", evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).amount().toPlainString());
+        assertEquals(49, evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).share());
+        assertEquals("below", evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).status());
+        assertEquals("1500", evaluation.guiltFree().amount().toPlainString());
+        assertEquals(33, evaluation.guiltFree().share());
+        assertEquals(20, evaluation.guiltFree().target().min());
+    }
+
+    @Test
+    void evaluatesAPlanBeingEditedWithoutSavingIt() {
+        PlanEvaluationResponse evaluation = controller.evaluateSpendingPlan(jwt, new SpendingPlanRequest(
+                null, new BigDecimal("3000"), new BigDecimal("8000"), BigDecimal.ZERO, List.of(
+                        new LineRequest(SpendingPlanBucket.FIXED_COSTS, "Rent", new BigDecimal("2400"), false, null, List.of()),
+                        // The amount sent is ignored: 6% of 8,000 gross pay is 480.
+                        new LineRequest(SpendingPlanBucket.INVESTMENTS, "401(k)",
+                                new BigDecimal("1"), true, new BigDecimal("6"), List.of()),
+                        new LineRequest(SpendingPlanBucket.SAVINGS, "Gifts", new BigDecimal("1200"), false, null, List.of()))));
+
+        assertEquals("480", evaluation.fromPaycheck().toPlainString());
+        assertEquals("3480", evaluation.income().toPlainString());
+        assertEquals("-600", evaluation.guiltFree().amount().toPlainString());
+        assertTrue(evaluation.guiltFree().flagged());
+        verify(planService, never()).save(any(), any(), any(), any(), any(), anyList(), any());
+        verifyNoInteractions(bucketSorting);
+    }
+
+    @Test
+    void treatsABlankBufferAsNoBufferWhenEvaluating() {
+        PlanEvaluationResponse evaluation = controller.evaluateSpendingPlan(jwt, new SpendingPlanRequest(
+                null, null, null, null, List.of(
+                        new LineRequest(SpendingPlanBucket.FIXED_COSTS, "Rent", new BigDecimal("2000"), false, null, List.of()))));
+
+        assertEquals("0", evaluation.buffer().toPlainString());
+        assertNull(evaluation.guiltFree().amount());
+    }
+
+    @Test
+    void checksAPlanBeingEvaluatedLikeOneBeingSaved() {
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.evaluateSpendingPlan(jwt, planWith(new LineRequest(
+                        SpendingPlanBucket.FIXED_COSTS, "Rent", new BigDecimal("1450"), true, null, List.of()))));
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+    }
+
+    @Test
+    void takesTheMonthsGuiltFreeSpendingAcrossEveryTrackedAccountFromWhatThePlanLeaves() {
+        planWithTakeHome("4000");
+        LocalDate start = LocalDate.of(2026, 10, 1);
+        LocalDate end = LocalDate.of(2026, 10, 31);
+        // Every tracked account, at the user's share: Spending works that out when no account is given.
+        when(spending.between(eq(USER_ID), eq(start), eq(end), isNull())).thenReturn(List.of(
+                spent(Bucket.GUILT_FREE, "FOOD_AND_DRINK", "400.00", 100),
+                spent(Bucket.GUILT_FREE, "ENTERTAINMENT", "212.40", 50),
+                spent(Bucket.FIXED_COSTS, "RENT_AND_UTILITIES", "2100.00", 100),
+                spent(null, "GENERAL_MERCHANDISE", "35.50", 100)));
+
+        GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(jwt, start, end);
+
+        assertEquals("1500", left.budget().toPlainString());
+        assertEquals("612.4", left.spent().toPlainString());
+        assertEquals("887.6", left.left().toPlainString());
+        assertEquals("35.5", left.unsorted().toPlainString());
+    }
+
+    @Test
+    void goesBelowZeroOnceGuiltFreeSpendingPassesTheBudget() {
+        planWithTakeHome("4000");
+        when(spending.between(eq(USER_ID), any(), any(), isNull())).thenReturn(List.of(
+                spent(Bucket.GUILT_FREE, "FOOD_AND_DRINK", "1620", 100)));
+
+        GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(
+                jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31));
+
+        assertEquals("-120", left.left().toPlainString());
+    }
+
+    @Test
+    void leavesOutGuiltFreeCategoriesThatRefundsBringToZeroOrBelowLikeTheSpendingChart() {
+        planWithTakeHome("4000");
+        when(spending.between(eq(USER_ID), any(), any(), isNull())).thenReturn(List.of(
+                spent(Bucket.GUILT_FREE, "FOOD_AND_DRINK", "100", 100),
+                spent(Bucket.GUILT_FREE, "GENERAL_MERCHANDISE", "50", 100),
+                spent(Bucket.GUILT_FREE, "GENERAL_MERCHANDISE", "-80", 100)));
+
+        GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(
+                jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31));
+
+        assertEquals("100", left.spent().toPlainString());
+    }
+
+    @Test
+    void hasNoGuiltFreeLeftUntilThePlanHasTakeHomePay() {
+        planWithTakeHome(null);
+        when(spending.between(eq(USER_ID), any(), any(), isNull())).thenReturn(List.of(
+                spent(Bucket.GUILT_FREE, "FOOD_AND_DRINK", "50", 100)));
+
+        GuiltFreeLeftResponse left = controller.getGuiltFreeLeft(
+                jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31));
+
+        assertNull(left.budget());
+        assertNull(left.left());
+        assertEquals("50", left.spent().toPlainString());
+    }
+
+    @Test
+    void hasNoGuiltFreeLeftWithoutAPlan() {
+        when(planService.find(eq(USER_ID), any())).thenReturn(Optional.empty());
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.getGuiltFreeLeft(jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)));
+
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
+    void measuresGuiltFreeLeftOverAtMostAMonth() {
+        ResponseStatusException backwards = assertThrows(ResponseStatusException.class,
+                () -> controller.getGuiltFreeLeft(jwt, LocalDate.of(2026, 10, 31), LocalDate.of(2026, 10, 1)));
+        ResponseStatusException tooLong = assertThrows(ResponseStatusException.class,
+                () -> controller.getGuiltFreeLeft(jwt, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 12, 1)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, backwards.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, tooLong.getStatusCode());
+    }
+
+    /** 4,000 take-home gives 1,500 guilt-free: 500 from the paycheck, less 2,200 fixed with the buffer, 500 and 300. */
+    @SuppressWarnings("unchecked")
+    private void planWithTakeHome(String takeHome) {
+        when(planService.find(eq(USER_ID), any())).thenAnswer(invocation -> {
+            SpendingPlan plan = new SpendingPlan(USER_ID);
+            plan.replace(null, takeHome == null ? null : new BigDecimal(takeHome), null, new BigDecimal("10"), List.of(
+                    new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Rent", new BigDecimal("2000"), false, null, List.of()),
+                    new SpendingPlanLine(SpendingPlanBucket.INVESTMENTS, "401(k)", new BigDecimal("500"), true, null, List.of()),
+                    new SpendingPlanLine(SpendingPlanBucket.SAVINGS, "Emergency fund", new BigDecimal("300"), false, null, List.of())));
+            return Optional.of(((Function<SpendingPlan, ?>) invocation.getArgument(1)).apply(plan));
+        });
+        when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(
+                Map.of(), Map.of(), Map.of(), Set.of(), new TransactionExclusions.Snapshot(List.of())));
+    }
+
+    private static int transactions;
+
+    private static Spending.Spent spent(Bucket bucket, String category, String amount, int sharePercent) {
+        // amount is the user's part; at a 50% share, the transaction is twice that.
+        BigDecimal whole = new BigDecimal(amount).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(sharePercent));
+        PlaidTransaction transaction = new PlaidTransaction(
+                "txn-" + ++transactions, "item-id", USER_ID, "account-1", whole, LocalDate.of(2026, 10, 5))
+                .personalFinanceCategory(category, category + "_OTHER");
+        ReflectionTestUtils.setField(transaction, "bucket", bucket);
+        return new Spending.Spent(transaction, sharePercent);
     }
 
     private void assertBadRequest(SpendingPlanRequest request) {
