@@ -1,3 +1,8 @@
+<script lang="ts">
+/** How long typing has to stop before the totals are worked out again. */
+export const EVALUATE_AFTER_MS = 400
+</script>
+
 <script setup lang="ts">
 import { ChevronDown, ChevronRight, CircleMinus, Plus, Repeat, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -158,10 +163,18 @@ const evaluationFailed = ref(false)
 const guiltFree = computed(() => evaluation.value?.guiltFree)
 let evaluating = false
 let evaluateAgain = false
+let evaluateTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 onUnmounted(() => {
   disposed = true
+  clearTimeout(evaluateTimer)
 })
+
+/** Waits until typing stops, so a burst of keystrokes asks the server once. */
+function evaluateSoon() {
+  clearTimeout(evaluateTimer)
+  evaluateTimer = setTimeout(() => void evaluate(), EVALUATE_AFTER_MS)
+}
 
 /**
  * Asks the server for the totals, one request at a time. Changes made while one is out are
@@ -197,7 +210,9 @@ if (props.saved) {
   setPlan(props.saved.plan)
 }
 
-watch(planRequest, () => void evaluate(), { immediate: !props.saved })
+watch(planRequest, evaluateSoon)
+// A new plan has no totals yet, so its first ones are asked for straight away.
+if (!props.saved) void evaluate()
 
 onMounted(async () => {
   // A saved plan keeps its own amounts; only its blank lines get defaults.
