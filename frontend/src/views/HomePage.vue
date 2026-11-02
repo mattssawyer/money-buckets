@@ -37,9 +37,12 @@ import {
   type RecurringStream,
   type SpendingByBucket,
 } from '../api/PlaidService'
-import { getSpendingPlan } from '../api/SpendingPlanService'
+import {
+  getGuiltFreeLeft,
+  getSpendingPlan,
+  type GuiltFreeLeftResponse,
+} from '../api/SpendingPlanService'
 import { useAuth } from '../auth'
-import { guiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 import {
   BUCKET_STYLES,
@@ -93,9 +96,10 @@ const candidates = ref<RecurringCandidate[]>([])
 const answeringKey = ref<string>()
 const answerError = ref('')
 const spending = ref<SpendingByBucket>()
-// The card's month across every tracked account, when the card shows one account. The plan
-// covers every tracked account, so what's left of it does too.
-const planMonthSpending = ref<{ period: SpendingPeriod; summary: SpendingByBucket }>()
+// What's left of the plan's guilt-free spending for the card's month, from the server. The plan
+// covers every tracked account, so what's left of it does too, whichever account the card shows.
+const guiltFreeLeftLoaded = ref<{ period: SpendingPeriod; left: GuiltFreeLeftResponse | null }>()
+const guiltFreeLeftFailed = ref(false)
 // Undefined until loaded, so the plan prompt never flashes for someone who has a plan.
 const savedPlan = ref<SavedPlan | null>()
 const planFailed = ref(false)
@@ -170,16 +174,19 @@ const spendingPeriodName = computed(() => periodName(spendingPeriod.value))
 // what's left of this month, or how last month ended.
 const PLAN_MONTHS: readonly SpendingPeriod[] = ['THIS_MONTH', 'LAST_MONTH']
 const showsPlanMonth = computed(() => PLAN_MONTHS.includes(spendingPeriod.value))
-// The month the plan is measured against: every tracked account, whatever the card shows.
-const planMonth = computed(() => {
-  if (!showsPlanMonth.value) return undefined
-  if (selectedAccountId.value === undefined) return spending.value
-  return planMonthSpending.value?.period === spendingPeriod.value
-    ? planMonthSpending.value.summary
-    : undefined
+// The answer for the month the card shows, if it has come back.
+const planMonth = computed(() =>
+  showsPlanMonth.value && guiltFreeLeftLoaded.value?.period === spendingPeriod.value
+    ? guiltFreeLeftLoaded.value.left
+    : null,
+)
+const guiltFree = computed(() => {
+  const month = planMonth.value
+  if (!savedPlan.value || month?.planned == null || month.left == null) return null
+  return { planned: month.planned, spent: month.spent, left: month.left }
 })
-const guiltFree = computed(() =>
-  savedPlan.value && planMonth.value ? guiltFreeLeft(savedPlan.value, planMonth.value) : null,
+const guiltFreeMissing = computed(
+  () => showsPlanMonth.value && !!savedPlan.value && guiltFreeLeftFailed.value,
 )
 // Why what's left may not be the final word yet, shown under the bar.
 const guiltFreeNote = computed(() => {
@@ -188,7 +195,7 @@ const guiltFreeNote = computed(() => {
       ? 'A bank needs you to sign in again, so this may be out of date.'
       : 'Some banks need you to sign in again, so this may be out of date.'
   }
-  const unsorted = planMonth.value?.buckets.find((entry) => entry.bucket === 'UNSORTED')?.amount
+  const unsorted = planMonth.value?.unsorted
   return unsorted
     ? `${formatWholeDollars(unsorted)} is still being sorted, so this may change.`
     : ''
@@ -276,7 +283,7 @@ let disposed = false
 // Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
 const startTransactions = latestRequest()
 const startSpending = latestRequest()
-const startPlanMonth = latestRequest()
+const startGuiltFreeLeft = latestRequest()
 const startRecurring = latestRequest()
 
 onMounted(loadConnections)
@@ -433,27 +440,35 @@ async function loadSpending() {
   const accountId = selectedAccountId.value
   const range = periodRange(spendingPeriod.value)
   const current = startSpending()
-  if (showsPlanMonth.value && accountId !== undefined) void loadPlanMonth(spendingPeriod.value)
+  const guiltFreeLoad = showsPlanMonth.value
+    ? loadGuiltFreeLeft(spendingPeriod.value)
+    : Promise.resolve()
+  let loaded = false
   try {
     const summary = await getSpendingByBucket(accountId, range)
     if (!current()) return
     spending.value = summary
-    recheckUnsorted(accountId, range, current)
+    loaded = true
   } catch {
     if (current()) spendingError.value = 'We couldn’t load your spending breakdown.'
   } finally {
     if (current()) loadingSpending.value = false
   }
+  // Both answers say whether spending is still being sorted, so wait for both before deciding.
+  await guiltFreeLoad
+  if (loaded && current()) recheckUnsorted(accountId, range, current)
 }
 
-// Leaves the last answer in place when this fails, since what's left is only an extra.
-async function loadPlanMonth(period: SpendingPeriod) {
-  const current = startPlanMonth()
+// A failure leaves the last answer in place and says so at the foot of the card.
+async function loadGuiltFreeLeft(period: SpendingPeriod) {
+  const current = startGuiltFreeLeft()
   try {
-    const summary = await getSpendingByBucket(undefined, periodRange(period))
-    if (current()) planMonthSpending.value = { period, summary }
+    const left = await getGuiltFreeLeft(periodRange(period))
+    if (!current()) return
+    guiltFreeLeftLoaded.value = { period, left }
+    guiltFreeLeftFailed.value = false
   } catch {
-    // Nothing to tell the user; the card itself still loaded.
+    if (current()) guiltFreeLeftFailed.value = true
   }
 }
 
@@ -464,19 +479,23 @@ function recheckUnsorted(
   range: { start: string; end: string },
   current: () => boolean,
 ) {
-  const waiting = spending.value?.buckets.some((entry) => entry.bucket === 'UNSORTED')
-  if (!waiting || unsortedRechecks >= UNSORTED_RECHECK_LIMIT) return
+  const chartWaiting = spending.value?.buckets.some((entry) => entry.bucket === 'UNSORTED')
+  // The guilt-free answer is fetched separately, so it can still be waiting on sorting the chart
+  // has already caught up with.
+  const guiltFreeWaiting = !!planMonth.value?.unsorted
+  if ((!chartWaiting && !guiltFreeWaiting) || unsortedRechecks >= UNSORTED_RECHECK_LIMIT) return
   unsortedRecheck = setTimeout(async () => {
     unsortedRechecks++
     try {
       const summary = await getSpendingByBucket(accountId, range)
       if (!current()) return
       // New data rebuilds the chart and replays its animation, so only swap it in when it changed.
-      if (JSON.stringify(summary) !== JSON.stringify(spending.value)) {
-        spending.value = summary
-        // Sorting moved on, so what's left of guilt-free spending may have changed too.
-        if (showsPlanMonth.value && accountId !== undefined)
-          void loadPlanMonth(spendingPeriod.value)
+      const changed = JSON.stringify(summary) !== JSON.stringify(spending.value)
+      if (changed) spending.value = summary
+      // Sorting moved on, so what's left of guilt-free spending may have changed too.
+      if ((changed || guiltFreeWaiting) && showsPlanMonth.value) {
+        await loadGuiltFreeLeft(spendingPeriod.value)
+        if (!current()) return
       }
       recheckUnsorted(accountId, range, current)
     } catch {
@@ -1226,6 +1245,21 @@ async function openPlaidLink() {
                   size="small"
                   text
                   @click="choosePeriod('THIS_MONTH')"
+                />
+              </div>
+              <!-- Shown next to a bar kept from earlier too, so an old answer isn't taken as current. -->
+              <div v-if="guiltFreeMissing && !planFailed" class="guilt-free-missing" role="status">
+                <span>{{
+                  guiltFree
+                    ? 'We couldn’t update your guilt-free spending left.'
+                    : 'We couldn’t work out your guilt-free spending left.'
+                }}</span>
+                <Button
+                  label="Try again"
+                  severity="secondary"
+                  size="small"
+                  text
+                  @click="loadGuiltFreeLeft(spendingPeriod)"
                 />
               </div>
             </div>

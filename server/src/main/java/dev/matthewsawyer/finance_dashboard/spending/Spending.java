@@ -10,12 +10,15 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * The user's spending: what left the accounts in view, other than pay, card payments and money
@@ -62,6 +65,47 @@ public class Spending {
                 .filter(transaction -> !sharedTransfers.contains(transaction.getTransactionId()))
                 .map(transaction -> new Spent(transaction, inView.get(transaction.getAccountId())))
                 .toList();
+    }
+
+    /** Transactions sorting hasn't reached yet. */
+    public static final String UNSORTED = "UNSORTED";
+
+    /** The bucket a transaction's spending is grouped under: its bucket's name, or {@link #UNSORTED}. */
+    public static String bucketKey(PlaidTransaction transaction) {
+        return transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
+    }
+
+    /** Plaid always assigns a category, but the column is nullable. */
+    public static String categoryKey(String category) {
+        return Objects.requireNonNullElse(category, "UNCATEGORIZED");
+    }
+
+    /**
+     * Whether a category's total counts toward its bucket's. Refunds can net a category to zero
+     * or below, and then it counts as nothing, as a pie chart can't show it.
+     */
+    public static boolean countsTowardBucket(BigDecimal categoryTotal) {
+        return categoryTotal.signum() > 0;
+    }
+
+    /**
+     * Each bucket's total, keyed by {@link #bucketKey}: the sum of its categories' totals that
+     * {@link #countsTowardBucket count}. The spending chart's buckets add up the same way.
+     */
+    public static Map<String, BigDecimal> bucketTotals(
+            List<Spent> spent, Function<PlaidTransaction, String> category) {
+        Map<String, Map<String, BigDecimal>> byBucketAndCategory = new HashMap<>();
+        for (Spent each : spent) {
+            PlaidTransaction transaction = each.transaction();
+            byBucketAndCategory
+                    .computeIfAbsent(bucketKey(transaction), key -> new HashMap<>())
+                    .merge(categoryKey(category.apply(transaction)), each.amount(), BigDecimal::add);
+        }
+        Map<String, BigDecimal> totals = new HashMap<>();
+        byBucketAndCategory.forEach((bucket, categories) -> totals.put(bucket, categories.values().stream()
+                .filter(Spending::countsTowardBucket)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)));
+        return totals;
     }
 
     /** A transaction and how much of it is the user's, in percent. */

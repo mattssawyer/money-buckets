@@ -23,12 +23,20 @@ import {
   type RecurringStream,
   type SpendingByBucket,
 } from '../../api/PlaidService'
-import { getSpendingPlan, type SpendingPlanResponse } from '../../api/SpendingPlanService'
+import {
+  getGuiltFreeLeft,
+  getSpendingPlan,
+  type GuiltFreeLeftResponse,
+  type SpendingPlanResponse,
+} from '../../api/SpendingPlanService'
 import { periodName, periodRange } from '../../spending/period'
+import { evaluationResponse } from '../../spendingPlan/__tests__/evaluationFixture'
 import { fromSaved } from '../../spendingPlan/savedPlan'
 
 vi.mock('../../api/SpendingPlanService', () => ({
   getSpendingPlan: vi.fn<() => Promise<SpendingPlanResponse | null>>(),
+  getGuiltFreeLeft:
+    vi.fn<(range: { start: string; end: string }) => Promise<GuiltFreeLeftResponse | null>>(),
 }))
 vi.mock('../../api/PlaidService', () => ({
   createLinkToken: vi.fn(),
@@ -268,6 +276,14 @@ beforeEach(() => {
     fixed_cost_buffer_percent: 0,
     lines: [],
     updated_at: '2026-10-01T00:00:00Z',
+    evaluation: evaluationResponse(),
+  })
+  // Without take-home pay the plan leaves nothing planned for guilt-free spending.
+  vi.mocked(getGuiltFreeLeft).mockResolvedValue({
+    planned: null,
+    spent: 0,
+    left: null,
+    unsorted: 0,
   })
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
@@ -864,6 +880,7 @@ describe('homepage spending breakdown', () => {
         fixed_cost_buffer_percent: 0,
         lines: [],
         updated_at: '2026-10-11T00:00:00Z',
+        evaluation: evaluationResponse({ plan_income: 4000 }),
       }),
     )
     await flushPromises()
@@ -920,17 +937,34 @@ describe('homepage spending breakdown', () => {
         },
       ],
       updated_at: '2026-10-01T00:00:00Z',
+      evaluation: evaluationResponse({
+        plan_income: 4000,
+        guilt_free: {
+          amount: 2000,
+          share: 50,
+          target: { min: 20, max: 35 },
+          status: 'above',
+          flagged: false,
+        },
+      }),
+    }
+
+    /** The server's answer for a month: what's left of the 2,000 planned. */
+    function left(spent: number, unsorted = 0): GuiltFreeLeftResponse {
+      return { planned: 2000, spent, left: 2000 - spent, unsorted }
     }
 
     beforeEach(() => {
       vi.mocked(getLinkedItemIds).mockResolvedValue(['saved-item'])
       vi.mocked(getSpendingPlan).mockResolvedValue(plan)
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue(left(12))
     })
 
-    it("shows what's left of the plan's guilt-free spending this month", async () => {
+    it("shows the server's guilt-free spending left this month", async () => {
       const wrapper = mountHome()
       await flushPromises()
 
+      expect(getGuiltFreeLeft).toHaveBeenCalledWith(periodRange('THIS_MONTH'))
       // A bar of its own along the foot of the card, below the legend.
       const progress = wrapper.get('.spending-body > :last-child')
       expect(progress.classes()).toContain('guilt-free-progress')
@@ -942,10 +976,7 @@ describe('homepage spending breakdown', () => {
     })
 
     it('says how far over it is once spending passes the plan', async () => {
-      vi.mocked(getSpendingByBucket).mockResolvedValue({
-        ...spending,
-        buckets: [{ bucket: 'GUILT_FREE', amount: 2150.4, categories: [] }],
-      })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue(left(2150.4))
       const wrapper = mountHome()
       await flushPromises()
 
@@ -953,39 +984,34 @@ describe('homepage spending breakdown', () => {
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$150 over')
     })
 
-    it('counts every tracked account, as the plan does, when one account is picked', async () => {
+    it('says it covers every tracked account when one account is picked', async () => {
       localStorage.setItem('abacus.selectedAccountId', 'savings')
       vi.mocked(getAccounts).mockResolvedValue([checking, savings])
-      vi.mocked(getSpendingByBucket).mockImplementation(async (accountId) =>
-        accountId === undefined
-          ? { ...spending, buckets: [{ bucket: 'GUILT_FREE', amount: 500, categories: [] }] }
-          : spending,
-      )
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue(left(500))
       const wrapper = mountHome()
       await flushPromises()
 
-      expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('THIS_MONTH'))
+      // The server covers every tracked account; no account is sent.
+      expect(getGuiltFreeLeft).toHaveBeenCalledWith(periodRange('THIS_MONTH'))
       expect(wrapper.get('.guilt-free-title').text()).toBe('Guilt-free spending · all accounts')
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
       // The ring shows the picked account, so it keeps that account's total.
       expect(wrapper.get('.spending-total-label').text()).toBe('out this month')
     })
 
-    it('catches up with sorting when one account is picked', async () => {
+    it('catches up with sorting', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       localStorage.setItem('abacus.selectedAccountId', 'savings')
       vi.mocked(getAccounts).mockResolvedValue([checking, savings])
-      const guiltFree = (amount: number) => ({
-        ...spending,
-        buckets: [{ bucket: 'GUILT_FREE' as const, amount, categories: [] }],
-      })
       let sorted = false
-      vi.mocked(getSpendingByBucket).mockImplementation(async (accountId) => {
-        if (accountId === undefined) return guiltFree(sorted ? 600 : 500)
-        return sorted
+      vi.mocked(getGuiltFreeLeft).mockImplementation(async () =>
+        sorted ? left(600) : left(500, 100),
+      )
+      vi.mocked(getSpendingByBucket).mockImplementation(async () =>
+        sorted
           ? spending
-          : { ...spending, buckets: [{ bucket: 'UNSORTED', amount: 100, categories: [] }] }
-      })
+          : { ...spending, buckets: [{ bucket: 'UNSORTED', amount: 100, categories: [] }] },
+      )
       const wrapper = mountHome()
       await flushPromises()
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
@@ -998,9 +1024,45 @@ describe('homepage spending breakdown', () => {
       vi.useRealTimers()
     })
 
+    it('keeps checking while only the guilt-free answer is waiting on sorting', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let sorted = false
+      vi.mocked(getGuiltFreeLeft).mockImplementation(async () =>
+        sorted ? left(600) : left(500, 100),
+      )
+      // The chart was read after sorting finished, so it has nothing unsorted.
+      vi.mocked(getSpendingByBucket).mockResolvedValue(spending)
+      const wrapper = mountHome()
+      await flushPromises()
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
+
+      sorted = true
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,400 left')
+      vi.useRealTimers()
+    })
+
+    it('says when a refresh fails, next to the bar it kept', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValueOnce(left(500, 100))
+      vi.mocked(getGuiltFreeLeft).mockRejectedValue(new Error('offline'))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
+      expect(wrapper.get('.guilt-free-missing').text()).toContain(
+        'We couldn’t update your guilt-free spending left.',
+      )
+      vi.useRealTimers()
+    })
+
     it('leaves the bar empty when the plan leaves nothing and nothing is spent', async () => {
-      vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: 2000 })
-      vi.mocked(getSpendingByBucket).mockResolvedValue({ ...spending, buckets: [] })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue({ planned: 0, spent: 0, left: 0, unsorted: 0 })
       const wrapper = mountHome()
       await flushPromises()
 
@@ -1013,25 +1075,12 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
+      expect(getGuiltFreeLeft).toHaveBeenCalledWith(periodRange('LAST_MONTH'))
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
-    it('shows at the foot of the card even when nothing guilt-free was spent', async () => {
-      vi.mocked(getSpendingByBucket).mockResolvedValue({
-        ...spending,
-        buckets: spending.buckets.filter((entry) => entry.bucket !== 'GUILT_FREE'),
-      })
-      const wrapper = mountHome()
-      await flushPromises()
-
-      expect(wrapper.get('.guilt-free-summary').text()).toBe('$2,000 left')
-    })
-
     it('says when unsorted spending may still change what is left', async () => {
-      vi.mocked(getSpendingByBucket).mockResolvedValue({
-        ...spending,
-        buckets: [...spending.buckets, { bucket: 'UNSORTED', amount: 4252.88, categories: [] }],
-      })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue(left(12, 4252.88))
       const wrapper = mountHome()
       await flushPromises()
 
@@ -1058,6 +1107,7 @@ describe('homepage spending breakdown', () => {
       const wrapper = mountHome()
       await flushPromises()
 
+      expect(getGuiltFreeLeft).not.toHaveBeenCalled()
       expect(wrapper.find('.guilt-free-progress').exists()).toBe(false)
       expect(wrapper.get('.guilt-free-missing').text()).toContain(
         'Guilt-free spending is tracked by calendar month.',
@@ -1083,14 +1133,19 @@ describe('homepage spending breakdown', () => {
       expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
-    it('counts every tracked account for last month too when one account is picked', async () => {
-      localStorage.setItem('moneyBuckets.spendingPeriod', 'LAST_MONTH')
-      localStorage.setItem('abacus.selectedAccountId', 'savings')
-      vi.mocked(getAccounts).mockResolvedValue([checking, savings])
-      mountHome()
+    it("says when what's left could not be worked out, and tries again", async () => {
+      vi.mocked(getGuiltFreeLeft).mockRejectedValueOnce(new Error('offline'))
+      const wrapper = mountHome()
       await flushPromises()
 
-      expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, periodRange('LAST_MONTH'))
+      expect(wrapper.find('.guilt-free-progress').exists()).toBe(false)
+      expect(wrapper.get('.guilt-free-missing').text()).toContain(
+        'We couldn’t work out your guilt-free spending left.',
+      )
+      await button(wrapper, 'Try again').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,988 left')
     })
 
     it("leaves rolling periods alone, since they don't line up with the plan's months", async () => {
@@ -1104,6 +1159,12 @@ describe('homepage spending breakdown', () => {
 
     it('asks for take-home pay when the plan has none to work the budget out from', async () => {
       vi.mocked(getSpendingPlan).mockResolvedValue({ ...plan, take_home: null })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValue({
+        planned: null,
+        spent: 50,
+        left: null,
+        unsorted: 0,
+      })
       const wrapper = mountHome()
       await flushPromises()
 

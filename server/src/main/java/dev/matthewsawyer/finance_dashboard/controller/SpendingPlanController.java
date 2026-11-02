@@ -1,12 +1,16 @@
 package dev.matthewsawyer.finance_dashboard.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanItem;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import dev.matthewsawyer.finance_dashboard.model.User;
+import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
+import dev.matthewsawyer.finance_dashboard.plan.PlanEvaluation;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
+import dev.matthewsawyer.finance_dashboard.spending.Spending;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
@@ -15,16 +19,24 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 @RestController
@@ -37,22 +49,30 @@ public class SpendingPlanController {
     /** NUMERIC(19, 4) holds 15 digits before the decimal point. */
     static final BigDecimal MAX_AMOUNT = new BigDecimal("1e15");
     static final BigDecimal MAX_PERCENT = new BigDecimal("100");
+    /** The longest month is 31 days, first to last. */
+    static final int MAX_MONTH_DAYS = 30;
 
     private final SpendingPlanService planService;
     private final PlaidAccountRepository accountRepository;
     private final BucketSorting bucketSorting;
     private final UserService userService;
+    private final Spending spending;
+    private final PayeeLookup payeeLookup;
 
     public SpendingPlanController(
             SpendingPlanService planService,
             PlaidAccountRepository accountRepository,
             BucketSorting bucketSorting,
-            UserService userService
+            UserService userService,
+            Spending spending,
+            PayeeLookup payeeLookup
     ) {
         this.planService = planService;
         this.accountRepository = accountRepository;
         this.bucketSorting = bucketSorting;
         this.userService = userService;
+        this.spending = spending;
+        this.payeeLookup = payeeLookup;
     }
 
     @GetMapping
@@ -85,6 +105,58 @@ public class SpendingPlanController {
                 user.getId(), accountId, takeHome, grossPay, bufferPercent, lines, SpendingPlanResponse::from);
         bucketSorting.planSaved(user.getId(), linesBefore);
         return saved;
+    }
+
+    /**
+     * How a plan the user is still editing splits its income, without saving it. It's checked
+     * like a save, so a percent of gross pay is worked out here too; a blank buffer means none.
+     */
+    @PostMapping("/evaluate")
+    public PlanEvaluationResponse evaluateSpendingPlan(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody SpendingPlanRequest request
+    ) {
+        userService.getOrCreateUser(jwt);
+        if (request == null) {
+            throw badRequest("Spending plan is required");
+        }
+        BigDecimal takeHome = checkAmount(request.takeHome(), "take_home");
+        BigDecimal grossPay = checkAmount(request.grossPay(), "gross_pay");
+        BigDecimal bufferPercent = checkPercent(request.fixedCostBufferPercent(), "fixed_cost_buffer_percent");
+        return PlanEvaluationResponse.from(PlanEvaluation.of(takeHome, bufferPercent, toLines(request.lines(), grossPay)));
+    }
+
+    /**
+     * What's left of the plan's guilt-free spending between {@code start} and {@code end}, a
+     * calendar month in the user's time zone. The plan covers every tracked account, so the
+     * spending does too, at the user's share, whichever account the app is showing.
+     */
+    @GetMapping("/guilt-free-left")
+    public GuiltFreeLeftResponse getGuiltFreeLeft(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam("start") LocalDate start,
+            @RequestParam("end") LocalDate end
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+        if (end.isBefore(start) || ChronoUnit.DAYS.between(start, end) > MAX_MONTH_DAYS) {
+            throw badRequest("end must be on or after start, at most a month later");
+        }
+        PlanEvaluation evaluation = planService.find(user.getId(), SpendingPlanController::evaluate)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No spending plan saved"));
+        // Null until the plan has take-home pay.
+        BigDecimal planned = evaluation.guiltFree().amount();
+        Map<String, BigDecimal> totals = Spending.bucketTotals(
+                spending.between(user.getId(), start, end, null), payeeLookup.forUser(user.getId())::category);
+        BigDecimal spent = totals.getOrDefault(Bucket.GUILT_FREE.name(), BigDecimal.ZERO);
+        return new GuiltFreeLeftResponse(
+                stripZeros(planned),
+                stripZeros(spent),
+                planned == null ? null : stripZeros(planned.subtract(spent)),
+                stripZeros(totals.getOrDefault(Spending.UNSORTED, BigDecimal.ZERO)));
+    }
+
+    private static PlanEvaluation evaluate(SpendingPlan plan) {
+        return PlanEvaluation.of(plan.getTakeHome(), plan.getFixedCostBufferPercent(), plan.getLines());
     }
 
     private static List<SpendingPlanLine> toLines(List<LineRequest> lines, BigDecimal grossPay) {
@@ -217,7 +289,8 @@ public class SpendingPlanController {
             @JsonProperty("gross_pay") BigDecimal grossPay,
             @JsonProperty("fixed_cost_buffer_percent") BigDecimal fixedCostBufferPercent,
             @JsonProperty("lines") List<LineResponse> lines,
-            @JsonProperty("updated_at") Instant updatedAt
+            @JsonProperty("updated_at") Instant updatedAt,
+            @JsonProperty("evaluation") PlanEvaluationResponse evaluation
     ) {
         static SpendingPlanResponse from(SpendingPlan plan) {
             return new SpendingPlanResponse(
@@ -226,9 +299,60 @@ public class SpendingPlanController {
                     stripZeros(plan.getGrossPay()),
                     stripZeros(plan.getFixedCostBufferPercent()),
                     plan.getLines().stream().map(LineResponse::from).toList(),
-                    plan.getUpdatedAt()
+                    plan.getUpdatedAt(),
+                    PlanEvaluationResponse.from(evaluate(plan))
             );
         }
+    }
+
+    /** See {@link PlanEvaluation}. Statuses are lower case: below, within or above. */
+    public record PlanEvaluationResponse(
+            @JsonProperty("plan_income") BigDecimal planIncome,
+            @JsonProperty("from_paycheck") BigDecimal fromPaycheck,
+            @JsonProperty("fixed_cost_subtotal") BigDecimal fixedCostSubtotal,
+            @JsonProperty("buffer") BigDecimal buffer,
+            @JsonProperty("buckets") Map<SpendingPlanBucket, ShareResponse> buckets,
+            @JsonProperty("guilt_free") ShareResponse guiltFree
+    ) {
+        static PlanEvaluationResponse from(PlanEvaluation evaluation) {
+            Map<SpendingPlanBucket, ShareResponse> buckets = new EnumMap<>(SpendingPlanBucket.class);
+            evaluation.buckets().forEach((bucket, share) -> buckets.put(bucket, ShareResponse.from(share)));
+            return new PlanEvaluationResponse(
+                    stripZeros(evaluation.planIncome()),
+                    stripZeros(evaluation.fromPaycheck()),
+                    stripZeros(evaluation.fixedCostSubtotal()),
+                    stripZeros(evaluation.buffer()),
+                    buckets,
+                    ShareResponse.from(evaluation.guiltFree()));
+        }
+    }
+
+    /** A part of the plan: its amount, its share of plan income and where that falls against its target. */
+    public record ShareResponse(
+            @JsonProperty("amount") BigDecimal amount,
+            @JsonProperty("share") BigInteger share,
+            @JsonProperty("target") PlanEvaluation.Target target,
+            @JsonProperty("status") String status,
+            @JsonProperty("flagged") boolean flagged
+    ) {
+        static ShareResponse from(PlanEvaluation.Share share) {
+            String status = share.status() == null ? null : share.status().name().toLowerCase(Locale.ROOT);
+            return new ShareResponse(stripZeros(share.amount()), share.share(), share.target(), status, share.flagged());
+        }
+    }
+
+    /**
+     * {@code planned} is what the plan leaves for guilt-free spending. It and {@code left} are
+     * null until the plan has take-home pay; {@code left} goes
+     * below zero once spending passes the budget. {@code unsorted} is the month's spending not
+     * sorted into a bucket yet, which may still turn out to be guilt-free.
+     */
+    public record GuiltFreeLeftResponse(
+            @JsonProperty("planned") BigDecimal planned,
+            @JsonProperty("spent") BigDecimal spent,
+            @JsonProperty("left") BigDecimal left,
+            @JsonProperty("unsorted") BigDecimal unsorted
+    ) {
     }
 
     public record LineResponse(

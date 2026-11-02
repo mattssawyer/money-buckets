@@ -1,9 +1,10 @@
 import type {
+  PlanEvaluationResponse,
   SpendingPlanBucket,
   SpendingPlanRequest,
   SpendingPlanResponse,
 } from '../api/SpendingPlanService'
-import type { BucketId, PlanDraft } from './plan'
+import type { BucketId, PlanDraft, PlanEvaluation } from './plan'
 
 /** A plan as the app works with it: the editor's shape plus what it was saved with. */
 export interface SavedPlan {
@@ -13,6 +14,7 @@ export interface SavedPlan {
   bufferPercent: number
   plan: PlanDraft
   updatedAt: string
+  evaluation: PlanEvaluation
 }
 
 const API_BUCKETS: Record<BucketId, SpendingPlanBucket> = {
@@ -79,5 +81,26 @@ export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
     bufferPercent: saved.fixed_cost_buffer_percent,
     plan,
     updatedAt: saved.updated_at,
+    evaluation: fromEvaluation(saved.evaluation),
+  }
+}
+
+export function fromEvaluation(evaluation: PlanEvaluationResponse): PlanEvaluation {
+  const bucket = (id: SpendingPlanBucket) => {
+    const { amount, share, target, status, flagged } = evaluation.buckets[id]
+    return { amount, share, target, status, flagged }
+  }
+  const { amount, share, target, status, flagged } = evaluation.guilt_free
+  return {
+    income: evaluation.plan_income,
+    fromPaycheck: evaluation.from_paycheck,
+    fixedCostSubtotal: evaluation.fixed_cost_subtotal,
+    buffer: evaluation.buffer,
+    buckets: {
+      fixedCosts: bucket('FIXED_COSTS'),
+      investments: bucket('INVESTMENTS'),
+      savings: bucket('SAVINGS'),
+    },
+    guiltFree: { amount, share, target, status, flagged },
   }
 }

@@ -125,6 +125,8 @@ class UserSeparationTests {
             "GET /investments/history",
             "GET /spending-plan",
             "PUT /spending-plan",
+            "POST /spending-plan/evaluate",
+            "GET /spending-plan/guilt-free-left",
             "PUT /payees/corrections",
             "DELETE /payees/corrections",
             "PUT /transactions/counting",
@@ -418,6 +420,38 @@ class UserSeparationTests {
         SpendingPlan plan = plans.findByUserId(aliceId).orElseThrow();
         assertEquals(0, new BigDecimal("5000").compareTo(plan.getTakeHome()));
         assertTrue(plans.findByUserId(bobId()).isEmpty());
+    }
+
+    @Test
+    void evaluatesBobsPlanWithoutSavingAnything() throws Exception {
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/spending-plan/evaluate")
+                        .content("""
+                                {"take_home": 1, "lines": []}
+                                """))
+                .andExpect(status().isOk());
+
+        assertTrue(plans.findByUserId(bobId()).isEmpty());
+        SpendingPlan plan = plans.findByUserId(aliceId).orElseThrow();
+        assertEquals(0, new BigDecimal("5000").compareTo(plan.getTakeHome()));
+    }
+
+    @Test
+    void keepsAlicesSpendingOutOfBobsGuiltFreeLeft() throws Exception {
+        LocalDate today = LocalDate.now();
+        String month = "/spending-plan/guilt-free-left?start=%s&end=%s"
+                .formatted(today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()));
+        // Alice's 4.50 coffee is guilt-free.
+        assertTrue(body(as(ALICE, HttpMethod.GET, month), status().isOk()).contains("\"spent\":4.5"));
+
+        // Bob has no plan, so nothing is left to work out; then he saves one.
+        body(as(BOB, HttpMethod.GET, month), status().isNotFound());
+        mockMvc.perform(as(BOB, HttpMethod.PUT, "/spending-plan")
+                        .content("""
+                                {"take_home": 1000, "lines": []}
+                                """))
+                .andExpect(status().isOk());
+
+        assertTrue(body(as(BOB, HttpMethod.GET, month), status().isOk()).contains("\"spent\":0"));
     }
 
     @Test

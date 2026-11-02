@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import RecurringDialog from '../RecurringDialog.vue'
-import SpendingPlanSetup from '../SpendingPlanSetup.vue'
+import SpendingPlanSetup, { EVALUATE_AFTER_MS } from '../SpendingPlanSetup.vue'
 import {
   getRecurringCandidates,
   getRecurringTransactions,
@@ -13,9 +13,15 @@ import {
   type SpendingByBucket,
 } from '../../api/PlaidService'
 
-import { saveSpendingPlan, type SpendingPlanRequest } from '../../api/SpendingPlanService'
+import {
+  evaluateSpendingPlan,
+  saveSpendingPlan,
+  type PlanEvaluationResponse,
+  type SpendingPlanRequest,
+} from '../../api/SpendingPlanService'
 import { defaultPlan } from '../../spendingPlan/plan'
-import type { SavedPlan } from '../../spendingPlan/savedPlan'
+import { fromEvaluation, toSaveRequest, type SavedPlan } from '../../spendingPlan/savedPlan'
+import { fakeEvaluation } from './fakePlanEvaluation'
 
 vi.mock('../../api/PlaidService', () => ({
   getRecurringTransactions: vi.fn(),
@@ -25,9 +31,13 @@ vi.mock('../../api/PlaidService', () => ({
 
 vi.mock('../../api/SpendingPlanService', () => ({
   saveSpendingPlan: vi.fn(),
+  evaluateSpendingPlan: vi.fn<(plan: SpendingPlanRequest) => Promise<PlanEvaluationResponse>>(),
 }))
 
 enableAutoUnmount(afterEach)
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const paycheck: RecurringStream = {
   stream_id: 'pay',
@@ -91,6 +101,7 @@ function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   vi.resetAllMocks()
   localStorage.clear()
   document.body.innerHTML = ''
@@ -105,13 +116,34 @@ beforeEach(() => {
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
+    evaluation: fakeEvaluation(request),
   }))
+  vi.mocked(evaluateSpendingPlan).mockImplementation(async (request) => fakeEvaluation(request))
 })
+
+/** Lets the editor's pause after typing pass, and the server's answer arrive. */
+async function settle() {
+  await vi.advanceTimersByTimeAsync(EVALUATE_AFTER_MS)
+  await flushPromises()
+}
 
 function saveButton(wrapper: ReturnType<typeof mountSetup>) {
   const button = wrapper.findAll('button').find((element) => element.text() === 'Save plan')
   if (!button) throw new Error('Save button not found')
   return button
+}
+
+const savedPlanDraft = {
+  ...defaultPlan(),
+  fixedCosts: [
+    { name: 'Rent/mortgage', amount: 1500, items: [], fromPaycheck: false },
+    {
+      name: 'Subscriptions',
+      amount: null,
+      fromPaycheck: false,
+      items: [{ name: 'Netflix', amount: 15.49, streamId: 'netflix' }],
+    },
+  ],
 }
 
 const savedPlan: SavedPlan = {
@@ -120,18 +152,10 @@ const savedPlan: SavedPlan = {
   grossPay: null,
   bufferPercent: 10,
   updatedAt: '2026-09-20T12:00:00Z',
-  plan: {
-    ...defaultPlan(),
-    fixedCosts: [
-      { name: 'Rent/mortgage', amount: 1500, items: [], fromPaycheck: false },
-      {
-        name: 'Subscriptions',
-        amount: null,
-        fromPaycheck: false,
-        items: [{ name: 'Netflix', amount: 15.49, streamId: 'netflix' }],
-      },
-    ],
-  },
+  plan: savedPlanDraft,
+  evaluation: fromEvaluation(
+    fakeEvaluation(toSaveRequest('checking', 5200, null, 10, savedPlanDraft)),
+  ),
 }
 
 // Rent Plaid labels home improvement, before Jev has put it on a line.
@@ -203,7 +227,7 @@ describe('spending plan setup', () => {
   it('defaults a line with no recurring bill to what you usually spend on it', async () => {
     spendOnGroceries()
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     const amount = wrapper.get<HTMLInputElement>('input[aria-label="Groceries amount"]')
     expect(amount.element.value).toBe('')
@@ -212,13 +236,15 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,357.50')
 
     await amount.setValue('500')
+    await settle()
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,242.50')
 
     await amount.setValue('')
+    await settle()
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$2,357.50')
 
     await saveButton(wrapper).trigger('click')
-    await flushPromises()
+    await settle()
     const saved = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
     expect(saved?.lines.find((line) => line.name === 'Groceries')?.amount).toBe(600)
     expect(saved?.lines.find((line) => line.name === 'Clothes')?.amount).toBeNull()
@@ -371,7 +397,7 @@ describe('spending plan setup', () => {
 
   it('estimates from every tracked account', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(getRecurringTransactions).toHaveBeenCalledWith(undefined, 50)
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
@@ -568,17 +594,21 @@ describe('spending plan setup', () => {
 
   it('lets you edit, add, and remove fixed cost rows', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     await wrapper.get('[aria-label="Utilities name"]').setValue('Power')
+    await settle()
     await wrapper.get('[aria-label="Power amount"]').setValue('370')
+    await settle()
     expect(wrapper.text()).toContain('40%')
 
     await wrapper.get('button[aria-label="Remove Power"]').trigger('click')
+    await settle()
     expect(wrapper.find('[aria-label="Power name"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('32%')
 
     await wrapper.get('button.add-cost').trigger('click')
+    await settle()
     expect(wrapper.find('[aria-label="Cost name"]').exists()).toBe(true)
   })
 
@@ -669,12 +699,14 @@ describe('spending plan setup', () => {
   it('still lets you build a plan when recurring streams fail to load', async () => {
     vi.mocked(getRecurringTransactions).mockRejectedValueOnce(new Error('Server unavailable'))
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '')
     expect(wrapper.find('[aria-label="Rent/mortgage name"]').exists()).toBe(true)
     await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
     await wrapper.get('[aria-label="Rent/mortgage amount"]').setValue('1600')
+    await settle()
     expect(wrapper.text()).toContain('46%')
   })
 
@@ -704,7 +736,7 @@ describe('spending plan setup', () => {
       },
     ])
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.text()).toContain('Should be about 10% of income')
     expect(wrapper.text()).toContain('Should be 5–10% of income')
@@ -719,41 +751,49 @@ describe('spending plan setup', () => {
 
   it('adds and removes lines in each bucket on its own', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     await wrapper
       .findAll('button.add-line')
       .find((button) => button.text() === 'Add a savings goal')
       ?.trigger('click')
+    await settle()
     await wrapper.get('[aria-label="Savings goal name"]').setValue('Wedding')
+    await settle()
     await wrapper.get('[aria-label="Wedding amount"]').setValue('300')
+    await settle()
     expect(wrapper.get('[aria-label="Savings total"]').text()).toContain('$300')
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$1,667.50')
 
     await wrapper.get('button[aria-label="Remove 401(k)"]').trigger('click')
+    await settle()
     expect(wrapper.find('[aria-label="401(k) name"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="Roth IRA name"]').exists()).toBe(true)
   })
 
   it('shows what is left for guilt-free spending', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.text()).toContain('Should be 20–35% of income')
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$3,532.5068%')
 
     await wrapper.get('[aria-label="Roth IRA amount"]').setValue('520')
+    await settle()
     await wrapper.get('[aria-label="Vacations amount"]').setValue('260')
+    await settle()
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$2,752.5053%')
     expect(wrapper.find('.guilt-free-warning').exists()).toBe(false)
   })
 
   it('warns when the plan adds up to more than take-home pay', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     await wrapper.get('#take-home-income').setValue('1500')
+    await settle()
     await wrapper.get('[aria-label="Roth IRA amount"]').setValue('250')
+    await settle()
 
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('-$417.50-28%')
     expect(wrapper.get('.guilt-free-warning').text()).toBe(
@@ -763,19 +803,20 @@ describe('spending plan setup', () => {
 
   it('marks fixed costs over their target', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
     const fixedCostsShare = () => wrapper.get('[aria-label="Fixed costs total"] .total-share')
 
     expect(fixedCostsShare().classes()).not.toContain('total-share-over')
 
     await wrapper.get('#take-home-income').setValue('1500')
+    await settle()
 
     expect(fixedCostsShare().classes()).toContain('total-share-over')
   })
 
   it('adds a paycheck 401(k) back to income instead of subtracting it twice', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.get('[aria-label="401(k): from paycheck"]').element).toHaveProperty(
       'checked',
@@ -787,6 +828,7 @@ describe('spending plan setup', () => {
     )
 
     await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+    await settle()
 
     // Percentages are of take-home pay plus the 401(k): 5,800.
     expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$60010%')
@@ -794,6 +836,7 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$3,532.5061%')
 
     await wrapper.get('[aria-label="401(k): from paycheck"]').setValue(false)
+    await settle()
 
     expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$60012%')
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$2,932.5056%')
@@ -801,7 +844,7 @@ describe('spending plan setup', () => {
 
   it('sets a paycheck 401(k) as a percent of gross pay', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
     const income = wrapper.get('[aria-labelledby="plan-section-heading-income"]')
     expect(income.findAll('label').map((label) => label.text())).toEqual([
       'Gross pay',
@@ -809,23 +852,27 @@ describe('spending plan setup', () => {
     ])
     expect(income.findAll('.sheet-row')).toHaveLength(2)
     await wrapper.get('[aria-label="401(k) amount"]').setValue('600')
+    await settle()
 
     const percent = wrapper.get('[aria-label="401(k): set in dollars or percent"]')
     await wrapper.get('#gross-pay-income').setValue('8000')
+    await settle()
     await percent.get('[aria-label="Percent of gross pay"]').trigger('click')
+    await settle()
     // The amount carries across: 600 of 8,000.
     expect(
       wrapper.get<HTMLInputElement>('[aria-label="401(k) percent of gross pay"]').element.value,
     ).toBe('7.5')
 
     await wrapper.get('[aria-label="401(k) percent of gross pay"]').setValue('6')
+    await settle()
 
     expect(wrapper.get('[aria-label="401(k) amount"]').text()).toBe('480')
     // 480 of take-home pay plus the 401(k), 5,680.
     expect(wrapper.get('[aria-label="Investments total"]').text()).toBe('$4808%')
 
     await saveButton(wrapper).trigger('click')
-    await flushPromises()
+    await settle()
     const request = vi.mocked(saveSpendingPlan).mock.calls[0]?.[0]
     expect(request?.gross_pay).toBe(8000)
     expect(request?.lines.find((line) => line.name === '401(k)')).toMatchObject({
@@ -993,12 +1040,13 @@ describe('spending plan setup', () => {
   it('asks for take-home pay before showing guilt-free spending', async () => {
     vi.mocked(getRecurringTransactions).mockResolvedValue([])
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.find('[aria-label="Guilt-free spending total"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Enter your take-home pay to see what’s left to spend.')
 
     await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
     expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$4,000100%')
   })
 
@@ -1044,21 +1092,23 @@ describe('spending plan setup', () => {
 
   it('adds an adjustable miscellaneous buffer on top of fixed costs', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.get('#fixed-cost-buffer').element).toHaveProperty('value', '15')
     expect(wrapper.get('[aria-label="Miscellaneous buffer amount"]').text()).toBe('217.5')
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toBe('$1,667.5032%')
 
     await wrapper.get('#fixed-cost-buffer').setValue('10')
+    await settle()
     expect(wrapper.get('[aria-label="Miscellaneous buffer amount"]').text()).toBe('145')
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toBe('$1,59531%')
 
     await wrapper.get('#fixed-cost-buffer').setValue('')
+    await settle()
     expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toBe('$1,45028%')
 
     await saveButton(wrapper).trigger('click')
-    await flushPromises()
+    await settle()
     expect(vi.mocked(saveSpendingPlan).mock.calls[0]?.[0].fixed_cost_buffer_percent).toBe(0)
   })
 
@@ -1074,9 +1124,10 @@ describe('spending plan setup', () => {
 
   it('caps the buffer at 100 percent', async () => {
     const wrapper = mountSetup()
-    await flushPromises()
+    await settle()
 
     await wrapper.get('#fixed-cost-buffer').setValue('250')
+    await settle()
 
     expect(wrapper.get('#fixed-cost-buffer').element).toHaveProperty('value', '100')
     expect(wrapper.get('[aria-label="Miscellaneous buffer amount"]').text()).toBe('1450')
@@ -1128,5 +1179,112 @@ describe('spending plan setup', () => {
     expect(request?.lines.find((line) => line.name === 'Subscriptions')?.items).toEqual([
       { name: 'Netflix', amount: 15.49, stream_id: 'netflix' },
     ])
+  })
+})
+
+describe('spending plan totals from the server', () => {
+  it('waits until typing stops, then asks once for the latest plan', async () => {
+    const wrapper = mountSetup()
+    await settle()
+    vi.mocked(evaluateSpendingPlan).mockClear()
+
+    await wrapper.get('#take-home-income').setValue('4')
+    await wrapper.get('#take-home-income').setValue('40')
+    await wrapper.get('#take-home-income').setValue('400')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(evaluateSpendingPlan).not.toHaveBeenCalled()
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
+
+    expect(
+      vi.mocked(evaluateSpendingPlan).mock.calls.map(([request]) => request.take_home),
+    ).toEqual([4000])
+  })
+
+  it('shows a saved plan with the totals it was loaded with', () => {
+    const wrapper = mountSetup({ saved: savedPlan })
+
+    // 1,500 rent + 15.49 Netflix, plus the 10% buffer, before anything is asked again.
+    expect(wrapper.get('[aria-label="Fixed costs total"]').text()).toContain('$1,667.04')
+  })
+
+  it("sends what's typed and shows the server's answer", async () => {
+    const wrapper = mountSetup()
+    await settle()
+    vi.mocked(evaluateSpendingPlan).mockImplementation(async (request) => ({
+      ...fakeEvaluation(request),
+      guilt_free: {
+        amount: 1234.5,
+        share: 31,
+        target: { min: 20, max: 35 },
+        status: 'within',
+        flagged: false,
+      },
+    }))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
+
+    expect(vi.mocked(evaluateSpendingPlan).mock.lastCall?.[0].take_home).toBe(4000)
+    expect(vi.mocked(evaluateSpendingPlan).mock.lastCall?.[0].fixed_cost_buffer_percent).toBe(15)
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$1,234.5031%')
+  })
+
+  it('keeps the last totals on screen while the server works out new ones', async () => {
+    const wrapper = mountSetup()
+    await settle()
+    const before = wrapper.get('[aria-label="Guilt-free spending total"]').text()
+    vi.mocked(evaluateSpendingPlan).mockReturnValue(new Promise(() => {}))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
+
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe(before)
+  })
+
+  it('says when the totals could not be updated, and tries again', async () => {
+    const wrapper = mountSetup()
+    await settle()
+    vi.mocked(evaluateSpendingPlan).mockRejectedValueOnce(new Error('offline'))
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
+
+    expect(wrapper.get('.evaluation-error').text()).toContain('We couldn’t update your totals.')
+    const retry = wrapper.get('.evaluation-error').findAll('button')
+    await retry.find((button) => button.text() === 'Try again')!.trigger('click')
+    await settle()
+
+    expect(wrapper.find('.evaluation-error').exists()).toBe(false)
+    // 4,000 less 1,450 rent with the 15% buffer.
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$2,332.5058%')
+  })
+
+  it('asks again with the latest plan once an answer that was already out comes back', async () => {
+    const wrapper = mountSetup()
+    await settle()
+    vi.mocked(evaluateSpendingPlan).mockClear()
+    let answerFirst: () => void = () => {}
+    vi.mocked(evaluateSpendingPlan).mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          answerFirst = () => resolve(fakeEvaluation(request))
+        }),
+    )
+
+    await wrapper.get('#take-home-income').setValue('4000')
+    await settle()
+    await wrapper.get('#take-home-income').setValue('5000')
+    await settle()
+    answerFirst()
+    await settle()
+
+    // One request at a time: the second goes out with the latest take-home once the first answers.
+    expect(
+      vi.mocked(evaluateSpendingPlan).mock.calls.map(([request]) => request.take_home),
+    ).toEqual([4000, 5000])
+    // 5,000 less 1,450 rent with the 15% buffer.
+    expect(wrapper.get('[aria-label="Guilt-free spending total"]').text()).toBe('$3,332.5067%')
   })
 })

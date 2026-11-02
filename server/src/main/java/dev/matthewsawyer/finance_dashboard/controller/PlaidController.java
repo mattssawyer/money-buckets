@@ -62,8 +62,7 @@ public class PlaidController {
     private static final int DEFAULT_RECURRING_STREAMS = 8;
     private static final int MAX_RECURRING_STREAMS = 50;
 
-    /** Transactions sorting hasn't reached yet. */
-    static final String UNSORTED = "UNSORTED";
+    static final String UNSORTED = Spending.UNSORTED;
 
     // The order buckets are listed in, following the plan. NOT_COUNTED is left out of spending.
     private static final List<String> BUCKET_ORDER = List.of(
@@ -488,12 +487,9 @@ public class PlaidController {
         Map<String, Map<String, List<Spending.Spent>>> byBucketAndCategory = new HashMap<>();
         for (Spending.Spent spent : spending.between(user.getId(), start, end, blankToNull(accountId))) {
             PlaidTransaction transaction = spent.transaction();
-            String bucket = transaction.getBucket() == null ? UNSORTED : transaction.getBucket().name();
-            // Plaid always assigns a category, but the column is nullable.
-            String category = Objects.requireNonNullElse(payees.category(transaction), "UNCATEGORIZED");
             byBucketAndCategory
-                    .computeIfAbsent(bucket, key -> new HashMap<>())
-                    .computeIfAbsent(category, key -> new ArrayList<>())
+                    .computeIfAbsent(Spending.bucketKey(transaction), key -> new HashMap<>())
+                    .computeIfAbsent(Spending.categoryKey(payees.category(transaction)), key -> new ArrayList<>())
                     .add(spent);
         }
 
@@ -527,8 +523,7 @@ public class PlaidController {
                 String bucket, Map<String, List<Spending.Spent>> transactionsByCategory, PayeeLookup.Payees payees) {
             List<CategorySpend> largestFirst = transactionsByCategory.entrySet().stream()
                     .map(entry -> CategorySpend.of(entry.getKey(), entry.getValue(), payees))
-                    // Refunds can net a category to zero or below, which a pie chart cannot show.
-                    .filter(category -> category.amount().signum() > 0)
+                    .filter(category -> Spending.countsTowardBucket(category.amount()))
                     .sorted(Comparator.comparing(CategorySpend::amount).reversed())
                     .toList();
             BigDecimal amount = largestFirst.stream()

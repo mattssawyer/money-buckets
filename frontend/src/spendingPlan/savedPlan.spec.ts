@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SpendingPlanResponse } from '../api/SpendingPlanService'
 import { defaultPlan, type PlanDraft } from './plan'
-import { fromSaved, toSaveRequest } from './savedPlan'
+import { evaluationResponse } from './__tests__/evaluationFixture'
+import { fromEvaluation, fromSaved, toSaveRequest } from './savedPlan'
 
 const plan: PlanDraft = {
   fixedCosts: [
@@ -55,6 +56,7 @@ describe('fromSaved', () => {
     const response: SpendingPlanResponse = {
       ...toSaveRequest('checking', 5200, 8000, 12.5, plan),
       updated_at: '2026-09-22T19:30:00Z',
+      evaluation: evaluationResponse(),
     }
 
     expect(fromSaved(response)).toEqual({
@@ -64,6 +66,7 @@ describe('fromSaved', () => {
       bufferPercent: 12.5,
       plan,
       updatedAt: '2026-09-22T19:30:00Z',
+      evaluation: fromEvaluation(evaluationResponse()),
     })
   })
 
@@ -72,8 +75,53 @@ describe('fromSaved', () => {
     const response = {
       ...toSaveRequest(null, null, null, 0, empty),
       updated_at: '2026-09-22T19:30:00Z',
+      evaluation: evaluationResponse(),
     }
 
     expect(fromSaved(response).plan).toEqual(empty)
+  })
+})
+
+describe('fromEvaluation', () => {
+  it("puts the server's evaluation in the app's bucket names", () => {
+    const evaluation = fromEvaluation(
+      evaluationResponse({
+        plan_income: 5800,
+        from_paycheck: 600,
+        fixed_cost_subtotal: 1477.48,
+        buffer: 221.62,
+        buckets: {
+          FIXED_COSTS: {
+            amount: 1699.1,
+            share: 29,
+            target: { min: 50, max: 60 },
+            status: 'below',
+            flagged: false,
+          },
+        },
+        guilt_free: {
+          amount: -12,
+          share: 0,
+          target: { min: 20, max: 35 },
+          status: 'below',
+          flagged: true,
+        },
+      }),
+    )
+
+    expect(evaluation.income).toBe(5800)
+    expect(evaluation.fromPaycheck).toBe(600)
+    expect(evaluation.fixedCostSubtotal).toBe(1477.48)
+    expect(evaluation.buffer).toBe(221.62)
+    expect(evaluation.buckets.fixedCosts).toEqual({
+      amount: 1699.1,
+      share: 29,
+      target: { min: 50, max: 60 },
+      status: 'below',
+      flagged: false,
+    })
+    expect(evaluation.buckets.savings.target).toEqual({ min: 5, max: 10 })
+    expect(evaluation.guiltFree.amount).toBe(-12)
+    expect(evaluation.guiltFree.flagged).toBe(true)
   })
 })

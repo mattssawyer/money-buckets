@@ -3,11 +3,11 @@ import { computed } from 'vue'
 import { BUCKET_STYLES } from '../api/plaidLabels'
 import { formatWholeDollars } from '../money'
 import InfoTip from './InfoTip.vue'
-import type { GuiltFreeLeft } from '../spendingPlan/guiltFreeLeft'
 
 /** How much of the plan's guilt-free spending a month has used, along the foot of its card. */
 const props = defineProps<{
-  guiltFree: GuiltFreeLeft
+  /** From the server; `left` is negative once spending passes what the plan leaves. */
+  guiltFree: { planned: number; spent: number; left: number }
   /** Only one account is shown above, but the plan covers every tracked account. */
   allAccounts: boolean
   /** Why the number may still change, such as spending that isn't sorted yet. */
@@ -16,8 +16,8 @@ const props = defineProps<{
 
 const over = computed(() => props.guiltFree.left < 0)
 const spentPercent = computed(() => {
-  const { budget, spent } = props.guiltFree
-  if (budget > 0) return Math.min(100, (spent / budget) * 100)
+  const { planned, spent } = props.guiltFree
+  if (planned > 0) return Math.min(100, (spent / planned) * 100)
   return spent > 0 ? 100 : 0
 })
 const summary = computed(
