@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -329,7 +330,7 @@ public class SpendingPlanController {
     /** A part of the plan: its amount, its share of plan income and where that falls against its target. */
     public record ShareResponse(
             @JsonProperty("amount") BigDecimal amount,
-            @JsonProperty("share") Integer share,
+            @JsonProperty("share") BigInteger share,
             @JsonProperty("target") PlanEvaluation.Target target,
             @JsonProperty("status") String status,
             @JsonProperty("flagged") boolean flagged

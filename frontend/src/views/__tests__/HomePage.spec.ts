@@ -1024,6 +1024,43 @@ describe('homepage spending breakdown', () => {
       vi.useRealTimers()
     })
 
+    it('keeps checking while only the guilt-free answer is waiting on sorting', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let sorted = false
+      vi.mocked(getGuiltFreeLeft).mockImplementation(async () =>
+        sorted ? left(600) : left(500, 100),
+      )
+      // The chart was read after sorting finished, so it has nothing unsorted.
+      vi.mocked(getSpendingByBucket).mockResolvedValue(spending)
+      const wrapper = mountHome()
+      await flushPromises()
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
+
+      sorted = true
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,400 left')
+      vi.useRealTimers()
+    })
+
+    it('says when a refresh fails, next to the bar it kept', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      vi.mocked(getGuiltFreeLeft).mockResolvedValueOnce(left(500, 100))
+      vi.mocked(getGuiltFreeLeft).mockRejectedValue(new Error('offline'))
+      const wrapper = mountHome()
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+
+      expect(wrapper.get('.guilt-free-summary').text()).toBe('$1,500 left')
+      expect(wrapper.get('.guilt-free-missing').text()).toContain(
+        'We couldn’t update your guilt-free spending left.',
+      )
+      vi.useRealTimers()
+    })
+
     it('leaves the bar empty when the plan leaves nothing and nothing is spent', async () => {
       vi.mocked(getGuiltFreeLeft).mockResolvedValue({ planned: 0, spent: 0, left: 0, unsorted: 0 })
       const wrapper = mountHome()

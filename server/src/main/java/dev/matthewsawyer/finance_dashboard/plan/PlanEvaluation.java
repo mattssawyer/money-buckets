@@ -5,6 +5,7 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanItem;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.EnumMap;
@@ -49,11 +50,12 @@ public record PlanEvaluation(
      *
      * @param amount  for guilt-free spending, negative when the plan spends more than plan
      *                income, and null until take-home pay is known
-     * @param share   percent of plan income, rounded; null until plan income is known
+     * @param share   percent of plan income, rounded; null until plan income is known. Unbounded,
+     *                since a tiny take-home pay against large lines gives a huge percent
      * @param status  null until plan income is known
      * @param flagged needs the user's attention: fixed costs above target, or guilt-free spending below zero
      */
-    public record Share(BigDecimal amount, Integer share, Target target, Status status, boolean flagged) {
+    public record Share(BigDecimal amount, BigInteger share, Target target, Status status, boolean flagged) {
     }
 
     /** A blank buffer percent means no buffer. */
@@ -63,25 +65,25 @@ public record PlanEvaluation(
         BigDecimal buffer = roundCents(fixedCostSubtotal.multiply(percent).movePointLeft(2));
         BigDecimal fromPaycheck = total(
                 lines.stream().filter(SpendingPlanLine::isFromPaycheck).toList(), SpendingPlanBucket.INVESTMENTS);
-        BigDecimal income = takeHome == null ? null : takeHome.add(fromPaycheck);
+        BigDecimal income = takeHome == null ? null : roundCents(takeHome.add(fromPaycheck));
 
         Map<SpendingPlanBucket, BigDecimal> amounts = new EnumMap<>(SpendingPlanBucket.class);
         for (SpendingPlanBucket bucket : SpendingPlanBucket.values()) {
             amounts.put(bucket, total(lines, bucket));
         }
-        amounts.put(SpendingPlanBucket.FIXED_COSTS, fixedCostSubtotal.add(buffer));
+        amounts.put(SpendingPlanBucket.FIXED_COSTS, roundCents(fixedCostSubtotal.add(buffer)));
         BigDecimal planned = amounts.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal guiltFree = income == null ? null : income.subtract(planned);
+        BigDecimal guiltFree = income == null ? null : roundCents(income.subtract(planned));
 
         Map<SpendingPlanBucket, Share> buckets = new EnumMap<>(SpendingPlanBucket.class);
         amounts.forEach((bucket, amount) -> {
             Target target = BUCKET_TARGETS.get(bucket);
-            Integer share = share(amount, income);
+            BigInteger share = share(amount, income);
             Status status = status(share, target);
             boolean flagged = bucket == SpendingPlanBucket.FIXED_COSTS && status == Status.ABOVE;
             buckets.put(bucket, new Share(amount, share, target, status, flagged));
         });
-        Integer guiltFreePercent = share(guiltFree, income);
+        BigInteger guiltFreePercent = share(guiltFree, income);
         Share guiltFreeBucket = new Share(
                 guiltFree,
                 guiltFreePercent,
@@ -92,41 +94,45 @@ public record PlanEvaluation(
         return new PlanEvaluation(income, fromPaycheck, fixedCostSubtotal, buffer, buckets, guiltFreeBucket);
     }
 
-    /** A line broken into items is their sum, with blank items as zero; otherwise its typed amount. */
+    /**
+     * A line broken into items is their sum to the cent, with blank items as zero; otherwise its
+     * typed amount.
+     */
     public static BigDecimal lineAmount(SpendingPlanLine line) {
         if (line.getItems().isEmpty()) {
             return line.getAmount();
         }
-        return line.getItems().stream()
+        return roundCents(line.getItems().stream()
                 .map(SpendingPlanItem::getAmount)
                 .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
+    /** Totals are kept to the cent, so the buckets and guilt-free spending add up when shown. */
     private static BigDecimal total(List<SpendingPlanLine> lines, SpendingPlanBucket bucket) {
-        return lines.stream()
+        return roundCents(lines.stream()
                 .filter(line -> line.getBucket() == bucket)
                 .map(PlanEvaluation::lineAmount)
                 .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
-    private static Integer share(BigDecimal amount, BigDecimal income) {
+    private static BigInteger share(BigDecimal amount, BigDecimal income) {
         if (amount == null || income == null || income.signum() <= 0) {
             return null;
         }
         BigDecimal percent = amount.movePointRight(2).divide(income, MathContext.DECIMAL64);
-        return roundHalfUp(percent, 0).intValueExact();
+        return roundHalfUp(percent, 0).toBigIntegerExact();
     }
 
-    private static Status status(Integer share, Target target) {
+    private static Status status(BigInteger share, Target target) {
         if (share == null) {
             return null;
         }
-        if (share < target.min()) {
+        if (share.compareTo(BigInteger.valueOf(target.min())) < 0) {
             return Status.BELOW;
         }
-        return share > target.max() ? Status.ABOVE : Status.WITHIN;
+        return share.compareTo(BigInteger.valueOf(target.max())) > 0 ? Status.ABOVE : Status.WITHIN;
     }
 
     private static BigDecimal roundCents(BigDecimal value) {

@@ -6,6 +6,7 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
 
@@ -55,7 +56,7 @@ class PlanEvaluationTests {
                 line(SAVINGS, "300")));
 
         assertMoney("2100", evaluation.guiltFree().amount());
-        assertEquals(9, evaluation.buckets().get(INVESTMENTS).share());
+        assertShare(9, evaluation.buckets().get(INVESTMENTS).share());
     }
 
     @Test
@@ -98,10 +99,10 @@ class PlanEvaluationTests {
     void measuresEachPartAsARoundedPercentOfPlanIncome() {
         PlanEvaluation evaluation = simplePlan("3600", "1800", "360", "180");
 
-        assertEquals(50, evaluation.buckets().get(FIXED_COSTS).share());
-        assertEquals(10, evaluation.buckets().get(INVESTMENTS).share());
-        assertEquals(5, evaluation.buckets().get(SAVINGS).share());
-        assertEquals(35, evaluation.guiltFree().share());
+        assertShare(50, evaluation.buckets().get(FIXED_COSTS).share());
+        assertShare(10, evaluation.buckets().get(INVESTMENTS).share());
+        assertShare(5, evaluation.buckets().get(SAVINGS).share());
+        assertShare(35, evaluation.guiltFree().share());
     }
 
     @Test
@@ -149,14 +150,33 @@ class PlanEvaluationTests {
     @Test
     void roundsHalfASharePointUpTowardPositive() {
         // 125 of 1,000 is 12.5%; -125 is -12.5%, which rounds up to -12 as JavaScript's Math.round does.
-        assertEquals(13, simplePlan("1000", "775", "50", "50").guiltFree().share());
-        assertEquals(-12, simplePlan("1000", "1025", "50", "50").guiltFree().share());
+        assertShare(13, simplePlan("1000", "775", "50", "50").guiltFree().share());
+        assertShare(-12, simplePlan("1000", "1025", "50", "50").guiltFree().share());
     }
 
     @Test
     void roundsAHalfCentBufferUp() {
         // 15% of 1.50 is 0.225.
         assertMoney("0.23", PlanEvaluation.of(null, money("15"), List.of(line(FIXED_COSTS, "1.5"))).buffer());
+    }
+
+    @Test
+    void keepsTotalsToTheCentSoTheyAddUp() {
+        PlanEvaluation evaluation = PlanEvaluation.of(money("1000"), null, List.of(
+                line(FIXED_COSTS, "100.004"),
+                line(INVESTMENTS, "100.004"),
+                line(SAVINGS, "100.004")));
+
+        assertMoney("100", evaluation.buckets().get(FIXED_COSTS).amount());
+        assertMoney("700", evaluation.guiltFree().amount());
+    }
+
+    @Test
+    void worksOutSharesFarBeyondAnyTarget() {
+        PlanEvaluation evaluation = PlanEvaluation.of(money("0.01"), null, List.of(line(FIXED_COSTS, "300000")));
+
+        assertEquals(new BigInteger("3000000000"), evaluation.buckets().get(FIXED_COSTS).share());
+        assertTrue(evaluation.buckets().get(FIXED_COSTS).flagged());
     }
 
     /** One typed amount per bucket and no buffer, for share and target checks. */
@@ -187,5 +207,9 @@ class PlanEvaluationTests {
 
     static void assertMoney(String expected, BigDecimal actual) {
         assertEquals(0, new BigDecimal(expected).compareTo(actual), () -> expected + " but was " + actual);
+    }
+
+    static void assertShare(int expected, BigInteger actual) {
+        assertEquals(BigInteger.valueOf(expected), actual);
     }
 }

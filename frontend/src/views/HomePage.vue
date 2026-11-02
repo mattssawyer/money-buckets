@@ -440,17 +440,23 @@ async function loadSpending() {
   const accountId = selectedAccountId.value
   const range = periodRange(spendingPeriod.value)
   const current = startSpending()
-  if (showsPlanMonth.value) void loadGuiltFreeLeft(spendingPeriod.value)
+  const guiltFreeLoad = showsPlanMonth.value
+    ? loadGuiltFreeLeft(spendingPeriod.value)
+    : Promise.resolve()
+  let loaded = false
   try {
     const summary = await getSpendingByBucket(accountId, range)
     if (!current()) return
     spending.value = summary
-    recheckUnsorted(accountId, range, current)
+    loaded = true
   } catch {
     if (current()) spendingError.value = 'We couldn’t load your spending breakdown.'
   } finally {
     if (current()) loadingSpending.value = false
   }
+  // Both answers say whether spending is still being sorted, so wait for both before deciding.
+  await guiltFreeLoad
+  if (loaded && current()) recheckUnsorted(accountId, range, current)
 }
 
 // A failure leaves the last answer in place and says so at the foot of the card.
@@ -473,18 +479,23 @@ function recheckUnsorted(
   range: { start: string; end: string },
   current: () => boolean,
 ) {
-  const waiting = spending.value?.buckets.some((entry) => entry.bucket === 'UNSORTED')
-  if (!waiting || unsortedRechecks >= UNSORTED_RECHECK_LIMIT) return
+  const chartWaiting = spending.value?.buckets.some((entry) => entry.bucket === 'UNSORTED')
+  // The guilt-free answer is fetched separately, so it can still be waiting on sorting the chart
+  // has already caught up with.
+  const guiltFreeWaiting = !!planMonth.value?.unsorted
+  if ((!chartWaiting && !guiltFreeWaiting) || unsortedRechecks >= UNSORTED_RECHECK_LIMIT) return
   unsortedRecheck = setTimeout(async () => {
     unsortedRechecks++
     try {
       const summary = await getSpendingByBucket(accountId, range)
       if (!current()) return
       // New data rebuilds the chart and replays its animation, so only swap it in when it changed.
-      if (JSON.stringify(summary) !== JSON.stringify(spending.value)) {
-        spending.value = summary
-        // Sorting moved on, so what's left of guilt-free spending may have changed too.
-        if (showsPlanMonth.value) void loadGuiltFreeLeft(spendingPeriod.value)
+      const changed = JSON.stringify(summary) !== JSON.stringify(spending.value)
+      if (changed) spending.value = summary
+      // Sorting moved on, so what's left of guilt-free spending may have changed too.
+      if ((changed || guiltFreeWaiting) && showsPlanMonth.value) {
+        await loadGuiltFreeLeft(spendingPeriod.value)
+        if (!current()) return
       }
       recheckUnsorted(accountId, range, current)
     } catch {
@@ -1226,16 +1237,6 @@ async function openPlaidLink() {
                   @click="loadSpendingPlan"
                 />
               </div>
-              <div v-else-if="guiltFreeMissing" class="guilt-free-missing" role="status">
-                <span>We couldn’t work out your guilt-free spending left.</span>
-                <Button
-                  label="Try again"
-                  severity="secondary"
-                  size="small"
-                  text
-                  @click="loadGuiltFreeLeft(spendingPeriod)"
-                />
-              </div>
               <div v-else-if="guiltFreeByMonthOnly" class="guilt-free-missing">
                 <span>Guilt-free spending is tracked by calendar month.</span>
                 <Button
@@ -1244,6 +1245,21 @@ async function openPlaidLink() {
                   size="small"
                   text
                   @click="choosePeriod('THIS_MONTH')"
+                />
+              </div>
+              <!-- Shown next to a bar kept from earlier too, so an old answer isn't taken as current. -->
+              <div v-if="guiltFreeMissing && !planFailed" class="guilt-free-missing" role="status">
+                <span>{{
+                  guiltFree
+                    ? 'We couldn’t update your guilt-free spending left.'
+                    : 'We couldn’t work out your guilt-free spending left.'
+                }}</span>
+                <Button
+                  label="Try again"
+                  severity="secondary"
+                  size="small"
+                  text
+                  @click="loadGuiltFreeLeft(spendingPeriod)"
                 />
               </div>
             </div>

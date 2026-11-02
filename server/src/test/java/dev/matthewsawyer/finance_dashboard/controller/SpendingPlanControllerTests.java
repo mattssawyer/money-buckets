@@ -32,6 +32,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
@@ -289,10 +290,10 @@ class SpendingPlanControllerTests {
         assertEquals("4500", evaluation.planIncome().toPlainString());
         assertEquals("200", evaluation.buffer().toPlainString());
         assertEquals("2200", evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).amount().toPlainString());
-        assertEquals(49, evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).share());
+        assertEquals(BigInteger.valueOf(49), evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).share());
         assertEquals("below", evaluation.buckets().get(SpendingPlanBucket.FIXED_COSTS).status());
         assertEquals("1500", evaluation.guiltFree().amount().toPlainString());
-        assertEquals(33, evaluation.guiltFree().share());
+        assertEquals(BigInteger.valueOf(33), evaluation.guiltFree().share());
         assertEquals(20, evaluation.guiltFree().target().min());
     }
 
