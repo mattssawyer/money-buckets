@@ -20,7 +20,18 @@
 		format json
 	}
 
-	respond /health 200
+	# These answer before the app's files, which would otherwise rewrite them to index.html.
+	handle /health {
+		respond 200
+	}
+
+	# iOS reads this to open the app, not the site, for links under /ios/, such as where Plaid
+	# sends the user back after an OAuth bank. Apple needs it as JSON with no redirect.
+	# APPLE_APP_ID is the app's team ID and bundle ID, e.g. ABCDE12345.io.moneybuckets.app.
+	handle /.well-known/apple-app-site-association {
+		header Content-Type application/json
+		respond `{"applinks":{"details":[{"appIDs":["{$APPLE_APP_ID}"],"components":[{"/":"/ios/*"}]}]}}`
+	}
 
 	# Vite names built assets by their contents, so they can be kept forever. Everything else,
 	# index.html above all, is checked with the server on every load, so a deploy shows up
@@ -42,21 +53,23 @@
 		-Server
 	}
 
-	# serve from the 'dist' folder (Vite builds into the 'dist' folder)
-	root * {{.DIST_DIR}}
+	handle {
+		# serve from the 'dist' folder (Vite builds into the 'dist' folder)
+		root * {{.DIST_DIR}}
 
-	# Handle static files
-	file_server {
-		hide .git
-		hide .env*
+		# Handle static files
+		file_server {
+			hide .git
+			hide .env*
+		}
+
+		# Compression with more formats
+		encode {
+			gzip
+			zstd
+		}
+
+		# match against direct against HTML file matches, folder-level index.html, and optionally fallback to root index.html
+		try_files {path} {path}.html {path}/index.html{{if .IndexFallback}} /index.html{{end}}
 	}
-
-	# Compression with more formats
-	encode {
-		gzip
-		zstd
-	}
-
-	# match against direct against HTML file matches, folder-level index.html, and optionally fallback to root index.html
-	try_files {path} {path}.html {path}/index.html{{if .IndexFallback}} /index.html{{end}}
 }

@@ -69,6 +69,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -85,7 +86,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "PLAID_CLIENT_ID=test-client-id",
-        "PLAID_SANDBOX_SECRET=test-secret"
+        "PLAID_SANDBOX_SECRET=test-secret",
+        "plaid.ios.redirect-uri=https://moneybuckets.test/ios/plaid-oauth"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -379,6 +381,22 @@ class UserSeparationTests {
         org.mockito.Mockito.verify(plaidApi).linkTokenCreate(request.capture());
         assertEquals(users.findByAuthUserId(BOB).orElseThrow().getId().toString(),
                 request.getValue().getUser().getClientUserId());
+        // The web asks without a platform and never gets the iOS redirect URI.
+        assertNull(request.getValue().getRedirectUri());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void givesTheIosAppItsRedirectUri() throws Exception {
+        Call<LinkTokenCreateResponse> call = mock(Call.class);
+        when(plaidApi.linkTokenCreate(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(new LinkTokenCreateResponse().linkToken("link-token")));
+
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/create-link-token?platform=ios")).andExpect(status().isOk());
+
+        ArgumentCaptor<LinkTokenCreateRequest> request = ArgumentCaptor.forClass(LinkTokenCreateRequest.class);
+        org.mockito.Mockito.verify(plaidApi).linkTokenCreate(request.capture());
+        assertEquals("https://moneybuckets.test/ios/plaid-oauth", request.getValue().getRedirectUri());
     }
 
     @Test

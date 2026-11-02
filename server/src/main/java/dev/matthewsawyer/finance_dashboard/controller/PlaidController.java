@@ -15,6 +15,7 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
+import dev.matthewsawyer.finance_dashboard.plaid.LinkPlatform;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
@@ -105,18 +106,30 @@ public class PlaidController {
     }
 
     /**
-     * Requests transactions by default; investment links request only investments.
+     * Requests transactions by default; investment links request only investments. Every
+     * endpoint that returns a link token takes {@code platform}: {@code web} (the default) or
+     * {@code ios}, which adds the redirect URI iOS Link needs for OAuth banks.
      */
     @PostMapping("/create-link-token")
     public Map<String, String> createLinkToken(
             @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(defaultValue = "false") boolean investments
+            @RequestParam(defaultValue = "false") boolean investments,
+            @RequestParam(defaultValue = "web") String platform
     ) {
+        LinkPlatform linkPlatform = linkPlatform(platform);
         User user = userService.getOrCreateUser(jwt);
         String linkToken = investments
-                ? itemLinking.createInvestmentsLinkToken(user.getId())
-                : itemLinking.createLinkToken(user.getId());
+                ? itemLinking.createInvestmentsLinkToken(user.getId(), linkPlatform)
+                : itemLinking.createLinkToken(user.getId(), linkPlatform);
         return Map.of("link_token", linkToken);
+    }
+
+    private static LinkPlatform linkPlatform(String platform) {
+        return switch (platform) {
+            case "web" -> LinkPlatform.WEB;
+            case "ios" -> LinkPlatform.IOS;
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown platform");
+        };
     }
 
     @PostMapping("/items")
@@ -178,10 +191,15 @@ public class PlaidController {
 
     /** A link token for Link update mode, so the user can sign in to the item's bank again. */
     @PostMapping("/items/{itemId}/reconnect")
-    public Map<String, String> createReconnectLinkToken(@AuthenticationPrincipal Jwt jwt, @PathVariable String itemId) {
+    public Map<String, String> createReconnectLinkToken(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String itemId,
+            @RequestParam(defaultValue = "web") String platform
+    ) {
+        LinkPlatform linkPlatform = linkPlatform(platform);
         User user = userService.getOrCreateUser(jwt);
         try {
-            return Map.of("link_token", itemLinking.createReconnectLinkToken(user.getId(), itemId));
+            return Map.of("link_token", itemLinking.createReconnectLinkToken(user.getId(), itemId, linkPlatform));
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found");
         }
@@ -204,10 +222,15 @@ public class PlaidController {
      * Link update mode; call again once the user finishes it.
      */
     @PostMapping("/items/{itemId}/investments")
-    public AddInvestmentsResponse addInvestments(@AuthenticationPrincipal Jwt jwt, @PathVariable String itemId) {
+    public AddInvestmentsResponse addInvestments(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String itemId,
+            @RequestParam(defaultValue = "web") String platform
+    ) {
+        LinkPlatform linkPlatform = linkPlatform(platform);
         User user = userService.getOrCreateUser(jwt);
         try {
-            PlaidItemLinking.AddInvestments result = itemLinking.addInvestments(user.getId(), itemId);
+            PlaidItemLinking.AddInvestments result = itemLinking.addInvestments(user.getId(), itemId, linkPlatform);
             return new AddInvestmentsResponse(result.outcome().name().toLowerCase(), result.linkToken());
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found");
