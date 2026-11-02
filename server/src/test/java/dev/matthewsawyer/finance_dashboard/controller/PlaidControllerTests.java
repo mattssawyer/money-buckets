@@ -11,6 +11,7 @@ import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
 import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
@@ -115,15 +116,13 @@ class PlaidControllerTests {
                 plaidItemRepository,
                 accountRepository,
                 transactionRepository,
-                recurringStreamRepository,
                 trackedAccounts,
                 new Spending(transactionRepository, trackedAccounts,
                         new TransactionExclusions(transactionRepository, org.mockito.Mockito.mock(TransactionCountingRepository.class), Clock.systemUTC())),
-                recurringPayees,
                 payeeLookup,
-                recurringCandidates,
-                userService,
-                Clock.fixed(TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
+                new RecurringPayments(recurringStreamRepository, trackedAccounts, recurringPayees, recurringCandidates,
+                        Clock.fixed(TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())),
+                userService
         );
         lenient().when(payeeLookup.forUser(USER_ID)).thenReturn(payees(Map.of()));
         jwt = Jwt.withTokenValue("token")

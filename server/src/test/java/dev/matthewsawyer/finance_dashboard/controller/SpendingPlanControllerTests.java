@@ -6,6 +6,27 @@ import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.Spe
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingPlanResponse;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.GuiltFreeLeftResponse;
 import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.PlanEvaluationResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.CategoryHistoryResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.LineDefaultsResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.PlanSuggestionsResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.RecurringPaymentResponse;
+import dev.matthewsawyer.finance_dashboard.controller.SpendingPlanController.SpendingHistoryResponse;
+import dev.matthewsawyer.finance_dashboard.model.PlaidAccount;
+import dev.matthewsawyer.finance_dashboard.model.PlaidRecurringStream;
+import dev.matthewsawyer.finance_dashboard.model.RecurringFrequency;
+import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
+import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
+import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
+import dev.matthewsawyer.finance_dashboard.model.SpendingPlanItem;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidate;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
+import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
+import dev.matthewsawyer.finance_dashboard.spending.TrackedAccounts;
+import java.time.Clock;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlan;
@@ -79,13 +100,25 @@ class SpendingPlanControllerTests {
     @Mock
     private PayeeLookup payeeLookup;
 
+    @Mock
+    private PlaidRecurringStreamRepository streamRepository;
+
+    @Mock
+    private RecurringPayees recurringPayees;
+
+    @Mock
+    private RecurringCandidates recurringCandidates;
+
     private SpendingPlanController controller;
     private Jwt jwt;
 
     @BeforeEach
     void setUp() {
+        RecurringPayments recurringPayments = new RecurringPayments(
+                streamRepository, new TrackedAccounts(accountRepository), recurringPayees, recurringCandidates,
+                Clock.fixed(Instant.parse("2026-10-10T12:00:00Z"), ZoneOffset.UTC));
         controller = new SpendingPlanController(
-                planService, accountRepository, bucketSorting, userService, spending, payeeLookup);
+                planService, accountRepository, bucketSorting, userService, spending, payeeLookup, recurringPayments);
         jwt = Jwt.withTokenValue("token").header("alg", "none").subject("user_123").build();
         User user = new User("user_123");
         ReflectionTestUtils.setField(user, "id", USER_ID);
@@ -412,6 +445,213 @@ class SpendingPlanControllerTests {
 
         assertEquals(HttpStatus.BAD_REQUEST, backwards.getStatusCode());
         assertEquals(HttpStatus.BAD_REQUEST, tooLong.getStatusCode());
+    }
+
+    @Test
+    void suggestsTheSpreadsheetsBlankLinesAndNoTakeHomeWithoutRecurringPayments() {
+        when(accountRepository.findAllByUserIdAndTracksSpendingIsTrue(USER_ID)).thenReturn(List.of());
+
+        PlanSuggestionsResponse suggestions = controller.getPlanSuggestions(jwt, true);
+
+        assertNull(suggestions.takeHome());
+        assertEquals(17, suggestions.lines().size());
+        assertEquals("Rent/mortgage", suggestions.lines().get(0).name());
+        assertTrue(suggestions.lines().stream().allMatch(line -> line.items().isEmpty() && line.amount() == null));
+        assertTrue(suggestions.recurring().isEmpty());
+        assertTrue(suggestions.unplaced().isEmpty());
+        assertEquals(0, suggestions.suggestedCandidates());
+    }
+
+    @Test
+    void suggestsTakeHomeAndBillsFromPlaidStreamsAndConfirmedCandidatesButNotUnansweredOnes() {
+        trackChecking();
+        when(streamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(List.of(
+                stream("pay", "checking", "Payroll", "-2400", "BIWEEKLY", true),
+                stream("rent", "checking", "Landlord", "1450", "MONTHLY", false)));
+        RecurringPayee landlord = new RecurringPayee(USER_ID, new RecurringMerchant(RecurringKind.BILL, "landlord"));
+        landlord.judged(null, null, SpendingPlanBucket.FIXED_COSTS, "Rent/mortgage", "state", Instant.now());
+        when(recurringPayees.judged(USER_ID)).thenReturn(Map.of(landlord.payee(), landlord));
+        when(recurringCandidates.find(USER_ID, null)).thenReturn(List.of(
+                candidate("netflix", "15.49", RecurringCandidate.Status.CONFIRMED, "Subscriptions"),
+                candidate("gym", "40", RecurringCandidate.Status.SUGGESTED, "Subscriptions"),
+                candidate("doordash", "30", RecurringCandidate.Status.DISMISSED, null)));
+
+        PlanSuggestionsResponse suggestions = controller.getPlanSuggestions(jwt, true);
+
+        assertEquals("5200", suggestions.takeHome().toPlainString());
+        assertEquals(List.of("Landlord"), itemNames(suggestions, "Rent/mortgage"));
+        assertEquals(List.of("netflix"), itemNames(suggestions, "Subscriptions"));
+        assertEquals("15.49", line(suggestions, "Subscriptions").items().get(0).amount().toPlainString());
+        assertEquals(List.of("pay", "rent", candidate("netflix", "15.49", RecurringCandidate.Status.CONFIRMED, null).streamId()),
+                suggestions.recurring().stream().map(RecurringPaymentResponse::streamId).toList());
+        assertEquals("CONFIRMED", suggestions.recurring().get(2).status().name());
+        assertEquals("1450", suggestions.recurring().get(1).planItem().amount().toPlainString());
+        assertEquals(1, suggestions.suggestedCandidates());
+    }
+
+    @Test
+    void countsABillFromASharedAccountAtTheUsersShare() {
+        when(accountRepository.findAllByUserIdAndTracksSpendingIsTrue(USER_ID)).thenReturn(List.of(account("joint", 50)));
+        when(streamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("joint"))).thenReturn(List.of(
+                stream("electric", "joint", "Con Ed", "180.25", "MONTHLY", false)));
+
+        PlanSuggestionsResponse suggestions = controller.getPlanSuggestions(jwt, true);
+
+        assertEquals("90.13", suggestions.unplaced().get(0).planItem().amount().toPlainString());
+        assertEquals(50, suggestions.unplaced().get(0).sharePercent());
+    }
+
+    @Test
+    void leavesBillsAlreadyOnTheSavedPlanOffTheListToPlaceUnlessStartingANewPlan() {
+        trackChecking();
+        when(streamRepository.findAllByUserIdAndAccountIdIn(USER_ID, Set.of("checking"))).thenReturn(List.of(
+                stream("repairs", "checking", "Handyman", "200", "MONTHLY", false),
+                stream("storage", "checking", "Storage Co", "90", "MONTHLY", false)));
+        savedPlanWithItem("storage");
+
+        assertEquals(List.of("repairs"), controller.getPlanSuggestions(jwt, false).unplaced().stream()
+                .map(RecurringPaymentResponse::streamId).toList());
+        assertEquals(List.of("repairs", "storage"), controller.getPlanSuggestions(jwt, true).unplaced().stream()
+                .map(RecurringPaymentResponse::streamId).toList());
+    }
+
+    @Test
+    void hasNoSpendingHistoryWithoutSpending() {
+        payeesWithoutCorrections();
+        when(spending.between(USER_ID, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 31), null))
+                .thenReturn(List.of());
+
+        SpendingHistoryResponse history = controller.getSpendingHistory(jwt, YearMonth.of(2026, 11), 3);
+
+        assertEquals(LocalDate.of(2026, 8, 1), history.start());
+        assertEquals(LocalDate.of(2026, 10, 31), history.end());
+        assertTrue(history.months().isEmpty());
+        assertTrue(history.groups().isEmpty());
+    }
+
+    @Test
+    void averagesSpendingHistoryAcrossEveryTrackedAccountAtTheUsersShare() {
+        payeesWithoutCorrections();
+        // A year back from January takes in all of last year.
+        when(spending.between(USER_ID, LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31), null))
+                .thenReturn(List.of(
+                        spentOn(Bucket.FIXED_COSTS, "RENT_AND_UTILITIES", "600", 50, LocalDate.of(2025, 11, 3)),
+                        spentOn(Bucket.FIXED_COSTS, "RENT_AND_UTILITIES", "600", 50, LocalDate.of(2025, 12, 3)),
+                        spentOn(Bucket.GUILT_FREE, "FOOD_AND_DRINK", "45.50", 100, LocalDate.of(2025, 12, 9))));
+
+        SpendingHistoryResponse history = controller.getSpendingHistory(jwt, YearMonth.of(2026, 1), 12);
+
+        assertEquals(List.of("2025-11", "2025-12"), history.months());
+        assertEquals("FIXED_COSTS", history.groups().get(0).bucket());
+        CategoryHistoryResponse rent = history.groups().get(0).categories().get(0);
+        assertEquals("CATEGORY", rent.kind().name());
+        assertEquals("RENT_AND_UTILITIES", rent.category());
+        assertEquals("600", rent.average().toPlainString());
+        assertEquals("ALL", history.groups().get(1).categories().get(0).kind().name());
+        assertEquals("22.75", history.groups().get(1).average().toPlainString());
+    }
+
+    @Test
+    void looksBackOneToTwelveWholeMonths() {
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
+                () -> controller.getSpendingHistory(jwt, YearMonth.of(2026, 11), 0)).getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
+                () -> controller.getSpendingHistory(jwt, YearMonth.of(2026, 11), 13)).getStatusCode());
+    }
+
+    @Test
+    void defaultsEachLineToItsAverageOverTheLastThreeWholeMonths() {
+        RecurringPayee grocer = new RecurringPayee(USER_ID, new RecurringMerchant(RecurringKind.BILL, "whole foods"));
+        grocer.judged(null, null, SpendingPlanBucket.FIXED_COSTS, "Groceries", "state", Instant.now());
+        when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(
+                Map.of(), Map.of(), Map.of(grocer.payee(), grocer), Set.of(), new TransactionExclusions.Snapshot(List.of())));
+        when(spending.between(USER_ID, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 31), null))
+                .thenReturn(List.of(
+                        groceries("300", LocalDate.of(2026, 8, 4)),
+                        groceries("240", LocalDate.of(2026, 9, 11)),
+                        groceries("101", LocalDate.of(2026, 10, 20))));
+
+        LineDefaultsResponse defaults = controller.getLineDefaults(jwt, YearMonth.of(2026, 11));
+
+        assertEquals(Map.of("Groceries", new BigDecimal("214")), defaults.lines());
+    }
+
+    @Test
+    void hasNoLineDefaultsWithoutSpending() {
+        payeesWithoutCorrections();
+        when(spending.between(eq(USER_ID), any(), any(), isNull())).thenReturn(List.of());
+
+        assertTrue(controller.getLineDefaults(jwt, YearMonth.of(2026, 11)).lines().isEmpty());
+    }
+
+    private void trackChecking() {
+        when(accountRepository.findAllByUserIdAndTracksSpendingIsTrue(USER_ID)).thenReturn(List.of(account("checking", 100)));
+    }
+
+    private void payeesWithoutCorrections() {
+        when(payeeLookup.forUser(USER_ID)).thenReturn(new PayeeLookup.Payees(
+                Map.of(), Map.of(), Map.of(), Set.of(), new TransactionExclusions.Snapshot(List.of())));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void savedPlanWithItem(String streamId) {
+        when(planService.find(eq(USER_ID), any())).thenAnswer(invocation -> {
+            SpendingPlan plan = new SpendingPlan(USER_ID);
+            plan.replace(null, null, null, SpendingPlan.DEFAULT_BUFFER_PERCENT, List.of(
+                    new SpendingPlanLine(SpendingPlanBucket.FIXED_COSTS, "Storage", null, false, null, List.of(
+                            new SpendingPlanItem("Storage Co", new BigDecimal("90"), streamId)))));
+            return Optional.of(((Function<SpendingPlan, ?>) invocation.getArgument(1)).apply(plan));
+        });
+    }
+
+    private static List<String> itemNames(PlanSuggestionsResponse suggestions, String line) {
+        return line(suggestions, line).items().stream().map(SpendingPlanController.ItemResponse::name).toList();
+    }
+
+    private static SpendingPlanController.LineResponse line(PlanSuggestionsResponse suggestions, String name) {
+        return suggestions.lines().stream().filter(line -> line.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    private static PlaidAccount account(String accountId, int sharePercent) {
+        PlaidAccount account = new PlaidAccount(accountId, "item-id", USER_ID);
+        account.updateSnapshot(accountId, null, null, "depository", "checking", null, null, null, "USD", null);
+        account.updateTracking(true, true, sharePercent);
+        return account;
+    }
+
+    private static PlaidRecurringStream stream(
+            String streamId, String accountId, String merchant, String amount, String frequency, boolean inflow) {
+        return new PlaidRecurringStream(streamId, "item-id", USER_ID, accountId, new BigDecimal(amount), frequency, inflow)
+                .merchantName(merchant)
+                .description(merchant.toUpperCase())
+                .isoCurrencyCode("USD")
+                .nextDate(LocalDate.of(2026, 10, inflow ? 17 : 20 + streamId.length()))
+                .lastDate(LocalDate.of(2026, 10, 3))
+                .category(inflow ? "INCOME" : "GENERAL_SERVICES")
+                .categoryDetailed(inflow ? "INCOME_WAGES" : "GENERAL_SERVICES_OTHER");
+    }
+
+    private static RecurringCandidate candidate(
+            String merchantKey, String amount, RecurringCandidate.Status status, String planLine) {
+        return new RecurringCandidate(RecurringKind.BILL, merchantKey, merchantKey, "checking", new BigDecimal(amount),
+                "USD", RecurringFrequency.MONTHLY, false, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 10, 1),
+                "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES", 100, new BigDecimal("0.9"),
+                planLine == null ? null : SpendingPlanBucket.FIXED_COSTS, planLine, status);
+    }
+
+    private static Spending.Spent groceries(String amount, LocalDate date) {
+        PlaidTransaction transaction = new PlaidTransaction(
+                "txn-" + ++transactions, "item-id", USER_ID, "account-1", new BigDecimal(amount), date)
+                .personalFinanceCategory("FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES");
+        transaction.merchantName("Whole Foods");
+        ReflectionTestUtils.setField(transaction, "bucket", Bucket.FIXED_COSTS);
+        return new Spending.Spent(transaction, 100);
+    }
+
+    private static Spending.Spent spentOn(Bucket bucket, String category, String amount, int sharePercent, LocalDate date) {
+        Spending.Spent spent = spent(bucket, category, amount, sharePercent);
+        ReflectionTestUtils.setField(spent.transaction(), "transactionDate", date);
+        return spent;
     }
 
     /** 4,000 take-home gives 1,500 guilt-free: 500 from the paycheck, less 2,200 fixed with the buffer, 500 and 300. */

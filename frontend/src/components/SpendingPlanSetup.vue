@@ -9,20 +9,14 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Skeleton from 'primevue/skeleton'
 import {
-  getRecurringCandidates,
-  getRecurringTransactions,
-  getSpendingByBucket,
-  type RecurringStream,
-} from '../api/PlaidService'
-import { recurringLabel } from '../api/plaidLabels'
-import { evaluateSpendingPlan, saveSpendingPlan } from '../api/SpendingPlanService'
-import {
-  estimateMonthlyTakeHome,
-  planFromRecurring,
-  recurringChanges,
-  recurringItem,
-  unplacedBills,
-} from '../spendingPlan/fromRecurring'
+  evaluateSpendingPlan,
+  getLineDefaults,
+  getPlanSuggestions,
+  saveSpendingPlan,
+  type PlanSuggestionsResponse,
+  type RecurringPayment,
+} from '../api/SpendingPlanService'
+import { recurringChanges } from '../spendingPlan/fromRecurring'
 import { formatPlanAmount, parseAmount, roundCents } from '../spendingPlan/money'
 import {
   DEFAULT_BUFFER_PERCENT,
@@ -38,12 +32,12 @@ import {
 import {
   BUCKET_IDS,
   fromEvaluation,
+  fromLines,
   fromSaved,
   toSaveRequest,
   type SavedPlan,
 } from '../spendingPlan/savedPlan'
-import { withConfirmed } from '../spending/recurring'
-import { historyRange, lineAverages, spendingHistory } from '../spendingPlan/spendingHistory'
+import { currentMonth } from '../spendingPlan/spendingHistory'
 import InfoTip from './InfoTip.vue'
 import RecurringDialog from './RecurringDialog.vue'
 import SpendingExplorer from './SpendingExplorer.vue'
@@ -125,21 +119,18 @@ const showSpending = ref(false)
 // Payments Jev thinks repeat that the user hasn't confirmed or dismissed, so they aren't filled in.
 const unansweredCandidates = ref(0)
 // Recurring bills Jev put on no line, or hasn't judged yet, for the user to place or skip.
-const unplaced = ref<RecurringStream[]>([])
+const unplaced = ref<RecurringPayment[]>([])
 const unplacedCount = computed(() => (loadingEstimates.value ? 0 : unplaced.value.length))
 // The bills on no line stay folded away until the user asks to place them.
 const showUnplaced = ref(false)
 const recurringVisible = ref(false)
 const recurringStartOn = ref<'recurring' | 'possible'>('recurring')
-// The recurring payments the plan was last brought up to date with, so answers given in the
-// recurring dialog can be told apart from bills the user skipped or took off a line.
-let recurringBefore: Promise<RecurringStream[] | null> | null = null
+// The suggestions the plan was last brought up to date with, so answers given in the recurring
+// dialog can be told apart from bills the user skipped or took off a line.
+let recurringBefore: Promise<PlanSuggestionsResponse | null> | null = null
 
 // What the user spends in a month on each line, by its name, for blank lines' default amounts.
 const lineDefaults = ref(new Map<string, number>())
-
-/** How many whole months of spending a line's default amount is averaged over. */
-const DEFAULT_MONTHS = 3
 
 /**
  * The plan as it will be saved: a line the user left blank counts at its default amount, if it
@@ -247,20 +238,19 @@ async function save() {
 }
 
 /**
- * Fills in amounts from the recurring transactions in every tracked account: Plaid's, and the
- * ones the user confirmed. Plaid's alone still fill in when candidates can't be loaded. Lines
- * with no recurring bill default to what the user spends on them, when that can be loaded.
+ * Fills in the server's suggestions from the recurring payments in every tracked account:
+ * Plaid's, and the ones the user confirmed. Lines with no recurring bill default to what the
+ * user spends on them, when that can be loaded.
  */
 async function loadEstimates() {
   loadingEstimates.value = true
   try {
-    const loading = loadRecurring()
+    const loading = loadSuggestions()
     recurringBefore = loading.catch(() => null)
-    const [streams] = await Promise.all([loading, loadDefaults()])
-    const estimated = estimateMonthlyTakeHome(streams)
-    takeHome.value = estimated
-    setPlan(planFromRecurring(streams))
-    unplaced.value = unplacedBills(streams)
+    const [suggestions] = await Promise.all([loading, loadDefaults()])
+    takeHome.value = suggestions.take_home
+    setPlan(fromLines(suggestions.lines))
+    unplaced.value = suggestions.unplaced
   } catch {
     takeHome.value = null
     setPlan(defaultPlan())
@@ -270,24 +260,20 @@ async function loadEstimates() {
 }
 
 /**
- * Plaid's recurring payments in every tracked account and the ones the user confirmed. Plaid's
- * alone still load when candidates can't.
+ * What the plan starts from, worked out by the server from the recurring payments. Every bill on
+ * no line is asked for, even ones on the saved plan: whether one still needs placing depends on
+ * the plan being edited, which may have taken it off since.
  */
-async function loadRecurring() {
-  const [found, candidates] = await Promise.all([
-    getRecurringTransactions(undefined, 50),
-    getRecurringCandidates().catch(() => []),
-  ])
-  unansweredCandidates.value = candidates.filter(
-    (candidate) => candidate.status === 'SUGGESTED',
-  ).length
-  return withConfirmed(found, candidates)
+async function loadSuggestions() {
+  const suggestions = await getPlanSuggestions(true)
+  unansweredCandidates.value = suggestions.suggested_candidates
+  return suggestions
 }
 
 function openRecurring(startOn: 'recurring' | 'possible') {
   // A saved plan didn't load the recurring payments, so what they were before any answers is
   // loaded now.
-  recurringBefore ??= loadRecurring().catch(() => null)
+  recurringBefore ??= loadSuggestions().catch(() => null)
   recurringStartOn.value = startOn
   recurringVisible.value = true
 }
@@ -299,16 +285,16 @@ function openRecurring(startOn: 'recurring' | 'possible') {
  */
 async function onRecurringChanged() {
   const before = await recurringBefore
-  let after: RecurringStream[]
+  let after: PlanSuggestionsResponse
   try {
-    after = await loadRecurring()
+    after = await loadSuggestions()
   } catch {
     return
   }
   recurringBefore = Promise.resolve(after)
   if (!before) return
 
-  const changes = recurringChanges(before, after)
+  const changes = recurringChanges(before.recurring, after.recurring)
   const rows = BUCKETS.flatMap((bucket) => plan.value[bucket.id])
   for (const row of rows) {
     const hadItems = row.items.length > 0
@@ -329,7 +315,7 @@ async function onRecurringChanged() {
     if (!bill.is_inflow && bill.plan_bucket && bill.plan_line) {
       addBill(BUCKET_IDS[bill.plan_bucket], bill.plan_line, bill)
     } else if (
-      unplacedBills([bill]).length &&
+      after.unplaced.some((other) => other.stream_id === bill.stream_id) &&
       // An earlier answer's catch-up, still on its way when this one started, may have listed it.
       !unplaced.value.some((other) => other.stream_id === bill.stream_id)
     ) {
@@ -337,13 +323,11 @@ async function onRecurringChanged() {
     }
   }
 
-  if (takeHome.value === estimateMonthlyTakeHome(before)) {
-    takeHome.value = estimateMonthlyTakeHome(after)
-  }
+  if (takeHome.value === before.take_home) takeHome.value = after.take_home
 }
 
 /** Adds a bill to the named line, adding the line if the plan doesn't have it. */
-function addBill(bucket: BucketId, lineName: string, bill: RecurringStream) {
+function addBill(bucket: BucketId, lineName: string, bill: RecurringPayment) {
   let row = plan.value[bucket].find((candidate) => candidate.name === lineName)
   if (!row) {
     row = toRow({ name: lineName, amount: null, items: [], fromPaycheck: false })
@@ -355,8 +339,7 @@ function addBill(bucket: BucketId, lineName: string, bill: RecurringStream) {
 /** What the user usually spends on each line; without it, blank lines simply stay blank. */
 async function loadDefaults() {
   try {
-    const spending = await getSpendingByBucket(undefined, historyRange(DEFAULT_MONTHS))
-    lineDefaults.value = lineAverages(spendingHistory(spending))
+    lineDefaults.value = await getLineDefaults(currentMonth())
   } catch {
     lineDefaults.value = new Map()
   }
@@ -532,24 +515,25 @@ function addItem(row: PlanRow) {
 }
 
 /** Puts a bill on the line the user picked for it, straight away. */
-function placeBill(bill: RecurringStream, rowId: string) {
+function placeBill(bill: RecurringPayment, rowId: string) {
   const row = BUCKETS.flatMap((bucket) => plan.value[bucket.id]).find((row) => row.id === rowId)
   if (!row) return
   addToRow(row, bill)
   skipBill(bill)
 }
 
-function addToRow(row: PlanRow, bill: RecurringStream) {
+function addToRow(row: PlanRow, bill: RecurringPayment) {
   // The line's own amount becomes an item first, so the bill adds to it rather than replacing it.
   if (row.items.length === 0 && filled(row).amount != null) addItem(row)
-  row.items.push(toItem(recurringItem(bill)))
+  const { name, amount, stream_id } = bill.plan_item
+  row.items.push(toItem({ name, amount, streamId: stream_id }))
 }
 
-function skipBill(bill: RecurringStream) {
+function skipBill(bill: RecurringPayment) {
   unplaced.value = unplaced.value.filter((other) => other !== bill)
 }
 
-function onPlaceIntoChange(bill: RecurringStream, event: Event) {
+function onPlaceIntoChange(bill: RecurringPayment, event: Event) {
   const target = event.target
   if (!(target instanceof HTMLSelectElement) || !target.value) return
   placeBill(bill, target.value)
@@ -637,15 +621,15 @@ function amountValue(amount: number | null) {
               <TransitionGroup name="unplaced" tag="div" class="unplaced-rows">
                 <div v-for="bill in unplaced" :key="bill.stream_id" class="unplaced-row">
                   <div class="unplaced-payee">
-                    <span class="unplaced-name">{{ recurringLabel(bill) }}</span>
+                    <span class="unplaced-name">{{ bill.plan_item.name }}</span>
                     <span class="unplaced-amount"
-                      >{{ formatPlanAmount(recurringItem(bill).amount ?? 0) }}/mo</span
+                      >{{ formatPlanAmount(bill.plan_item.amount) }}/mo</span
                     >
                   </div>
                   <!-- Picking a line puts the bill on it; there's no separate add step. -->
                   <select
                     class="line-select"
-                    :aria-label="`Line for ${recurringLabel(bill)}`"
+                    :aria-label="`Line for ${bill.plan_item.name}`"
                     value=""
                     @change="onPlaceIntoChange(bill, $event)"
                   >
@@ -660,7 +644,7 @@ function amountValue(amount: number | null) {
                     type="button"
                     class="unplaced-skip"
                     title="Skip"
-                    :aria-label="`Skip ${recurringLabel(bill)}`"
+                    :aria-label="`Skip ${bill.plan_item.name}`"
                     @click="skipBill(bill)"
                   >
                     <X :size="15" :stroke-width="2" aria-hidden="true" />

@@ -3,18 +3,12 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import RecurringDialog from '../RecurringDialog.vue'
 import SpendingPlanSetup, { EVALUATE_AFTER_MS } from '../SpendingPlanSetup.vue'
-import {
-  getRecurringCandidates,
-  getRecurringTransactions,
-  getSpendingByBucket,
-  type PlaidTransaction,
-  type RecurringCandidate,
-  type RecurringStream,
-  type SpendingByBucket,
-} from '../../api/PlaidService'
+import type { RecurringCandidate, RecurringStream } from '../../api/PlaidService'
 
 import {
   evaluateSpendingPlan,
+  getLineDefaults,
+  getPlanSuggestions,
   saveSpendingPlan,
   type PlanEvaluationResponse,
   type SpendingPlanRequest,
@@ -22,17 +16,23 @@ import {
 import { defaultPlan } from '../../spendingPlan/plan'
 import { fromEvaluation, toSaveRequest, type SavedPlan } from '../../spendingPlan/savedPlan'
 import { fakeEvaluation } from './fakePlanEvaluation'
+import { fakeSuggestions } from './fakePlanSuggestions'
 
-vi.mock('../../api/PlaidService', () => ({
-  getRecurringTransactions: vi.fn(),
-  getRecurringCandidates: vi.fn<(accountId?: string) => Promise<RecurringCandidate[]>>(),
-  getSpendingByBucket: vi.fn(),
-}))
+// The recurring dialog is stubbed; nothing here talks to Plaid's endpoints.
+vi.mock('../../api/PlaidService', () => ({}))
 
 vi.mock('../../api/SpendingPlanService', () => ({
   saveSpendingPlan: vi.fn(),
   evaluateSpendingPlan: vi.fn<(plan: SpendingPlanRequest) => Promise<PlanEvaluationResponse>>(),
+  getPlanSuggestions: vi.fn(),
+  getLineDefaults: vi.fn(),
 }))
+
+// What the server works its suggestions out from.
+const recurringStreams = vi.fn<() => Promise<RecurringStream[]>>()
+const recurringCandidates = vi.fn<() => Promise<RecurringCandidate[]>>()
+// The saved plan the server has, while a test edits one.
+let serverPlan: SavedPlan | undefined
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -84,6 +84,7 @@ const rent: RecurringStream = {
 }
 
 function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}) {
+  serverPlan = props.saved
   return mount(SpendingPlanSetup, {
     props,
     global: {
@@ -105,14 +106,16 @@ beforeEach(() => {
   vi.resetAllMocks()
   localStorage.clear()
   document.body.innerHTML = ''
-  vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
-  vi.mocked(getRecurringCandidates).mockResolvedValue([])
-  vi.mocked(getSpendingByBucket).mockResolvedValue({
-    start: '2026-07-01',
-    end: '2026-09-30',
-    total: 0,
-    buckets: [],
-  })
+  recurringStreams.mockResolvedValue([paycheck, rent])
+  recurringCandidates.mockResolvedValue([])
+  vi.mocked(getPlanSuggestions).mockImplementation(async (newPlan) =>
+    fakeSuggestions(
+      await recurringStreams(),
+      await recurringCandidates(),
+      newPlan || !serverPlan ? [] : savedStreamIds(serverPlan),
+    ),
+  )
+  vi.mocked(getLineDefaults).mockResolvedValue(new Map())
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
     ...request,
     updated_at: '2026-09-22T19:30:00Z',
@@ -171,56 +174,18 @@ const sterlingRent: RecurringStream = {
   plan_line: null,
 }
 
-function groceries(amount: number, date: string): PlaidTransaction {
-  return {
-    transaction_id: `groceries-${date}`,
-    account_id: 'checking',
-    amount,
-    iso_currency_code: 'USD',
-    date,
-    name: 'WHOLE FOODS',
-    merchant_name: 'Whole Foods',
-    logo_url: null,
-    pending: false,
-    category: 'FOOD_AND_DRINK',
-    category_detailed: 'FOOD_AND_DRINK_GROCERIES',
-    bucket: 'FIXED_COSTS',
-    plan_line: 'Groceries',
-    share_percent: 100,
-    payee_key: 'whole foods',
-    payee_kind: 'BILL',
-    bucket_corrected: false,
-    category_corrected: false,
-    recurring: null,
-  }
-}
-
 /** Three months of groceries averaging $600 a month. */
-const groceriesSpending: SpendingByBucket = {
-  start: '2026-07-01',
-  end: '2026-09-30',
-  total: 1800,
-  buckets: [
-    {
-      bucket: 'FIXED_COSTS',
-      amount: 1800,
-      categories: [
-        {
-          category: 'FOOD_AND_DRINK',
-          amount: 1800,
-          transactions: [
-            groceries(650, '2026-07-04'),
-            groceries(550, '2026-08-11'),
-            groceries(600, '2026-09-20'),
-          ],
-        },
-      ],
-    },
-  ],
-}
+const groceriesDefaults = new Map([['Groceries', 600]])
 
 function spendOnGroceries() {
-  vi.mocked(getSpendingByBucket).mockResolvedValue(groceriesSpending)
+  vi.mocked(getLineDefaults).mockResolvedValue(groceriesDefaults)
+}
+
+/** Stream ids on a plan, which the server leaves off the bills to place unless it's a new plan. */
+function savedStreamIds(plan: SavedPlan) {
+  return Object.values(plan.plan).flatMap((lines) =>
+    lines.flatMap((line) => line.items.flatMap((item) => (item.streamId ? [item.streamId] : []))),
+  )
 }
 
 describe('spending plan setup', () => {
@@ -264,8 +229,8 @@ describe('spending plan setup', () => {
   })
 
   it('waits for a saved plan’s defaults before saving or breaking a line down', async () => {
-    let answer: (spending: SpendingByBucket) => void = () => {}
-    vi.mocked(getSpendingByBucket).mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    let answer: (defaults: Map<string, number>) => void = () => {}
+    vi.mocked(getLineDefaults).mockReturnValue(new Promise((resolve) => (answer = resolve)))
     const wrapper = mountSetup({
       saved: {
         ...savedPlan,
@@ -292,7 +257,7 @@ describe('spending plan setup', () => {
     expect(saveSpendingPlan).not.toHaveBeenCalled()
     expect(wrapper.find('input[aria-label="Item amount"]').exists()).toBe(false)
 
-    answer(groceriesSpending)
+    answer(groceriesDefaults)
     await flushPromises()
 
     expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
@@ -306,7 +271,7 @@ describe('spending plan setup', () => {
   })
 
   it('lets a saved plan be saved when its defaults can’t be loaded', async () => {
-    vi.mocked(getSpendingByBucket).mockRejectedValue(new Error('offline'))
+    vi.mocked(getLineDefaults).mockRejectedValue(new Error('offline'))
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()
 
@@ -329,7 +294,7 @@ describe('spending plan setup', () => {
     })
     await flushPromises()
 
-    expect(getRecurringTransactions).not.toHaveBeenCalled()
+    expect(getPlanSuggestions).not.toHaveBeenCalled()
     expect(wrapper.get('input[aria-label="Groceries amount"]').attributes('placeholder')).toBe(
       '600',
     )
@@ -338,7 +303,7 @@ describe('spending plan setup', () => {
   })
 
   it('fills in a bill on the line Jev put it on, whatever Plaid calls it', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([
+    recurringStreams.mockResolvedValue([
       paycheck,
       { ...sterlingRent, plan_bucket: 'FIXED_COSTS', plan_line: 'Rent/mortgage' },
     ])
@@ -350,7 +315,7 @@ describe('spending plan setup', () => {
   })
 
   it('keeps bills on no line folded behind a note until the user asks to place them', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
     const wrapper = mountSetup()
     await flushPromises()
 
@@ -368,7 +333,7 @@ describe('spending plan setup', () => {
   })
 
   it('lists bills on no line and puts one on the line the user picks', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
     const wrapper = mountSetup()
     await flushPromises()
 
@@ -385,7 +350,7 @@ describe('spending plan setup', () => {
   })
 
   it('lets the user skip a bill that belongs on no line', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, sterlingRent])
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
     const wrapper = mountSetup()
     await flushPromises()
 
@@ -399,7 +364,7 @@ describe('spending plan setup', () => {
     const wrapper = mountSetup()
     await settle()
 
-    expect(getRecurringTransactions).toHaveBeenCalledWith(undefined, 50)
+    expect(getPlanSuggestions).toHaveBeenCalledWith(true)
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
     expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
@@ -410,7 +375,7 @@ describe('spending plan setup', () => {
   })
 
   it("counts a shared account's rent at the user's share", async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([
+    recurringStreams.mockResolvedValue([
       paycheck,
       { ...rent, account_id: 'joint', amount: 2400, share_percent: 50 },
     ])
@@ -429,8 +394,8 @@ describe('spending plan setup', () => {
       status: 'SUGGESTED',
       ...overrides,
     })
-    vi.mocked(getRecurringTransactions).mockResolvedValue([rent])
-    vi.mocked(getRecurringCandidates).mockResolvedValue([
+    recurringStreams.mockResolvedValue([rent])
+    recurringCandidates.mockResolvedValue([
       candidate({
         stream_id: 'candidate-pay',
         kind: 'PAYCHECK',
@@ -502,8 +467,8 @@ describe('spending plan setup', () => {
       probability: 0.9,
       status: 'SUGGESTED',
     }
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, gym])
-    vi.mocked(getRecurringCandidates).mockResolvedValue([netflix])
+    recurringStreams.mockResolvedValue([paycheck, rent, gym])
+    recurringCandidates.mockResolvedValue([netflix])
     const wrapper = mountSetup()
     await flushPromises()
     await wrapper.get('#take-home-income').setValue('5000')
@@ -511,8 +476,8 @@ describe('spending plan setup', () => {
     expect(wrapper.get('[aria-label="Utilities amount"]').text()).toBe('40')
 
     // In the dialog, the user confirms Netflix and says the gym doesn't repeat.
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent])
-    vi.mocked(getRecurringCandidates).mockResolvedValue([{ ...netflix, status: 'CONFIRMED' }])
+    recurringStreams.mockResolvedValue([paycheck, rent])
+    recurringCandidates.mockResolvedValue([{ ...netflix, status: 'CONFIRMED' }])
     await wrapper.get('.recurring-button').trigger('click')
     wrapper.getComponent(RecurringDialog).vm.$emit('changed')
     await flushPromises()
@@ -525,7 +490,7 @@ describe('spending plan setup', () => {
   })
 
   it('leaves a bill the user skipped off the plan after recurring answers', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, sterlingRent])
+    recurringStreams.mockResolvedValue([paycheck, rent, sterlingRent])
     const wrapper = mountSetup()
     await flushPromises()
     await wrapper.get('[aria-label="Skip Sterling Group"]').trigger('click')
@@ -543,7 +508,7 @@ describe('spending plan setup', () => {
     const wrapper = mountSetup()
     await flushPromises()
 
-    vi.mocked(getRecurringTransactions).mockResolvedValue([paycheck, rent, sterlingRent])
+    recurringStreams.mockResolvedValue([paycheck, rent, sterlingRent])
     await wrapper.get('.recurring-button').trigger('click')
     const dialog = wrapper.getComponent(RecurringDialog)
     dialog.vm.$emit('changed')
@@ -554,13 +519,47 @@ describe('spending plan setup', () => {
     expect(list.findAll('.unplaced-row')).toHaveLength(1)
   })
 
+  it('lists a bill to place again when it repeats again after leaving a saved plan', async () => {
+    // The user had put Sterling on rent themselves; Jev put it on no line.
+    const draft = {
+      ...savedPlanDraft,
+      fixedCosts: [
+        {
+          name: 'Rent/mortgage',
+          amount: null,
+          fromPaycheck: false,
+          items: [{ name: 'Sterling Group', amount: 1554.91, streamId: 'sterling' }],
+        },
+      ],
+    }
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup({ saved: { ...savedPlan, plan: draft } })
+    await flushPromises()
+    await wrapper.get('.recurring-button').trigger('click')
+    const dialog = wrapper.getComponent(RecurringDialog)
+
+    // Said not to repeat: it comes off its line.
+    recurringStreams.mockResolvedValue([paycheck])
+    dialog.vm.$emit('changed')
+    await flushPromises()
+    expect(wrapper.find('[aria-label="Item amount"]').exists()).toBe(false)
+
+    // The answer undone: it repeats again, so it's offered to place.
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
+    dialog.vm.$emit('changed')
+    await flushPromises()
+    expect(
+      wrapper.get('[aria-labelledby="unplaced-heading"]').findAll('.unplaced-row'),
+    ).toHaveLength(1)
+  })
+
   it('adds a payment confirmed while editing a saved plan to its line', async () => {
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()
     await wrapper.get('.recurring-button').trigger('click')
-    expect(getRecurringTransactions).toHaveBeenCalledTimes(1)
+    expect(getPlanSuggestions).toHaveBeenCalledTimes(1)
 
-    vi.mocked(getRecurringTransactions).mockResolvedValue([
+    recurringStreams.mockResolvedValue([
       paycheck,
       rent,
       {
@@ -581,15 +580,6 @@ describe('spending plan setup', () => {
       '1500',
     )
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')
-  })
-
-  it('fills in Plaid’s recurring payments when candidates can’t be loaded', async () => {
-    vi.mocked(getRecurringCandidates).mockRejectedValue(new Error('offline'))
-    const wrapper = mountSetup()
-    await flushPromises()
-
-    expect(wrapper.get('[aria-label="Rent/mortgage amount"]').text()).toBe('1450')
-    expect(wrapper.findAll('.plan-note')).toHaveLength(0)
   })
 
   it('lets you edit, add, and remove fixed cost rows', async () => {
@@ -613,7 +603,7 @@ describe('spending plan setup', () => {
   })
 
   it('shows the recurring bills behind a line and lets you edit them', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([
+    recurringStreams.mockResolvedValue([
       paycheck,
       rent,
       {
@@ -682,7 +672,7 @@ describe('spending plan setup', () => {
   })
 
   it('starts with the spreadsheet cost rows when the account has no recurring bills', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([])
+    recurringStreams.mockResolvedValue([])
     const wrapper = mountSetup()
     await flushPromises()
 
@@ -697,7 +687,7 @@ describe('spending plan setup', () => {
   })
 
   it('still lets you build a plan when recurring streams fail to load', async () => {
-    vi.mocked(getRecurringTransactions).mockRejectedValueOnce(new Error('Server unavailable'))
+    recurringStreams.mockRejectedValueOnce(new Error('Server unavailable'))
     const wrapper = mountSetup()
     await settle()
 
@@ -711,7 +701,7 @@ describe('spending plan setup', () => {
   })
 
   it('lists the spreadsheet investment and savings lines, filled from transfers', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([
+    recurringStreams.mockResolvedValue([
       paycheck,
       rent,
       {
@@ -1038,7 +1028,7 @@ describe('spending plan setup', () => {
   })
 
   it('asks for take-home pay before showing guilt-free spending', async () => {
-    vi.mocked(getRecurringTransactions).mockResolvedValue([])
+    recurringStreams.mockResolvedValue([])
     const wrapper = mountSetup()
     await settle()
 
@@ -1158,7 +1148,7 @@ describe('spending plan setup', () => {
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()
 
-    expect(getRecurringTransactions).not.toHaveBeenCalled()
+    expect(getPlanSuggestions).not.toHaveBeenCalled()
     expect(wrapper.find('[aria-label="Account"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('filled in for you')
     expect(wrapper.get('#take-home-income').element).toHaveProperty('value', '5200')

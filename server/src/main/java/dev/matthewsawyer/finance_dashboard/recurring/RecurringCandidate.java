@@ -5,7 +5,9 @@ import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * A payee Jev thinks the user pays or is paid by regularly. The amount, account and categories
@@ -33,6 +35,14 @@ public record RecurringCandidate(
         String planLine,
         Status status
 ) {
+
+    /**
+     * Stands in for a stream id, since a candidate has no stream of its own: made up from the
+     * kind and payee, and hashed so it fits where plans store stream ids.
+     */
+    public String streamId() {
+        return "candidate-" + UUID.nameUUIDFromBytes((kind + ":" + merchantKey).getBytes(StandardCharsets.UTF_8));
+    }
 
     /** Whether the user has answered: suggested until they do, then confirmed or dismissed. */
     public enum Status {
