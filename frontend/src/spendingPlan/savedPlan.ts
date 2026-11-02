@@ -1,6 +1,7 @@
 import type {
   PlanEvaluationResponse,
   SpendingPlanBucket,
+  SpendingPlanLinePayload,
   SpendingPlanRequest,
   SpendingPlanResponse,
 } from '../api/SpendingPlanService'
@@ -59,9 +60,10 @@ export function toSaveRequest(
   }
 }
 
-export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
+/** Lines as the server sends them, saved or suggested, in the editor's shape. */
+export function fromLines(lines: SpendingPlanLinePayload[]): PlanDraft {
   const plan: PlanDraft = { fixedCosts: [], investments: [], savings: [] }
-  for (const line of saved.lines) {
+  for (const line of lines) {
     plan[BUCKET_IDS[line.bucket]].push({
       name: line.name,
       amount: line.amount,
@@ -74,12 +76,16 @@ export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
       })),
     })
   }
+  return plan
+}
+
+export function fromSaved(saved: SpendingPlanResponse): SavedPlan {
   return {
     accountId: saved.account_id,
     takeHome: saved.take_home,
     grossPay: saved.gross_pay,
     bufferPercent: saved.fixed_cost_buffer_percent,
-    plan,
+    plan: fromLines(saved.lines),
     updatedAt: saved.updated_at,
     evaluation: fromEvaluation(saved.evaluation),
   }

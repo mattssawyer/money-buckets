@@ -1,95 +1,82 @@
 import { describe, expect, it } from 'vitest'
-import type { Bucket, PlaidTransaction, SpendingByBucket } from '../api/PlaidService'
-import { historyRange, lineAverages, searchHistory, spendingHistory } from './spendingHistory'
+import type { SpendingHistoryResponse } from '../api/SpendingPlanService'
+import { currentMonth, labelHistory, searchHistory } from './spendingHistory'
 
-let nextId = 0
-
-interface Spent {
-  line?: string
-  detailed?: string | null
-  primary?: string
-  sharePercent?: number
+/** As the server sends it: lines and categories already grouped and averaged. */
+const response: SpendingHistoryResponse = {
+  start: '2026-07-01',
+  end: '2026-09-30',
+  months: ['2026-07', '2026-08', '2026-09'],
+  groups: [
+    {
+      bucket: 'FIXED_COSTS',
+      average: 1890,
+      categories: [
+        {
+          key: 'FIXED_COSTS/line/Groceries',
+          kind: 'LINE',
+          line: 'Groceries',
+          category: null,
+          category_detailed: null,
+          average: 210,
+          payees: [
+            { key: 'FIXED_COSTS/line/Groceries|Whole Foods', name: 'Whole Foods', average: 180 },
+            { key: 'FIXED_COSTS/line/Groceries|Trader Joe’s', name: 'Trader Joe’s', average: 30 },
+          ],
+        },
+        {
+          key: 'FIXED_COSTS/category/TRANSPORTATION/TRANSPORTATION_PUBLIC_TRANSIT',
+          kind: 'CATEGORY',
+          line: null,
+          category: 'TRANSPORTATION',
+          category_detailed: 'TRANSPORTATION_PUBLIC_TRANSIT',
+          average: 130,
+          payees: [{ key: 'transit|MTA', name: 'MTA', average: 130 }],
+        },
+        {
+          key: 'FIXED_COSTS/category/RENT_AND_UTILITIES/',
+          kind: 'CATEGORY',
+          line: null,
+          category: 'RENT_AND_UTILITIES',
+          category_detailed: null,
+          average: 1500,
+          payees: [{ key: 'rent|Sterling Group', name: 'Sterling Group', average: 1500 }],
+        },
+      ],
+    },
+    {
+      bucket: 'GUILT_FREE',
+      average: 30,
+      categories: [
+        {
+          key: 'GUILT_FREE/all',
+          kind: 'ALL',
+          line: null,
+          category: null,
+          category_detailed: null,
+          average: 30,
+          payees: [
+            { key: 'GUILT_FREE/all|Dig Inn', name: 'Dig Inn', average: 20 },
+            { key: 'GUILT_FREE/all|Whole Foods', name: 'Whole Foods', average: 10 },
+          ],
+        },
+      ],
+    },
+  ],
 }
 
-function spent(
-  merchant: string,
-  amount: number,
-  date: string,
-  where: Spent = {},
-): PlaidTransaction {
-  return {
-    transaction_id: `txn-${nextId++}`,
-    account_id: 'checking',
-    amount,
-    iso_currency_code: 'USD',
-    date,
-    name: merchant.toUpperCase(),
-    merchant_name: merchant,
-    logo_url: null,
-    pending: false,
-    category: where.primary ?? 'FOOD_AND_DRINK',
-    category_detailed: where.detailed === undefined ? 'FOOD_AND_DRINK_GROCERIES' : where.detailed,
-    bucket: 'FIXED_COSTS',
-    plan_line: where.line ?? null,
-    share_percent: where.sharePercent ?? 100,
-    payee_key: merchant.toLowerCase(),
-    payee_kind: 'BILL',
-    bucket_corrected: false,
-    category_corrected: false,
-    recurring: null,
-  }
-}
-
-function spending(byBucket: Partial<Record<Bucket, PlaidTransaction[]>>): SpendingByBucket {
-  return {
-    start: '2026-07-01',
-    end: '2026-09-30',
-    total: 0,
-    // The server sends buckets in its own order; the history puts them in the plan's.
-    buckets: (Object.keys(byBucket) as Bucket[]).map((bucket) => ({
-      bucket,
-      amount: 0,
-      categories: [{ category: 'FOOD_AND_DRINK', amount: 0, transactions: byBucket[bucket] ?? [] }],
-    })),
-  }
-}
-
-const GROCERIES = { line: 'Groceries' }
-const RESTAURANT = { detailed: 'FOOD_AND_DRINK_RESTAURANT' }
-const TRANSIT = { primary: 'TRANSPORTATION', detailed: 'TRANSPORTATION_PUBLIC_TRANSIT' }
-
-const history = spendingHistory(
-  spending({
-    GUILT_FREE: [
-      spent('Dig Inn', 60, '2026-09-02', RESTAURANT),
-      spent('Whole Foods', 30, '2026-09-03'),
-    ],
-    FIXED_COSTS: [
-      spent('MTA', 390, '2026-08-01', TRANSIT),
-      spent('Whole Foods', 300, '2026-07-04', GROCERIES),
-      spent('Whole Foods', 240, '2026-08-11', GROCERIES),
-      spent('Trader Joe’s', 90, '2026-09-20', GROCERIES),
-      spent('Uniqlo', 150, '2026-08-15', { line: 'Clothes' }),
-    ],
-  }),
-)
+const history = labelHistory(response)
 
 describe('spending history', () => {
-  it('covers whole months ending with last month', () => {
-    expect(historyRange(3, new Date(2026, 9, 1))).toEqual({
-      start: '2026-07-01',
-      end: '2026-09-30',
-    })
-    expect(historyRange(12, new Date(2026, 0, 15))).toEqual({
-      start: '2025-01-01',
-      end: '2025-12-31',
-    })
+  it('is the month the user is in, in their own time zone', () => {
+    expect(currentMonth(new Date(2026, 9, 1))).toBe('2026-10')
+    expect(currentMonth(new Date(2026, 0, 31, 23, 30))).toBe('2026-01')
   })
 
-  it('lists fixed costs by line, then by category for spending on no line; guilt-free as one total', () => {
+  it('labels buckets, lines, categories and the buckets listed as one total', () => {
     expect(history.months).toEqual(['2026-07', '2026-08', '2026-09'])
     expect(history.groups.map((group) => [group.label, group.average])).toEqual([
-      ['Fixed costs', 390],
+      ['Fixed costs', 1890],
       ['Guilt-free spending', 30],
     ])
     expect(
@@ -99,85 +86,12 @@ describe('spending history', () => {
     ).toEqual([
       [
         ['Groceries', true, 210],
-        ['Clothes', true, 50],
         ['Public transit', false, 130],
+        // A corrected category has no detailed one, so it's named for its primary.
+        ['Rent & utilities', false, 1500],
       ],
       [['All guilt-free spending', false, 30]],
     ])
-  })
-
-  it('averages a line’s payees per month, largest first', () => {
-    expect(history.groups[0]?.categories[0]).toEqual({
-      key: 'FIXED_COSTS/line/Groceries',
-      label: 'Groceries',
-      onLine: true,
-      average: 210,
-      payees: [
-        { key: 'FIXED_COSTS/line/Groceries|Whole Foods', name: 'Whole Foods', average: 180 },
-        { key: 'FIXED_COSTS/line/Groceries|Trader Joe’s', name: 'Trader Joe’s', average: 30 },
-      ],
-    })
-  })
-
-  it('averages only over months since the first transaction', () => {
-    const recent = spendingHistory(
-      spending({
-        FIXED_COSTS: [
-          spent('Whole Foods', 100, '2026-08-20', GROCERIES),
-          spent('Whole Foods', 300, '2026-09-11', GROCERIES),
-        ],
-      }),
-    )
-
-    expect(recent.months).toEqual(['2026-08', '2026-09'])
-    expect(recent.groups[0]?.average).toBe(200)
-  })
-
-  it('counts the user’s share, nets refunds, and drops what nets to nothing', () => {
-    const netted = spendingHistory(
-      spending({
-        FIXED_COSTS: [
-          spent('Costco', 600, '2026-07-10', { ...GROCERIES, sharePercent: 50 }),
-          spent('Uniqlo', 90, '2026-07-12', { line: 'Clothes' }),
-          spent('Uniqlo', -90, '2026-07-20', { line: 'Clothes' }),
-        ],
-      }),
-    )
-
-    expect(
-      netted.groups[0]?.categories.map((category) => [category.label, category.average]),
-    ).toEqual([['Groceries', 100]])
-  })
-
-  it('files a corrected category, which has no detailed one, under its primary name', () => {
-    const corrected = spendingHistory(
-      spending({
-        FIXED_COSTS: [
-          spent('Sterling Group', 1500, '2026-09-01', {
-            primary: 'RENT_AND_UTILITIES',
-            detailed: null,
-          }),
-        ],
-      }),
-    )
-
-    expect(corrected.groups[0]?.categories[0]?.label).toBe('Rent & utilities')
-  })
-
-  it('is empty without spending', () => {
-    expect(spendingHistory(spending({}))).toEqual({ months: [], groups: [] })
-  })
-
-  it('gives each plan line its monthly average in whole dollars, and nothing off a line', () => {
-    expect([...lineAverages(history)]).toEqual([
-      ['Groceries', 210],
-      ['Clothes', 50],
-    ])
-
-    const uneven = spendingHistory(
-      spending({ FIXED_COSTS: [spent('Whole Foods', 100, '2026-07-04', GROCERIES)] }),
-    )
-    expect(lineAverages(uneven).get('Groceries')).toBe(33)
   })
 
   it('searches lines and categories by name and otherwise by payee', () => {

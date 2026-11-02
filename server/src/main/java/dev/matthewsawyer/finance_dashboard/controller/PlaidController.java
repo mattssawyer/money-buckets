@@ -10,18 +10,15 @@ import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.model.RecurringMerchant;
 import dev.matthewsawyer.finance_dashboard.model.RecurringPayee;
 import dev.matthewsawyer.finance_dashboard.model.Reconnect;
-import java.time.Clock;
-import dev.matthewsawyer.finance_dashboard.recurring.RecurringCandidates;
 import dev.matthewsawyer.finance_dashboard.model.RecurringAnswer;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanBucket;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
-import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayees;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
-import dev.matthewsawyer.finance_dashboard.repository.PlaidRecurringStreamRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidTransactionRepository;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
 import dev.matthewsawyer.finance_dashboard.spending.Spending;
@@ -79,41 +76,32 @@ public class PlaidController {
     private final PlaidItemRepository plaidItemRepository;
     private final PlaidAccountRepository accountRepository;
     private final PlaidTransactionRepository transactionRepository;
-    private final PlaidRecurringStreamRepository recurringStreamRepository;
     private final TrackedAccounts trackedAccounts;
     private final Spending spending;
-    private final RecurringPayees recurringPayees;
     private final PayeeLookup payeeLookup;
-    private final RecurringCandidates recurringCandidates;
+    private final RecurringPayments recurringPayments;
     private final UserService userService;
-    private final Clock clock;
 
     public PlaidController(
             PlaidItemLinking itemLinking,
             PlaidItemRepository plaidItemRepository,
             PlaidAccountRepository accountRepository,
             PlaidTransactionRepository transactionRepository,
-            PlaidRecurringStreamRepository recurringStreamRepository,
             TrackedAccounts trackedAccounts,
             Spending spending,
-            RecurringPayees recurringPayees,
             PayeeLookup payeeLookup,
-            RecurringCandidates recurringCandidates,
-            UserService userService,
-            Clock clock
+            RecurringPayments recurringPayments,
+            UserService userService
     ) {
         this.itemLinking = itemLinking;
         this.plaidItemRepository = plaidItemRepository;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
-        this.recurringStreamRepository = recurringStreamRepository;
         this.trackedAccounts = trackedAccounts;
         this.spending = spending;
-        this.recurringPayees = recurringPayees;
         this.payeeLookup = payeeLookup;
-        this.recurringCandidates = recurringCandidates;
+        this.recurringPayments = recurringPayments;
         this.userService = userService;
-        this.clock = clock;
     }
 
     /**
@@ -299,25 +287,9 @@ public class PlaidController {
         User user = userService.getOrCreateUser(jwt);
 
         Map<String, Integer> shares = trackedAccounts.shares(user.getId(), blankToNull(accountId));
-        List<PlaidRecurringStream> stored = shares.isEmpty()
-                ? List.of()
-                : recurringStreamRepository.findAllByUserIdAndAccountIdIn(user.getId(), shares.keySet());
-
-        Map<RecurringMerchant, RecurringPayee> payees = stored.isEmpty() ? Map.of() : recurringPayees.judged(user.getId());
-        Map<RecurringMerchant, RecurringAnswer> answers =
-                stored.isEmpty() ? Map.of() : recurringCandidates.answers(user.getId());
-        LocalDate today = LocalDate.now(clock);
-        List<RecurringStreamResponse> streams = stored.stream()
-                .filter(stream -> {
-                    RecurringAnswer answer = answers.get(RecurringMerchant.of(stream));
-                    return !stream.hasStopped(today, answer == null ? null : answer.getFrequency());
-                })
-                .map(stream -> {
-                    RecurringMerchant payee = RecurringMerchant.of(stream);
-                    return RecurringStreamResponse.from(
-                            stream, shares.get(stream.getAccountId()), payee, payees.get(payee), answers.get(payee));
-                })
-                .filter(stream -> includeDismissed || stream.status() != RecurringStreamResponse.Status.DISMISSED)
+        List<RecurringStreamResponse> streams = recurringPayments.plaidStreams(user.getId(), shares).stream()
+                .filter(detected -> includeDismissed || !detected.dismissed())
+                .map(RecurringStreamResponse::from)
                 .sorted(Comparator
                         .comparing(RecurringStreamResponse::nextDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(RecurringStreamResponse::lastDate, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -362,9 +334,11 @@ public class PlaidController {
             DISMISSED
         }
 
-        static RecurringStreamResponse from(
-                PlaidRecurringStream stream, int sharePercent, RecurringMerchant merchant, RecurringPayee payee,
-                RecurringAnswer answer) {
+        static RecurringStreamResponse from(RecurringPayments.Detected detected) {
+            PlaidRecurringStream stream = detected.stream();
+            RecurringAnswer answer = detected.answer();
+            RecurringMerchant merchant = detected.payee();
+            RecurringPayee payee = detected.judged();
             boolean frequencySet = answer != null && answer.getFrequency() != null;
             return new RecurringStreamResponse(
                     stream.getStreamId(),
@@ -380,12 +354,12 @@ public class PlaidController {
                     stream.isInflow(),
                     stream.getCategory(),
                     stream.getCategoryDetailed(),
-                    sharePercent,
+                    detected.sharePercent(),
                     payee == null ? null : payee.getPlanBucket(),
                     payee == null ? null : payee.getPlanLine(),
                     merchant == null ? null : merchant.kind(),
                     merchant == null ? null : merchant.key(),
-                    answer != null && !answer.isConfirmed() ? Status.DISMISSED : Status.DETECTED
+                    detected.dismissed() ? Status.DISMISSED : Status.DETECTED
             );
         }
     }

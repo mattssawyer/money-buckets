@@ -1,5 +1,6 @@
 import { isAxiosError } from 'axios'
 import { apiClient } from './client'
+import type { Bucket, RecurringStream } from './PlaidService'
 
 export type SpendingPlanBucket = 'FIXED_COSTS' | 'INVESTMENTS' | 'SAVINGS'
 
@@ -116,4 +117,104 @@ export async function getGuiltFreeLeft(range: {
     if (isAxiosError(error) && error.response?.status === 404) return null
     throw error
   }
+}
+
+/** A recurring payment as a breakdown item: named for who's paid, at the user's monthly share. */
+export type PlanItemResponse = SpendingPlanItemPayload & { amount: number }
+
+/**
+ * A payment that counts as recurring: one of Plaid's streams (DETECTED) or a candidate the user
+ * confirmed (CONFIRMED), with the item it makes on a plan.
+ */
+export interface RecurringPayment extends Omit<RecurringStream, 'status'> {
+  status: 'DETECTED' | 'CONFIRMED'
+  plan_item: PlanItemResponse
+}
+
+/** What a plan starts from, worked out by the server from the recurring payments. */
+export interface PlanSuggestionsResponse {
+  /** Monthly pay from recurring deposits; null when there are none. */
+  take_home: number | null
+  /** The spreadsheet's lines, then any others Jev put bills on, each bill as an item. */
+  lines: SpendingPlanLinePayload[]
+  /** Every payment that counts as recurring, soonest expected first. */
+  recurring: RecurringPayment[]
+  /** The bills among them on no line, for the user to place or skip. */
+  unplaced: RecurringPayment[]
+  /** Recurring candidates waiting for the user's answer, which aren't filled in. */
+  suggested_candidates: number
+}
+
+/**
+ * What a plan starts from. A new plan, even one replacing the saved plan, is offered every bill
+ * on no line; otherwise bills already on the saved plan aren't offered again.
+ */
+export async function getPlanSuggestions(newPlan: boolean): Promise<PlanSuggestionsResponse> {
+  const { data } = await apiClient.get<PlanSuggestionsResponse>('/spending-plan/suggestions', {
+    params: { new_plan: newPlan },
+  })
+  return data
+}
+
+export interface PayeeHistoryResponse {
+  key: string
+  name: string
+  average: number
+}
+
+/**
+ * A plan line (LINE), a Plaid category for spending on no line (CATEGORY), or all of a
+ * bucket's spending (ALL), with what was spent per month on average.
+ */
+export interface CategoryHistoryResponse {
+  key: string
+  kind: 'LINE' | 'CATEGORY' | 'ALL'
+  line: string | null
+  category: string | null
+  category_detailed: string | null
+  average: number
+  /** Largest first. */
+  payees: PayeeHistoryResponse[]
+}
+
+export interface GroupHistoryResponse {
+  bucket: Bucket
+  average: number
+  /** Lines first, then categories, each largest first. */
+  categories: CategoryHistoryResponse[]
+}
+
+/** What the user spent in each of the last few whole months, with the average per month. */
+export interface SpendingHistoryResponse {
+  start: string
+  end: string
+  /** The months averages are taken over, as YYYY-MM, from the first with any spending. */
+  months: string[]
+  groups: GroupHistoryResponse[]
+}
+
+/**
+ * Spending over the `months` whole calendar months before `month` (YYYY-MM, the one the user is
+ * in now), across every tracked account.
+ */
+export async function getSpendingHistory(
+  month: string,
+  months: number,
+): Promise<SpendingHistoryResponse> {
+  const { data } = await apiClient.get<SpendingHistoryResponse>('/spending-plan/spending-history', {
+    params: { month, months },
+  })
+  return data
+}
+
+/**
+ * What each blank line counts as in plan setup, by line name, in whole dollars: the user's
+ * average monthly spending on it over the three whole months before `month` (YYYY-MM).
+ */
+export async function getLineDefaults(month: string): Promise<Map<string, number>> {
+  const { data } = await apiClient.get<{ lines: Record<string, number> }>(
+    '/spending-plan/line-defaults',
+    { params: { month } },
+  )
+  return new Map(Object.entries(data.lines))
 }

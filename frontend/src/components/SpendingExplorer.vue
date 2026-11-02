@@ -3,13 +3,13 @@ import { ChevronRight, Search } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import Skeleton from 'primevue/skeleton'
 import InfoTip from './InfoTip.vue'
-import { getSpendingByBucket } from '../api/PlaidService'
+import { getSpendingHistory } from '../api/SpendingPlanService'
 import { formatPlanAmount } from '../spendingPlan/money'
 import {
   HISTORY_MONTHS,
-  historyRange,
+  currentMonth,
+  labelHistory,
   searchHistory,
-  spendingHistory,
   type CategoryGroup,
   type CategoryHistory,
   type HistoryMonths,
@@ -50,9 +50,9 @@ async function load() {
   loading.value = true
   loadError.value = false
   try {
-    const spending = await getSpendingByBucket(undefined, historyRange(period.value))
+    const spending = await getSpendingHistory(currentMonth(), period.value)
     if (request !== latestLoad) return
-    history.value = spendingHistory(spending)
+    history.value = labelHistory(spending)
   } catch {
     if (request !== latestLoad) return
     history.value = null

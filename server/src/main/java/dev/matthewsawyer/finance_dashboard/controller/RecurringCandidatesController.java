@@ -22,11 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /** Recurring payments Jev has guessed, and the user's yes or no to each. */
 @RestController
@@ -90,8 +88,7 @@ public class RecurringCandidatesController {
 
     /**
      * Shaped like a recurring stream so a confirmed candidate can be listed and planned with
-     * Plaid's; {@code stream_id} is made up from the kind and merchant, since a candidate has no
-     * stream of its own. It's hashed so it fits where plans store stream ids.
+     * Plaid's; {@code stream_id} is made up, see {@link RecurringCandidate#streamId()}.
      */
     public record CandidateResponse(
             @JsonProperty("stream_id") String streamId,
@@ -117,7 +114,7 @@ public class RecurringCandidatesController {
     ) {
         static CandidateResponse from(RecurringCandidate candidate) {
             return new CandidateResponse(
-                    RecurringCandidatesController.streamId(candidate.kind(), candidate.merchantKey()),
+                    candidate.streamId(),
                     candidate.kind(),
                     candidate.merchantKey(),
                     candidate.accountId(),
@@ -138,10 +135,6 @@ public class RecurringCandidatesController {
                     candidate.planLine(),
                     candidate.status());
         }
-    }
-
-    static String streamId(RecurringKind kind, String merchantKey) {
-        return "candidate-" + UUID.nameUUIDFromBytes((kind + ":" + merchantKey).getBytes(StandardCharsets.UTF_8));
     }
 
     private static String checkMerchantKey(String merchantKey) {

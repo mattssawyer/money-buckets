@@ -8,13 +8,19 @@ import dev.matthewsawyer.finance_dashboard.model.SpendingPlanItem;
 import dev.matthewsawyer.finance_dashboard.model.SpendingPlanLine;
 import dev.matthewsawyer.finance_dashboard.model.User;
 import dev.matthewsawyer.finance_dashboard.payees.PayeeLookup;
+import dev.matthewsawyer.finance_dashboard.model.RecurringKind;
 import dev.matthewsawyer.finance_dashboard.plan.PlanEvaluation;
+import dev.matthewsawyer.finance_dashboard.plan.PlanSuggestions;
+import dev.matthewsawyer.finance_dashboard.plan.SpendingHistory;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayment;
+import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
 import dev.matthewsawyer.finance_dashboard.sorting.PlanLines;
 import dev.matthewsawyer.finance_dashboard.spending.Spending;
 import dev.matthewsawyer.finance_dashboard.sorting.BucketSorting;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.service.SpendingPlanService;
 import dev.matthewsawyer.finance_dashboard.service.UserService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -32,12 +38,15 @@ import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/spending-plan")
@@ -49,6 +58,10 @@ public class SpendingPlanController {
     /** NUMERIC(19, 4) holds 15 digits before the decimal point. */
     static final BigDecimal MAX_AMOUNT = new BigDecimal("1e15");
     static final BigDecimal MAX_PERCENT = new BigDecimal("100");
+    /** The most whole months spending history looks back over. */
+    static final int MAX_HISTORY_MONTHS = 12;
+    /** How many whole months a line's default amount is averaged over. */
+    static final int DEFAULT_AMOUNT_MONTHS = 3;
     /** The longest month is 31 days, first to last. */
     static final int MAX_MONTH_DAYS = 30;
 
@@ -58,6 +71,7 @@ public class SpendingPlanController {
     private final UserService userService;
     private final Spending spending;
     private final PayeeLookup payeeLookup;
+    private final RecurringPayments recurringPayments;
 
     public SpendingPlanController(
             SpendingPlanService planService,
@@ -65,7 +79,8 @@ public class SpendingPlanController {
             BucketSorting bucketSorting,
             UserService userService,
             Spending spending,
-            PayeeLookup payeeLookup
+            PayeeLookup payeeLookup,
+            RecurringPayments recurringPayments
     ) {
         this.planService = planService;
         this.accountRepository = accountRepository;
@@ -73,6 +88,7 @@ public class SpendingPlanController {
         this.userService = userService;
         this.spending = spending;
         this.payeeLookup = payeeLookup;
+        this.recurringPayments = recurringPayments;
     }
 
     @GetMapping
@@ -153,6 +169,83 @@ public class SpendingPlanController {
                 stripZeros(spent),
                 planned == null ? null : stripZeros(planned.subtract(spent)),
                 stripZeros(totals.getOrDefault(Spending.UNSORTED, BigDecimal.ZERO)));
+    }
+
+    /**
+     * What a plan starts from, worked out from the payments that count as recurring in every
+     * tracked account: take-home pay, the spreadsheet's lines with recurring bills on the lines
+     * Jev chose, and the bills on no line to place or skip. Bills already on the saved plan
+     * aren't offered to place again, unless {@code new_plan} says the user is starting over.
+     */
+    @GetMapping("/suggestions")
+    public PlanSuggestionsResponse getPlanSuggestions(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(name = "new_plan", defaultValue = "false") boolean newPlan
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+        RecurringPayments.Counted counted = recurringPayments.counted(user.getId());
+        Set<String> onSavedPlan = newPlan ? Set.of() : planService.find(user.getId(), plan -> plan.getLines().stream()
+                        .flatMap(line -> line.getItems().stream())
+                        .map(SpendingPlanItem::getStreamId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet()))
+                .orElse(Set.of());
+        PlanSuggestions suggestions = PlanSuggestions.of(counted.payments(), onSavedPlan);
+        return new PlanSuggestionsResponse(
+                stripZeros(suggestions.takeHome()),
+                suggestions.lines().stream().map(LineResponse::from).toList(),
+                counted.payments().stream().map(RecurringPaymentResponse::from).toList(),
+                suggestions.unplaced().stream().map(RecurringPaymentResponse::from).toList(),
+                counted.suggestedCandidates());
+    }
+
+    /**
+     * What the user spent in each of the {@code months} whole calendar months before {@code
+     * month}, the one they're in now, across every tracked account at their share.
+     */
+    @GetMapping("/spending-history")
+    public SpendingHistoryResponse getSpendingHistory(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam("month") @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
+            @RequestParam(name = "months", defaultValue = "3") int months
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+        if (months < 1 || months > MAX_HISTORY_MONTHS) {
+            throw badRequest("months must be between 1 and " + MAX_HISTORY_MONTHS);
+        }
+        LocalDate start = month.minusMonths(months).atDay(1);
+        return SpendingHistoryResponse.from(start, lastMonth(month).atEndOfMonth(), history(user, start, month));
+    }
+
+    /**
+     * What a blank line counts as in plan setup: the user's average monthly spending on it over
+     * the three whole months before {@code month}, in whole dollars, by line name. Lines with no
+     * spending are left out.
+     */
+    @GetMapping("/line-defaults")
+    public LineDefaultsResponse getLineDefaults(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam("month") @DateTimeFormat(pattern = "yyyy-MM") YearMonth month
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+        LocalDate start = month.minusMonths(DEFAULT_AMOUNT_MONTHS).atDay(1);
+        return new LineDefaultsResponse(history(user, start, month).lineDefaults());
+    }
+
+    /** Spending from {@code start} to the end of the last whole month before {@code month}. */
+    private SpendingHistory history(User user, LocalDate start, YearMonth month) {
+        PayeeLookup.Payees payees = payeeLookup.forUser(user.getId());
+        List<SpendingHistory.Entry> spent = spending.between(
+                        user.getId(), start, lastMonth(month).atEndOfMonth(), null)
+                .stream()
+                .map(each -> SpendingHistory.Entry.of(each, payees))
+                .toList();
+        return SpendingHistory.of(spent, lastMonth(month));
+    }
+
+    /** The last whole month: the one before the month the user is in. */
+    private static YearMonth lastMonth(YearMonth month) {
+        return month.minusMonths(1);
     }
 
     private static PlanEvaluation evaluate(SpendingPlan plan) {
@@ -355,6 +448,138 @@ public class SpendingPlanController {
     ) {
     }
 
+    /**
+     * {@code recurring} is every payment that counts as recurring, with the item it makes on a
+     * plan; {@code unplaced} the bills among them to place or skip. {@code suggested_candidates}
+     * counts the recurring candidates waiting for the user's answer, which aren't filled in.
+     */
+    public record PlanSuggestionsResponse(
+            @JsonProperty("take_home") BigDecimal takeHome,
+            @JsonProperty("lines") List<LineResponse> lines,
+            @JsonProperty("recurring") List<RecurringPaymentResponse> recurring,
+            @JsonProperty("unplaced") List<RecurringPaymentResponse> unplaced,
+            @JsonProperty("suggested_candidates") int suggestedCandidates
+    ) {
+    }
+
+    /** Shaped like a recurring stream from {@code /plaid/transactions/recurring}, with its plan item. */
+    public record RecurringPaymentResponse(
+            @JsonProperty("stream_id") String streamId,
+            @JsonProperty("account_id") String accountId,
+            @JsonProperty("merchant_name") String merchantName,
+            @JsonProperty("description") String description,
+            @JsonProperty("amount") BigDecimal amount,
+            @JsonProperty("iso_currency_code") String isoCurrencyCode,
+            @JsonProperty("frequency") String frequency,
+            @JsonProperty("frequency_set") boolean frequencySet,
+            @JsonProperty("next_date") LocalDate nextDate,
+            @JsonProperty("last_date") LocalDate lastDate,
+            @JsonProperty("is_inflow") boolean isInflow,
+            @JsonProperty("category") String category,
+            @JsonProperty("category_detailed") String categoryDetailed,
+            @JsonProperty("share_percent") int sharePercent,
+            @JsonProperty("plan_bucket") SpendingPlanBucket planBucket,
+            @JsonProperty("plan_line") String planLine,
+            @JsonProperty("kind") RecurringKind kind,
+            @JsonProperty("merchant_key") String merchantKey,
+            /** DETECTED for Plaid's streams, CONFIRMED for a candidate the user said repeats. */
+            @JsonProperty("status") RecurringPayment.Source status,
+            /** The payment as a breakdown item: named for who's paid, at the user's monthly share. */
+            @JsonProperty("plan_item") ItemResponse planItem
+    ) {
+        static RecurringPaymentResponse from(RecurringPayment payment) {
+            PlanSuggestions.Item item = PlanSuggestions.item(payment);
+            return new RecurringPaymentResponse(
+                    payment.streamId(),
+                    payment.accountId(),
+                    payment.merchantName(),
+                    payment.description(),
+                    payment.amount(),
+                    payment.isoCurrencyCode(),
+                    payment.frequency(),
+                    payment.frequencySet(),
+                    payment.nextDate(),
+                    payment.lastDate(),
+                    payment.inflow(),
+                    payment.category(),
+                    payment.categoryDetailed(),
+                    payment.sharePercent(),
+                    payment.planBucket(),
+                    payment.planLine(),
+                    payment.kind(),
+                    payment.merchantKey(),
+                    payment.source(),
+                    ItemResponse.from(item));
+        }
+    }
+
+    /** See {@link SpendingHistory}. Months are YYYY-MM. */
+    public record SpendingHistoryResponse(
+            @JsonProperty("start") LocalDate start,
+            @JsonProperty("end") LocalDate end,
+            @JsonProperty("months") List<String> months,
+            @JsonProperty("groups") List<GroupHistoryResponse> groups
+    ) {
+        static SpendingHistoryResponse from(LocalDate start, LocalDate end, SpendingHistory history) {
+            return new SpendingHistoryResponse(
+                    start,
+                    end,
+                    history.months().stream().map(YearMonth::toString).toList(),
+                    history.groups().stream().map(GroupHistoryResponse::from).toList());
+        }
+    }
+
+    /** {@code bucket} is a bucket's name, or UNSORTED. */
+    public record GroupHistoryResponse(
+            @JsonProperty("bucket") String bucket,
+            @JsonProperty("average") BigDecimal average,
+            @JsonProperty("categories") List<CategoryHistoryResponse> categories
+    ) {
+        static GroupHistoryResponse from(SpendingHistory.Group group) {
+            return new GroupHistoryResponse(group.bucket(), stripZeros(group.average()),
+                    group.categories().stream().map(CategoryHistoryResponse::from).toList());
+        }
+    }
+
+    /**
+     * A plan line ({@code kind} LINE, named by {@code line}), a Plaid category for spending on no
+     * line (CATEGORY, with {@code category} and maybe {@code category_detailed}), or all of a
+     * bucket's spending (ALL).
+     */
+    public record CategoryHistoryResponse(
+            @JsonProperty("key") String key,
+            @JsonProperty("kind") SpendingHistory.Kind kind,
+            @JsonProperty("line") String line,
+            @JsonProperty("category") String category,
+            @JsonProperty("category_detailed") String categoryDetailed,
+            @JsonProperty("average") BigDecimal average,
+            @JsonProperty("payees") List<PayeeHistoryResponse> payees
+    ) {
+        static CategoryHistoryResponse from(SpendingHistory.Category category) {
+            return new CategoryHistoryResponse(
+                    category.key(),
+                    category.kind(),
+                    category.line(),
+                    category.category(),
+                    category.categoryDetailed(),
+                    stripZeros(category.average()),
+                    category.payees().stream()
+                            .map(payee -> new PayeeHistoryResponse(payee.key(), payee.name(), stripZeros(payee.average())))
+                            .toList());
+        }
+    }
+
+    public record PayeeHistoryResponse(
+            @JsonProperty("key") String key,
+            @JsonProperty("name") String name,
+            @JsonProperty("average") BigDecimal average
+    ) {
+    }
+
+    /** Each line's default amount in whole dollars, by line name. */
+    public record LineDefaultsResponse(@JsonProperty("lines") Map<String, BigDecimal> lines) {
+    }
+
     public record LineResponse(
             @JsonProperty("bucket") SpendingPlanBucket bucket,
             @JsonProperty("name") String name,
@@ -373,6 +598,18 @@ public class SpendingPlanController {
                     line.getItems().stream().map(ItemResponse::from).toList()
             );
         }
+
+        /** A suggested line, blank or made of recurring bills. */
+        static LineResponse from(PlanSuggestions.Line line) {
+            return new LineResponse(
+                    line.bucket(),
+                    line.name(),
+                    null,
+                    line.fromPaycheck(),
+                    null,
+                    line.items().stream().map(ItemResponse::from).toList()
+            );
+        }
     }
 
     public record ItemResponse(
@@ -382,6 +619,10 @@ public class SpendingPlanController {
     ) {
         static ItemResponse from(SpendingPlanItem item) {
             return new ItemResponse(item.getName(), stripZeros(item.getAmount()), item.getStreamId());
+        }
+
+        static ItemResponse from(PlanSuggestions.Item item) {
+            return new ItemResponse(item.name(), stripZeros(item.amount()), item.streamId());
         }
     }
 

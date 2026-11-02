@@ -59,6 +59,7 @@ import retrofit2.Response;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -127,6 +128,9 @@ class UserSeparationTests {
             "PUT /spending-plan",
             "POST /spending-plan/evaluate",
             "GET /spending-plan/guilt-free-left",
+            "GET /spending-plan/suggestions",
+            "GET /spending-plan/spending-history",
+            "GET /spending-plan/line-defaults",
             "PUT /payees/corrections",
             "DELETE /payees/corrections",
             "PUT /transactions/counting",
@@ -264,7 +268,9 @@ class UserSeparationTests {
                 "/plaid/spending/by-bucket",
                 "/plaid/spending/by-bucket?account_id=" + ACCOUNT,
                 "/investments/history",
-                "/spending-plan");
+                "/spending-plan",
+                "/spending-plan/suggestions",
+                "/spending-plan/suggestions?new_plan=true");
     }
 
     @ParameterizedTest
@@ -452,6 +458,17 @@ class UserSeparationTests {
                 .andExpect(status().isOk());
 
         assertTrue(body(as(BOB, HttpMethod.GET, month), status().isOk()).contains("\"spent\":0"));
+    }
+
+    @Test
+    void keepsAlicesSpendingOutOfBobsSpendingHistoryAndLineDefaults() throws Exception {
+        // A month from now, the last whole month is this one, with Alice's coffee in it.
+        String history = "/spending-plan/spending-history?months=1&month=" + YearMonth.now().plusMonths(1);
+        assertTrue(body(as(ALICE, HttpMethod.GET, history), status().isOk()).contains("alicecorp coffee"));
+
+        assertTrue(body(as(BOB, HttpMethod.GET, history), status().isOk()).contains("\"groups\":[]"));
+        assertTrue(body(as(BOB, HttpMethod.GET, "/spending-plan/line-defaults?month=" + YearMonth.now().plusMonths(1)),
+                status().isOk()).contains("\"lines\":{}"));
     }
 
     @Test

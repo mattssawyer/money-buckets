@@ -2,85 +2,66 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import SpendingExplorer from '../SpendingExplorer.vue'
-import {
-  getSpendingByBucket,
-  type PlaidTransaction,
-  type SpendingByBucket,
-} from '../../api/PlaidService'
+import { getSpendingHistory, type SpendingHistoryResponse } from '../../api/SpendingPlanService'
 
-vi.mock('../../api/PlaidService', () => ({
-  getSpendingByBucket: vi.fn(),
+vi.mock('../../api/SpendingPlanService', () => ({
+  getSpendingHistory: vi.fn(),
 }))
 
 enableAutoUnmount(afterEach)
 
-function spent(
-  id: string,
-  merchant: string,
-  amount: number,
-  date: string,
-  line: string | null,
-  detailed = 'FOOD_AND_DRINK_GROCERIES',
-): PlaidTransaction {
-  return {
-    transaction_id: id,
-    account_id: 'checking',
-    amount,
-    iso_currency_code: 'USD',
-    date,
-    name: merchant.toUpperCase(),
-    merchant_name: merchant,
-    logo_url: null,
-    pending: false,
-    category: 'FOOD_AND_DRINK',
-    category_detailed: detailed,
-    bucket: 'FIXED_COSTS',
-    plan_line: line,
-    share_percent: 100,
-    payee_key: merchant.toLowerCase(),
-    payee_kind: 'BILL',
-    bucket_corrected: false,
-    category_corrected: false,
-    recurring: null,
-  }
-}
-
-const spending: SpendingByBucket = {
+/** Three months of spending as the server averages it. */
+const spending: SpendingHistoryResponse = {
   start: '2026-07-01',
   end: '2026-09-30',
-  total: 750,
-  buckets: [
+  months: ['2026-07', '2026-08', '2026-09'],
+  groups: [
     {
       bucket: 'FIXED_COSTS',
-      amount: 690,
+      average: 230,
       categories: [
         {
-          category: 'FOOD_AND_DRINK',
-          amount: 690,
-          transactions: [
-            spent('wf-1', 'Whole Foods', 300, '2026-07-04', 'Groceries'),
-            spent('wf-2', 'Whole Foods', 240, '2026-08-11', 'Groceries'),
-            spent('tj-1', 'Trader Joe’s', 90, '2026-09-20', 'Groceries'),
-            spent('cvs-1', 'CVS', 60, '2026-09-21', null, 'MEDICAL_PHARMACIES_AND_SUPPLEMENTS'),
+          key: 'FIXED_COSTS/line/Groceries',
+          kind: 'LINE',
+          line: 'Groceries',
+          category: null,
+          category_detailed: null,
+          average: 210,
+          payees: [
+            { key: 'FIXED_COSTS/line/Groceries|Whole Foods', name: 'Whole Foods', average: 180 },
+            { key: 'FIXED_COSTS/line/Groceries|Trader Joe’s', name: 'Trader Joe’s', average: 30 },
           ],
+        },
+        {
+          key: 'FIXED_COSTS/category/MEDICAL/MEDICAL_PHARMACIES_AND_SUPPLEMENTS',
+          kind: 'CATEGORY',
+          line: null,
+          category: 'MEDICAL',
+          category_detailed: 'MEDICAL_PHARMACIES_AND_SUPPLEMENTS',
+          average: 20,
+          payees: [{ key: 'medical|CVS', name: 'CVS', average: 20 }],
         },
       ],
     },
     {
       bucket: 'GUILT_FREE',
-      amount: 60,
+      average: 20,
       categories: [
         {
-          category: 'FOOD_AND_DRINK',
-          amount: 60,
-          transactions: [
-            spent('dig-1', 'Dig Inn', 60, '2026-09-02', null, 'FOOD_AND_DRINK_RESTAURANT'),
-          ],
+          key: 'GUILT_FREE/all',
+          kind: 'ALL',
+          line: null,
+          category: null,
+          category_detailed: null,
+          average: 20,
+          payees: [{ key: 'GUILT_FREE/all|Dig Inn', name: 'Dig Inn', average: 20 }],
         },
       ],
     },
   ],
 }
+
+const noSpending: SpendingHistoryResponse = { ...spending, months: [], groups: [] }
 
 function mountExplorer() {
   return mount(SpendingExplorer, {
@@ -94,7 +75,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 9, 1))
   document.body.innerHTML = ''
-  vi.mocked(getSpendingByBucket).mockResolvedValue(spending)
+  vi.mocked(getSpendingHistory).mockResolvedValue(spending)
 })
 
 afterEach(() => {
@@ -106,10 +87,7 @@ describe('spending explorer', () => {
     const wrapper = mountExplorer()
     await flushPromises()
 
-    expect(getSpendingByBucket).toHaveBeenCalledWith(undefined, {
-      start: '2026-07-01',
-      end: '2026-09-30',
-    })
+    expect(getSpendingHistory).toHaveBeenCalledWith('2026-10', 3)
     expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0)
   })
 
@@ -121,7 +99,7 @@ describe('spending explorer', () => {
     expect(fixedCosts?.get('h3').text()).toBe('Fixed costs$230')
     expect(
       fixedCosts?.findAll('.part-heading, .categories > li > .pick-row').map((row) => row.text()),
-    ).toEqual(['Groceries$210', 'On no line', 'Medical pharmacies and supplements$20'])
+    ).toEqual(['Groceries$210', 'On no line', 'Pharmacies and supplements$20'])
     // Guilt-free spending is what's left after the plan's lines, so it's one total.
     expect(guiltFree?.get('h3').text()).toBe('Guilt-free spending$20')
     expect(
@@ -161,17 +139,14 @@ describe('spending explorer', () => {
     await wrapper.get('select').setValue('12')
     await flushPromises()
 
-    expect(getSpendingByBucket).toHaveBeenLastCalledWith(undefined, {
-      start: '2025-10-01',
-      end: '2026-09-30',
-    })
+    expect(getSpendingHistory).toHaveBeenLastCalledWith('2026-10', 12)
   })
 
   it('shows the latest period’s spending when an earlier answer arrives late', async () => {
-    let answerFirst: (spending: SpendingByBucket) => void = () => {}
-    vi.mocked(getSpendingByBucket)
+    let answerFirst: (spending: SpendingHistoryResponse) => void = () => {}
+    vi.mocked(getSpendingHistory)
       .mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
-      .mockResolvedValueOnce({ ...spending, total: 0, buckets: [] })
+      .mockResolvedValueOnce(noSpending)
     const wrapper = mountExplorer()
 
     await wrapper.get('select').setValue('12')
@@ -186,7 +161,7 @@ describe('spending explorer', () => {
   })
 
   it('says so when there’s no spending yet', async () => {
-    vi.mocked(getSpendingByBucket).mockResolvedValue({ ...spending, total: 0, buckets: [] })
+    vi.mocked(getSpendingHistory).mockResolvedValue(noSpending)
     const wrapper = mountExplorer()
     await flushPromises()
 
@@ -194,7 +169,7 @@ describe('spending explorer', () => {
   })
 
   it('offers to try again when spending can’t be loaded', async () => {
-    vi.mocked(getSpendingByBucket).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(getSpendingHistory).mockRejectedValueOnce(new Error('offline'))
     const wrapper = mountExplorer()
     await flushPromises()
 
