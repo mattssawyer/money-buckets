@@ -6,7 +6,7 @@ Source spec: `.scratch/ios-money-buckets/spec.md`. See [Plaid Link for iOS](http
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (this PR)
+**Status:** done (PR #148)
 
 - [x] Link token requests can say they come from iOS. Those tokens carry the configured redirect URI for new-bank, investments, and reconnect tokens.
 - [x] Web Link token requests are unchanged (no redirect URI unless the web already used one).
