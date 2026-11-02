@@ -31,6 +31,8 @@ vi.mock('../../api/SpendingPlanService', () => ({
 // What the server works its suggestions out from.
 const recurringStreams = vi.fn<() => Promise<RecurringStream[]>>()
 const recurringCandidates = vi.fn<() => Promise<RecurringCandidate[]>>()
+// The saved plan the server has, while a test edits one.
+let serverPlan: SavedPlan | undefined
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -82,6 +84,7 @@ const rent: RecurringStream = {
 }
 
 function mountSetup(props: InstanceType<typeof SpendingPlanSetup>['$props'] = {}) {
+  serverPlan = props.saved
   return mount(SpendingPlanSetup, {
     props,
     global: {
@@ -105,8 +108,12 @@ beforeEach(() => {
   document.body.innerHTML = ''
   recurringStreams.mockResolvedValue([paycheck, rent])
   recurringCandidates.mockResolvedValue([])
-  vi.mocked(getPlanSuggestions).mockImplementation(async () =>
-    fakeSuggestions(await recurringStreams(), await recurringCandidates()),
+  vi.mocked(getPlanSuggestions).mockImplementation(async (newPlan) =>
+    fakeSuggestions(
+      await recurringStreams(),
+      await recurringCandidates(),
+      newPlan || !serverPlan ? [] : savedStreamIds(serverPlan),
+    ),
   )
   vi.mocked(getLineDefaults).mockResolvedValue(new Map())
   vi.mocked(saveSpendingPlan).mockImplementation(async (request: SpendingPlanRequest) => ({
@@ -172,6 +179,13 @@ const groceriesDefaults = new Map([['Groceries', 600]])
 
 function spendOnGroceries() {
   vi.mocked(getLineDefaults).mockResolvedValue(groceriesDefaults)
+}
+
+/** Stream ids on a plan, which the server leaves off the bills to place unless it's a new plan. */
+function savedStreamIds(plan: SavedPlan) {
+  return Object.values(plan.plan).flatMap((lines) =>
+    lines.flatMap((line) => line.items.flatMap((item) => (item.streamId ? [item.streamId] : []))),
+  )
 }
 
 describe('spending plan setup', () => {
@@ -505,11 +519,44 @@ describe('spending plan setup', () => {
     expect(list.findAll('.unplaced-row')).toHaveLength(1)
   })
 
+  it('lists a bill to place again when it repeats again after leaving a saved plan', async () => {
+    // The user had put Sterling on rent themselves; Jev put it on no line.
+    const draft = {
+      ...savedPlanDraft,
+      fixedCosts: [
+        {
+          name: 'Rent/mortgage',
+          amount: null,
+          fromPaycheck: false,
+          items: [{ name: 'Sterling Group', amount: 1554.91, streamId: 'sterling' }],
+        },
+      ],
+    }
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
+    const wrapper = mountSetup({ saved: { ...savedPlan, plan: draft } })
+    await flushPromises()
+    await wrapper.get('.recurring-button').trigger('click')
+    const dialog = wrapper.getComponent(RecurringDialog)
+
+    // Said not to repeat: it comes off its line.
+    recurringStreams.mockResolvedValue([paycheck])
+    dialog.vm.$emit('changed')
+    await flushPromises()
+    expect(wrapper.find('[aria-label="Item amount"]').exists()).toBe(false)
+
+    // The answer undone: it repeats again, so it's offered to place.
+    recurringStreams.mockResolvedValue([paycheck, sterlingRent])
+    dialog.vm.$emit('changed')
+    await flushPromises()
+    expect(
+      wrapper.get('[aria-labelledby="unplaced-heading"]').findAll('.unplaced-row'),
+    ).toHaveLength(1)
+  })
+
   it('adds a payment confirmed while editing a saved plan to its line', async () => {
     const wrapper = mountSetup({ saved: savedPlan })
     await flushPromises()
     await wrapper.get('.recurring-button').trigger('click')
-    expect(getPlanSuggestions).toHaveBeenCalledWith(false)
     expect(getPlanSuggestions).toHaveBeenCalledTimes(1)
 
     recurringStreams.mockResolvedValue([

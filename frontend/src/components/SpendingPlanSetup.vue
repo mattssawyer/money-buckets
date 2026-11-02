@@ -260,11 +260,12 @@ async function loadEstimates() {
 }
 
 /**
- * What the plan starts from, worked out by the server from the recurring payments. A new setup
- * is offered every bill on no line, even ones on the plan it replaces.
+ * What the plan starts from, worked out by the server from the recurring payments. Every bill on
+ * no line is asked for, even ones on the saved plan: whether one still needs placing depends on
+ * the plan being edited, which may have taken it off since.
  */
 async function loadSuggestions() {
-  const suggestions = await getPlanSuggestions(!editing)
+  const suggestions = await getPlanSuggestions(true)
   unansweredCandidates.value = suggestions.suggested_candidates
   return suggestions
 }

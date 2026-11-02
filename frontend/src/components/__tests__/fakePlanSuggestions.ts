@@ -26,6 +26,8 @@ const PER_MONTH: Record<string, number> = {
 export function fakeSuggestions(
   streams: RecurringStream[],
   candidates: RecurringCandidate[] = [],
+  /** Stream ids on the saved plan, left off the bills to place as the server does. */
+  onSavedPlan: string[] = [],
 ): PlanSuggestionsResponse {
   const cents = (value: number) => Math.round(value * 100) / 100
   const recurring: RecurringPayment[] = [
@@ -76,6 +78,7 @@ export function fakeSuggestions(
       (payment) =>
         !payment.is_inflow &&
         !payment.plan_line &&
+        !onSavedPlan.includes(payment.stream_id) &&
         payment.category_detailed !== 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
     ),
     suggested_candidates: candidates.filter((candidate) => candidate.status === 'SUGGESTED').length,
