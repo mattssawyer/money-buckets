@@ -324,7 +324,7 @@ function changeIcon(change: Change) {
         <h1 id="investments-heading">Investments</h1>
         <div class="heading-actions">
           <Button
-            v-if="items.length"
+            v-if="items.length || loadError"
             :label="linking ? 'Connecting…' : 'Link investment account'"
             :aria-label="linking ? 'Connecting…' : 'Link investment account'"
             :loading="linking"
@@ -815,7 +815,8 @@ function changeIcon(change: Change) {
 
 .account-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  /* Fit, not fill: a short section's cards widen to fill the row instead of leaving empty slots. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1.25rem;
 }
 

@@ -445,5 +445,11 @@ h2 {
   .bucket-card {
     padding: 1.25rem;
   }
+
+  /* Two by two, so the bucket cards start nearer the top. */
+  .legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 0.75rem;
+  }
 }
 </style>
