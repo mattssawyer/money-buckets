@@ -90,10 +90,10 @@ function isOwed(account: PlaidAccount) {
             </th>
             <td class="column-balance" data-label="Balance">
               <template v-if="account.balances.current == null">—</template>
-              <template v-else>
+              <span v-else class="balance-value">
                 {{ formatMoney(account.balances.current) }}
                 <span v-if="isOwed(account)" class="owed">owed</span>
-              </template>
+              </span>
             </td>
             <td class="column-setting" data-label="Spending">
               <input
@@ -267,6 +267,10 @@ function isOwed(account: PlaidAccount) {
   font-weight: 500;
 }
 
+.balance-value {
+  display: inline-block;
+}
+
 .owed {
   display: block;
   color: var(--app-text-secondary);
@@ -278,14 +282,14 @@ function isOwed(account: PlaidAccount) {
   color: var(--app-text-secondary);
 }
 
-/* In narrow places each account becomes a small card with its settings labelled. */
+/*
+ * In narrow places each account becomes a compact block: name and balance on one line, then its
+ * three settings side by side, each labelled above its switch.
+ */
 @container (max-width: 40rem) {
   .account-table,
   .account-table caption,
-  .account-table tbody,
-  .account-table tr,
-  .account-table th,
-  .account-table td {
+  .account-table tbody {
     display: block;
     width: auto;
   }
@@ -295,7 +299,10 @@ function isOwed(account: PlaidAccount) {
   }
 
   .account-table tbody tr {
-    padding: 0.75rem 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    padding: 0.875rem 0;
     border-bottom: 1px solid var(--app-divider);
   }
 
@@ -305,48 +312,43 @@ function isOwed(account: PlaidAccount) {
 
   .account-table tbody th,
   .account-table td {
+    display: block;
+    width: auto;
     padding: 0;
     border-bottom: 0;
   }
 
   .account-table tbody th {
-    margin-bottom: 0.5rem;
+    grid-column: 1 / 3;
+    min-width: 0;
   }
 
-  .account-table td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    /* A switch per row, so rows are as tall as a finger-sized target and theirs never overlap. */
-    min-height: var(--app-touch-target);
-  }
-
-  /*
-   * The share field sits left of the switch, so every switch lines up at the right edge. The gap
-   * clears the switch's enlarged target so it doesn't cover the field.
-   */
-  .shared-cell {
-    flex-direction: row-reverse;
-    gap: 1rem;
-  }
-
-  .account-table td.column-balance,
-  .account-table td.column-setting,
-  .account-table td.column-shared {
-    padding-right: 0;
-    padding-left: 0;
+  .account-table td.column-balance {
+    grid-column: 3;
+    padding: 0;
     text-align: right;
   }
 
-  .account-table td::before {
+  .account-table td.column-setting,
+  .account-table td.column-shared {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+    padding: 0;
+    text-align: left;
+  }
+
+  .account-table td.column-setting::before,
+  .account-table td.column-shared::before {
     color: var(--app-text-secondary);
-    font-size: var(--text-base);
+    font-size: var(--text-xs);
     content: attr(data-label);
   }
 
-  .owed {
-    display: inline;
-    margin-left: 0.25rem;
+  .shared-cell {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 }
 </style>

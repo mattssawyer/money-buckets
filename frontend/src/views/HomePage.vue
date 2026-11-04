@@ -641,7 +641,7 @@ async function openPlaidLink() {
           </div>
           <div class="overview-actions">
             <Button
-              v-if="hasConnections"
+              v-if="hasConnections || initialLoading"
               :label="linking ? 'Connecting…' : 'Add an account'"
               :loading="linking"
               :disabled="linking"
@@ -793,7 +793,7 @@ async function openPlaidLink() {
               <div class="card-heading">
                 <h2 id="recent-transactions-heading" class="card-title">Recent transactions</h2>
                 <Button
-                  v-if="transactions.length"
+                  v-if="transactions.length || initialLoading || loadingTransactions"
                   label="View all"
                   severity="secondary"
                   size="small"
@@ -808,7 +808,7 @@ async function openPlaidLink() {
                 role="status"
                 aria-label="Loading recent transactions"
               >
-                <SkeletonRows :rows="6" />
+                <SkeletonRows :rows="5" />
               </div>
 
               <div v-else-if="transactionsError" class="account-notice">
@@ -1454,9 +1454,12 @@ async function openPlaidLink() {
 .spending-card {
   display: flex;
   flex-direction: column;
+  /* As tall as its content, so the guilt-free bar at its foot isn't left below empty space. */
+  align-self: start;
   gap: 0.25rem;
   min-width: 0;
   min-height: 0;
+  max-height: 100%;
   container-type: inline-size;
 }
 
