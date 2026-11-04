@@ -287,7 +287,7 @@ function isOwed(account: PlaidAccount) {
   color: var(--app-text-secondary);
 }
 
-/* On phones the dash takes a switch's footprint, so it lines up under the column label like one. */
+/* On phones the dash takes a switch's footprint, so it lines up with the switches above and below. */
 @container (max-width: 40rem) {
   .not-applicable {
     display: inline-block;
@@ -296,44 +296,24 @@ function isOwed(account: PlaidAccount) {
   }
 }
 
-/*
- * In narrow places each account becomes a compact block: name and balance on one line, then its
- * three switches side by side, under labels shown once at the top of the card.
- */
+/* In narrow places each account becomes a small card with its settings labelled. */
 @container (max-width: 40rem) {
   .account-table,
   .account-table caption,
-  .account-table thead,
-  .account-table tbody {
+  .account-table tbody,
+  .account-table tr,
+  .account-table th,
+  .account-table td {
     display: block;
     width: auto;
   }
 
-  .account-table thead tr {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-    border-bottom: 1px solid var(--app-divider);
-  }
-
-  .account-table thead th.column-account,
-  .account-table thead th.column-balance {
+  .account-table thead {
     display: none;
   }
 
-  .account-table thead th.column-setting,
-  .account-table thead th.column-shared {
-    width: auto;
-    padding: 0 0 0.5rem;
-    text-align: left;
-    border-bottom: 0;
-  }
-
   .account-table tbody tr {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.75rem 1rem;
-    padding: 0.875rem 0;
+    padding: 0.75rem 0;
     border-bottom: 1px solid var(--app-divider);
   }
 
@@ -343,39 +323,48 @@ function isOwed(account: PlaidAccount) {
 
   .account-table tbody th,
   .account-table td {
-    display: block;
-    width: auto;
     padding: 0;
     border-bottom: 0;
   }
 
   .account-table tbody th {
-    grid-column: 1 / 3;
-    min-width: 0;
+    margin-bottom: 0.5rem;
   }
 
-  .account-table td.column-balance {
-    grid-column: 3;
-    padding: 0;
+  .account-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* A switch per row, so rows are as tall as a finger-sized target and theirs never overlap. */
+    min-height: var(--app-touch-target);
+  }
+
+  /*
+   * The share field sits left of the switch, so every switch lines up at the right edge. The gap
+   * clears the switch's enlarged target so it doesn't cover the field.
+   */
+  .shared-cell {
+    flex-direction: row-reverse;
+    gap: 1rem;
+  }
+
+  .account-table td.column-balance,
+  .account-table td.column-setting,
+  .account-table td.column-shared {
+    padding-right: 0;
+    padding-left: 0;
     text-align: right;
   }
 
-  .account-table td.column-setting,
-  .account-table td.column-shared {
-    display: flex;
-    align-items: center;
-    padding: 0;
-    text-align: left;
+  .account-table td::before {
+    color: var(--app-text-secondary);
+    font-size: var(--text-base);
+    content: attr(data-label);
   }
 
-  /* Long names wrap rather than lose the last digits that tell accounts apart. */
-  .account-name {
-    white-space: normal;
-  }
-
-  .shared-cell {
-    flex-wrap: wrap;
-    gap: 0.5rem;
+  .owed {
+    display: inline;
+    margin-left: 0.25rem;
   }
 }
 </style>
