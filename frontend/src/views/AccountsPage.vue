@@ -185,6 +185,8 @@ function onOlderRemoved() {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  /* As wide as the cards, so the button lines up with their right edge. */
+  max-width: 64rem;
 }
 
 .page-title {

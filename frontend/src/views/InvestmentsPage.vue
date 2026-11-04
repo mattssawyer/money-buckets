@@ -47,8 +47,8 @@ const GROUPS: { id: Group; heading: string; color: string }[] = [
   { id: 'investments', heading: 'Investment accounts', color: PLAN_COLORS.investments },
   // Blue is for fixed costs, so bank accounts are drawn in ink like net worth.
   { id: 'bank', heading: 'Bank accounts', color: gray[900] },
-  // Lighter than bank accounts' ink, so the two sections read apart.
-  { id: 'debts', heading: 'Credit cards and loans', color: gray[400] },
+  // Mid gray against bank accounts' ink, so the two sections read apart at the same weight.
+  { id: 'debts', heading: 'Credit cards and loans', color: gray[500] },
 ]
 
 // "brokerage" is Plaid's legacy name for the investment type.
