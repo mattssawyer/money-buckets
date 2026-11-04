@@ -152,7 +152,10 @@ function plannedLines(lines: PlanLineDraft[]) {
         :aria-labelledby="`overview-${bucket}-heading`"
       >
         <header class="bucket-header">
-          <h2 :id="`overview-${bucket}-heading`">{{ PLAN_TITLES[bucket] }}</h2>
+          <h2 :id="`overview-${bucket}-heading`" class="bucket-title">
+            <span class="swatch" :style="{ background: PLAN_COLORS[bucket] }" aria-hidden="true" />
+            {{ PLAN_TITLES[bucket] }}
+          </h2>
           <span class="bucket-total">{{
             formatPlanAmount(evaluation.buckets[bucket].amount)
           }}</span>
@@ -345,6 +348,12 @@ h2 {
   gap: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--app-divider);
+}
+
+.bucket-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .bucket-total {

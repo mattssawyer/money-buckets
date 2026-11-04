@@ -214,6 +214,11 @@ function isOwed(account: PlaidAccount) {
   display: inline-flex;
   align-items: center;
   gap: 0.625rem;
+  vertical-align: middle;
+}
+
+.account-table td .switch {
+  vertical-align: middle;
 }
 
 .account-table thead .column-balance,
@@ -284,18 +289,35 @@ function isOwed(account: PlaidAccount) {
 
 /*
  * In narrow places each account becomes a compact block: name and balance on one line, then its
- * three settings side by side, each labelled above its switch.
+ * three switches side by side, under labels shown once at the top of the card.
  */
 @container (max-width: 40rem) {
   .account-table,
   .account-table caption,
+  .account-table thead,
   .account-table tbody {
     display: block;
     width: auto;
   }
 
-  .account-table thead {
+  .account-table thead tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    border-bottom: 1px solid var(--app-divider);
+  }
+
+  .account-table thead th.column-account,
+  .account-table thead th.column-balance {
     display: none;
+  }
+
+  .account-table thead th.column-setting,
+  .account-table thead th.column-shared {
+    width: auto;
+    padding: 0 0 0.5rem;
+    text-align: left;
+    border-bottom: 0;
   }
 
   .account-table tbody tr {
@@ -332,18 +354,14 @@ function isOwed(account: PlaidAccount) {
   .account-table td.column-setting,
   .account-table td.column-shared {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.375rem;
+    align-items: center;
     padding: 0;
     text-align: left;
   }
 
-  .account-table td.column-setting::before,
-  .account-table td.column-shared::before {
-    color: var(--app-text-secondary);
-    font-size: var(--text-xs);
-    content: attr(data-label);
+  /* Long names wrap rather than lose the last digits that tell accounts apart. */
+  .account-name {
+    white-space: normal;
   }
 
   .shared-cell {

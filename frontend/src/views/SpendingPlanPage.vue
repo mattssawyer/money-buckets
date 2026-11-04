@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Wallet } from '@lucide/vue'
+import { ArrowRight, CloudOff, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import Button from 'primevue/button'
@@ -72,6 +72,9 @@ function onSaved(plan: SavedPlan) {
 
       <section v-else-if="loadError" class="panel plan-prompt" aria-labelledby="plan-error-heading">
         <div class="plan-prompt-content">
+          <div class="plan-icon" aria-hidden="true">
+            <CloudOff :size="24" :stroke-width="1.5" />
+          </div>
           <h2 id="plan-error-heading">We couldn’t load your spending plan.</h2>
           <p>Check your connection and try again.</p>
           <Button label="Try again" severity="secondary" @click="loadPlan" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Landmark, Plus } from '@lucide/vue'
+import { CloudOff, Landmark, Plus } from '@lucide/vue'
 import { onMounted, onUnmounted, ref } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -111,6 +111,9 @@ function onOlderRemoved() {
 
         <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
           <div class="prompt-content">
+            <div class="prompt-icon" aria-hidden="true">
+              <CloudOff :size="24" :stroke-width="1.5" />
+            </div>
             <h2 id="load-error-heading">We couldn’t load your accounts.</h2>
             <p>Check your connection and try again.</p>
             <Button label="Try again" severity="secondary" @click="load" />
@@ -168,12 +171,10 @@ function onOlderRemoved() {
   gap: 1rem;
 }
 
-/* Wide screens would spread the settings far from the account they belong to. */
 .accounts-content {
   display: grid;
   gap: 1.25rem;
   width: 100%;
-  max-width: 60rem;
 }
 
 .title-row {
@@ -182,8 +183,6 @@ function onOlderRemoved() {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  /* As wide as the cards, so the button lines up with their right edge. */
-  max-width: 60rem;
 }
 
 .page-title {

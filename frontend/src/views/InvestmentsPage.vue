@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
+import { CloudOff, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -356,6 +356,9 @@ function changeIcon(change: Change) {
 
       <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
         <div class="prompt-content">
+          <div class="prompt-icon" aria-hidden="true">
+            <CloudOff :size="24" :stroke-width="1.5" />
+          </div>
           <h2 id="load-error-heading">We couldn’t load your investments.</h2>
           <p>Check your connection and try again.</p>
           <Button label="Try again" severity="secondary" @click="load()" />
@@ -540,6 +543,7 @@ function changeIcon(change: Change) {
                   :label="card.name"
                   :color="card.color"
                   height="9rem"
+                  :y-ticks="3"
                 />
                 <p v-else class="history-note">No balance recorded yet.</p>
               </article>
@@ -814,6 +818,8 @@ function changeIcon(change: Change) {
 
 .account-card {
   display: grid;
+  /* Extra height goes above the chart, so charts in a row line up even when a name wraps. */
+  grid-template-rows: 1fr auto;
   gap: 1rem;
   padding: 1.125rem 1.25rem 1.25rem;
 }

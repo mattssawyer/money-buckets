@@ -1062,6 +1062,13 @@ async function openPlaidLink() {
                   <Skeleton class="spending-legend-amount" width="3.5rem" height="0.625rem" />
                 </li>
               </ul>
+              <div class="guilt-free-skeleton" aria-hidden="true">
+                <span class="guilt-free-skeleton-heading">
+                  <Skeleton width="7.5rem" height="0.625rem" />
+                  <Skeleton width="4rem" height="0.75rem" />
+                </span>
+                <Skeleton height="0.375rem" border-radius="999px" />
+              </div>
             </div>
 
             <div v-else-if="spendingError" class="account-notice">
@@ -1486,6 +1493,36 @@ async function openPlaidLink() {
   aspect-ratio: 1;
   height: auto;
   margin: 0.5rem auto 0;
+}
+
+/* Stands in for the guilt-free bar at the card's foot while it loads. */
+.guilt-free-skeleton {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--app-divider);
+}
+
+.guilt-free-skeleton-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Placeholder rows as tall as the loaded rows, so the cards below don't move when data lands. */
+.transactions-card :deep(.skeleton-row) {
+  min-height: 3.75rem;
+}
+
+.recurring-card :deep(.skeleton-row) {
+  min-height: 3.25rem;
+}
+
+@media (max-width: 640px) {
+  .transactions-card :deep(.skeleton-row),
+  .recurring-card :deep(.skeleton-row) {
+    min-height: 3.75rem;
+  }
 }
 
 /* A ring the size of the chart's, while the first breakdown loads. */
