@@ -1554,7 +1554,7 @@ async function openPlaidLink() {
   font-size: var(--text-2xl);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 
 .spending-total-label {
@@ -2048,7 +2048,7 @@ li.spending-legend-row {
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 
 .balance-account {

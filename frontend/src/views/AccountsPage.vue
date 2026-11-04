@@ -171,10 +171,12 @@ function onOlderRemoved() {
   gap: 1rem;
 }
 
+/* Capped so each account's balance and switches stay close to its name; the header spans the page. */
 .accounts-content {
   display: grid;
   gap: 1.25rem;
   width: 100%;
+  max-width: 64rem;
 }
 
 .title-row {

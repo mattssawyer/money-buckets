@@ -246,7 +246,7 @@ h2 {
   margin: 0.25rem 0 0;
   font-size: var(--text-2xl);
   font-weight: 550;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -332,8 +332,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1.25rem;
-  /* Cards in a row share a height, so their bottoms line up. */
-  align-items: stretch;
+  align-items: start;
 }
 
 .bucket-card {

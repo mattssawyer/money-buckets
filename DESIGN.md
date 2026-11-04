@@ -29,7 +29,7 @@ typography:
     fontSize: "2.375rem"
     fontWeight: 550
     lineHeight: 1.1
-    letterSpacing: "-0.04em"
+    letterSpacing: "-0.025em"
     fontFeature: "tnum"
   headline:
     fontFamily: "Geist Variable, system-ui, sans-serif"
@@ -176,7 +176,7 @@ Status colors, used only when they mean something:
 **Body Font:** Geist Variable
 **Label/Mono Font:** none distinct. Figures use Geist with tabular numerals.
 
-**Character:** One precise grotesque at every level. Hierarchy comes from size, weight (400 to 600, often the in-between 550) and tracking, not from a second typeface. Headings and big figures tighten to -0.04em so they sit close and solid.
+**Character:** One precise grotesque at every level. Hierarchy comes from size, weight (400 to 600, often the in-between 550) and tracking, not from a second typeface. Headings tighten to -0.04em so they sit close and solid; big figures stop at -0.025em so digits never touch.
 
 The root size scales with the viewport: `clamp(14px, 0.5vw + 7.5px, 17px)`, which is 14px on phones, about 15px on laptops and 17px on large desktops. Every size below is in rem, so it follows the root. All font sizes come from the `--text-*` scale in `frontend/src/assets/main.css`. The big steps shrink at 900px and below.
 
