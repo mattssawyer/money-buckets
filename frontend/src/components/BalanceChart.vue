@@ -63,7 +63,8 @@ const chartData = computed(() => ({
       label: props.label,
       data: series.value.map((point) => point.value),
       borderColor: props.color,
-      backgroundColor: `${props.color}1a`,
+      // A faint wash: the line carries the data, the fill only grounds it.
+      backgroundColor: `${props.color}0f`,
       borderWidth: 2,
       borderJoinStyle: 'round' as const,
       borderCapStyle: 'round' as const,

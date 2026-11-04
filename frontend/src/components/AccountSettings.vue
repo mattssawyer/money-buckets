@@ -287,6 +287,15 @@ function isOwed(account: PlaidAccount) {
   color: var(--app-text-secondary);
 }
 
+/* On phones the dash takes a switch's footprint, so it lines up under the column label like one. */
+@container (max-width: 40rem) {
+  .not-applicable {
+    display: inline-block;
+    width: 2.25rem;
+    text-align: center;
+  }
+}
+
 /*
  * In narrow places each account becomes a compact block: name and balance on one line, then its
  * three switches side by side, under labels shown once at the top of the card.
