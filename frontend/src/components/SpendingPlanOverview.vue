@@ -332,11 +332,13 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1.25rem;
-  align-items: start;
+  /* Cards in a row share a height, so their bottoms line up. */
+  align-items: stretch;
 }
 
 .bucket-card {
   display: grid;
+  align-content: start;
   gap: 0.75rem;
   padding: 1.25rem;
 }

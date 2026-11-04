@@ -106,7 +106,7 @@ components:
     width: "2.25rem"
     height: "1.25rem"
   switch-off:
-    backgroundColor: "{colors.inset-hover}"
+    backgroundColor: "{colors.not-counted-gray}"
     rounded: "{rounded.pill}"
   payee-icon:
     backgroundColor: "{colors.inset}"
@@ -143,7 +143,7 @@ A gray ledger with four bucket inks. Neutrals do almost all the work, and color 
 
 ### Secondary
 The four bucket colors work as a single categorical set. They come from a validated data-visualization palette. Spending views (Home, transaction lists) order buckets fixed costs, guilt-free, savings, investments, the server's order; the spending plan orders its own buckets fixed costs, investments, savings, guilt-free.
-- **Fixed-costs Blue** (`fixed-costs-blue`): fixed costs everywhere they're charted or tagged. On the Investments page it also marks bank accounts.
+- **Fixed-costs Blue** (`fixed-costs-blue`): fixed costs everywhere they're charted or tagged, and nothing else. On the Investments page bank accounts are drawn in ink and loans in gray, so blue keeps its one meaning.
 - **Investments Orange** (`investments-orange`): the investments bucket, and investment accounts on the Investments page.
 - **Savings Green** (`savings-green`): the savings bucket.
 - **Guilt-free Gold** (`guilt-free-gold`): guilt-free spending, including the fill of the guilt-free progress bar on Home.

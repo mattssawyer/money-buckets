@@ -133,7 +133,8 @@ h1 {
   margin: 0;
   vertical-align: middle;
   appearance: none;
-  background-color: var(--app-inset-hover);
+  /* Dark enough that off reads as off, not disabled. */
+  background-color: var(--app-not-counted);
   border-radius: 999px;
   cursor: pointer;
   transition: background-color 150ms ease;

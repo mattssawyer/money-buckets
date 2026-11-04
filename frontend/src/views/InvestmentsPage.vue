@@ -45,7 +45,8 @@ type Group = 'investments' | 'bank' | 'debts'
 const GROUPS: { id: Group; heading: string; color: string }[] = [
   // Borrows two bucket colors: investments keep the Investments bucket's, the bank the Fixed costs'.
   { id: 'investments', heading: 'Investment accounts', color: PLAN_COLORS.investments },
-  { id: 'bank', heading: 'Bank accounts', color: PLAN_COLORS.fixedCosts },
+  // Blue is for fixed costs, so bank accounts are drawn in ink like net worth.
+  { id: 'bank', heading: 'Bank accounts', color: gray[900] },
   { id: 'debts', heading: 'Credit cards and loans', color: gray[500] },
 ]
 
