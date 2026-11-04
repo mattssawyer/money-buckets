@@ -53,6 +53,12 @@ export default definePreset(Aura, {
           hoverBackground: '{surface.50}',
           activeBackground: '{surface.100}',
         },
+        danger: {
+          borderColor: 'var(--app-danger-border)',
+          color: 'var(--app-danger)',
+          hoverBackground: 'var(--app-danger-surface)',
+          activeBackground: 'var(--app-danger-surface)',
+        },
       },
     },
     message: {

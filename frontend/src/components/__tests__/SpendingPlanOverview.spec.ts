@@ -156,7 +156,7 @@ describe('spending plan overview', () => {
   it('opens the buffer for changing when it is clicked', async () => {
     const wrapper = mountOverview()
 
-    await wrapper.get('[aria-label="Change the miscellaneous buffer"]').trigger('click')
+    await wrapper.get('[aria-label^="Miscellaneous buffer"]').trigger('click')
 
     expect(wrapper.emitted('editBuffer')).toHaveLength(1)
   })

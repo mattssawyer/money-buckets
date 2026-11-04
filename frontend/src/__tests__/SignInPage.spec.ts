@@ -5,8 +5,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 const auth = vi.hoisted(() => ({
   hasInvitation: vi.fn<() => boolean>(),
-  signIn: vi.fn(),
-  signUp: vi.fn(),
+  signIn: vi.fn<() => void>(),
+  signUp: vi.fn<() => void>(),
 }))
 
 vi.mock('../auth', async () => {

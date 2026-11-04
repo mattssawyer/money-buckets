@@ -258,7 +258,7 @@ export async function getSpendingByBucket(
   range?: { start: string; end: string },
 ): Promise<SpendingByBucket> {
   const { data } = await apiClient.get<SpendingByBucket>('/plaid/spending/by-bucket', {
-    params: { ...(accountId ? { account_id: accountId } : {}), ...(range ?? {}) },
+    params: { ...(accountId ? { account_id: accountId } : {}), ...range },
   })
   return data
 }

@@ -5,7 +5,7 @@ import SameInstitutionNotice from '../SameInstitutionNotice.vue'
 import { removeItem } from '../../api/PlaidService'
 
 vi.mock('../../api/PlaidService', () => ({
-  removeItem: vi.fn(),
+  removeItem: vi.fn<() => void>(),
 }))
 
 const items = [

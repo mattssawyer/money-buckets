@@ -5,7 +5,7 @@ import SpendingExplorer from '../SpendingExplorer.vue'
 import { getSpendingHistory, type SpendingHistoryResponse } from '../../api/SpendingPlanService'
 
 vi.mock('../../api/SpendingPlanService', () => ({
-  getSpendingHistory: vi.fn(),
+  getSpendingHistory: vi.fn<() => void>(),
 }))
 
 enableAutoUnmount(afterEach)

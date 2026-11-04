@@ -183,7 +183,7 @@ function plannedLines(lines: PlanLineDraft[]) {
               type="button"
               class="line-row buffer-button hit-area"
               aria-haspopup="dialog"
-              aria-label="Change the miscellaneous buffer"
+              :aria-label="`Miscellaneous buffer (${plan.bufferPercent}%) ${formatPlanAmount(evaluation.buffer)}, change`"
               @click="emit('editBuffer')"
             >
               <span class="line-name">

@@ -9,7 +9,7 @@ import { fromEvaluation } from '../../spendingPlan/savedPlan'
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('../../api/SpendingPlanService', () => ({
-  getSpendingPlan: vi.fn(),
+  getSpendingPlan: vi.fn<() => void>(),
 }))
 
 // The dialog's editor is covered by its own tests; here it only needs to report a save.
@@ -167,7 +167,7 @@ describe('spending plan page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('[aria-label="Change the miscellaneous buffer"]').trigger('click')
+    await wrapper.get('[aria-label^="Miscellaneous buffer"]').trigger('click')
 
     expect(wrapper.getComponent({ name: 'Dialog' }).props('header')).toBe('Edit your spending plan')
     const setup = wrapper.getComponent({ name: 'SpendingPlanSetup' })

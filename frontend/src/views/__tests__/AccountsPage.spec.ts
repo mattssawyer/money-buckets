@@ -95,9 +95,9 @@ beforeEach(() => {
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'new-item', same_institution: [] })
   vi.stubGlobal('Plaid', {
-    create: vi.fn((options: typeof linkOptions) => {
+    create: vi.fn<(options: typeof linkOptions) => unknown>((options: typeof linkOptions) => {
       linkOptions = options
-      return { open: vi.fn(), destroy: vi.fn() }
+      return { open: vi.fn<() => void>(), destroy: vi.fn<() => void>() }
     }),
   })
   vi.mocked(updateAccountTracking).mockImplementation(async (accountId, tracking) => ({

@@ -4,7 +4,7 @@ import PrimeVue from 'primevue/config'
 import TransactionsDialog from '../TransactionsDialog.vue'
 import { getTransactionPage, type PlaidTransaction } from '../../api/PlaidService'
 
-vi.mock('../../api/PlaidService', () => ({ getTransactionPage: vi.fn() }))
+vi.mock('../../api/PlaidService', () => ({ getTransactionPage: vi.fn<() => void>() }))
 enableAutoUnmount(afterEach)
 
 const coffee: PlaidTransaction = {

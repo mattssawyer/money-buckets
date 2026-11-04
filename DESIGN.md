@@ -7,7 +7,7 @@ colors:
   savings-green: "#1baf7a"
   guilt-free-gold: "#eda100"
   ink: "#171717"
-  ink-secondary: "#737373"
+  ink-secondary: "#666666"
   ink-subdued: "#9e9e9e"
   ink-inverse: "#ffffff"
   canvas: "#eeeeee"
