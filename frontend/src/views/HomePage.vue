@@ -640,11 +640,13 @@ async function openPlaidLink() {
             <h1>{{ greeting }}</h1>
           </div>
           <div class="overview-actions">
+            <!-- Shown while loading so the header doesn't shift, but held until the linked
+            accounts load: that load replaces the list and would drop an account linked meanwhile. -->
             <Button
               v-if="hasConnections || initialLoading"
               :label="linking ? 'Connecting…' : 'Add an account'"
               :loading="linking"
-              :disabled="linking"
+              :disabled="linking || initialLoading"
               :aria-busy="linking"
               :aria-label="linking ? 'Connecting…' : 'Add an account'"
               class="add-account-button"

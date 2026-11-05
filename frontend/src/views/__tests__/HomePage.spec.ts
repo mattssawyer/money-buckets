@@ -307,6 +307,14 @@ describe('homepage balances', () => {
     expect(wrapper.text()).toContain('Add your first account')
   })
 
+  it('holds Add an account until the linked accounts load, so a new link isn’t overwritten', async () => {
+    vi.mocked(getLinkedItemIds).mockReturnValue(new Promise(() => {}))
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(button(wrapper, 'Add an account').attributes('disabled')).toBeDefined()
+  })
+
   it('asks for accounts and every card at once instead of one after another', async () => {
     vi.mocked(getLinkedItemIds).mockReturnValue(new Promise(() => {}))
     vi.mocked(getAccounts).mockReturnValue(new Promise(() => {}))
