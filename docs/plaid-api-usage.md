@@ -17,6 +17,10 @@ New transaction history can arrive in stages. Incomplete history and transient f
 
 `PLAID_SYNC_SCAN_INTERVAL`, `PLAID_SYNC_RECOVERY`, `PLAID_ACCOUNTS_FRESHNESS`, and `PLAID_MANUAL_SYNC_COOLDOWN` accept ISO-8601 durations. Defaults are PT1M, PT24H, PT6H, and PT15M. Keep intervals positive. `PLAID_WEBHOOK_URL` must point to the public HTTPS `/api/plaid/webhook` endpoint in production. Existing Items are registered automatically on a recovery scan. A blank URL is useful locally, but then freshness depends on fallback checks.
 
+## iOS Link
+
+The iOS app asks for Link tokens with `platform=ios` on `/plaid/create-link-token`, `/plaid/items/{itemId}/reconnect`, and `/plaid/items/{itemId}/investments`. Those tokens carry `PLAID_IOS_REDIRECT_URI`, so an OAuth bank can hand the user back to the app. The URI must be registered in the Plaid Dashboard. The website serves `/.well-known/apple-app-site-association` for it from `APPLE_APP_ID` (team ID and bundle ID). Web requests send no `platform` and get no redirect URI. A blank URI is fine locally: iOS Link then works only for banks that don't use OAuth.
+
 ## Delivery, concurrency, and pagination
 
 Migration V19 stores requested and completed generations for each Item/product. Existing Items with a non-null `recurring_synced_at` are backfilled as history-ready; a cursor alone does not establish readiness. The webhook receiver commits the request before acknowledging delivery. Duplicate requests waiting in the executor merge; a request arriving during execution remains pending for the next scan. Executor saturation, deployment, or a failed process leaves work recoverable in the database.

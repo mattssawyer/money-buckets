@@ -6,7 +6,7 @@ Source spec: `.scratch/ios-money-buckets/spec.md`
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (PR #144)
 
 ## Approach
 
@@ -41,13 +41,13 @@ Only two things are flagged: fixed costs above target, and guilt-free spending b
 
 ## Acceptance criteria
 
-- [ ] No new database columns or tables hold evaluation results or guilt-free left.
-- [ ] A server-side evaluator produces everything listed above. Its tests carry over every case from the web's existing plan evaluation and guilt-free-left tests, with the same expected numbers, plus halfway and negative rounding cases.
-- [ ] Getting and saving the spending plan return the evaluation.
-- [ ] The server evaluates a plan the user hasn't saved yet without saving it.
-- [ ] Percent-of-gross paycheck lines are computed on the server from gross pay.
-- [ ] Guilt-free spending left uses the month dates the client sends, covers all tracked accounts at the user's share, ignores the account picker, can be negative, and returns nothing for left without a plan or take-home pay.
-- [ ] Web Home, the plan overview, and the plan editor show the server's values. Visible numbers are unchanged and the web tests still pass.
-- [ ] The frontend plan evaluation and guilt-free-left functions are removed.
-- [ ] While waiting, the editor keeps showing the last numbers, and a failed request shows clearly.
-- [ ] Controller tests cover the new and changed endpoints: no plan, no take-home pay, negative left, shared accounts, the account picker being ignored, and an unsaved plan.
+- [x] No new database columns or tables hold evaluation results or guilt-free left.
+- [x] A server-side evaluator produces everything listed above. Its tests carry over every case from the web's existing plan evaluation and guilt-free-left tests, with the same expected numbers, plus halfway and negative rounding cases.
+- [x] Getting and saving the spending plan return the evaluation.
+- [x] The server evaluates a plan the user hasn't saved yet without saving it.
+- [x] Percent-of-gross paycheck lines are computed on the server from gross pay.
+- [x] Guilt-free spending left uses the month dates the client sends, covers all tracked accounts at the user's share, ignores the account picker, can be negative, and returns nothing for left without a plan or take-home pay.
+- [x] Web Home, the plan overview, and the plan editor show the server's values. Visible numbers are unchanged and the web tests still pass.
+- [x] The frontend plan evaluation and guilt-free-left functions are removed.
+- [x] While waiting, the editor keeps showing the last numbers, and a failed request shows clearly.
+- [x] Controller tests cover the new and changed endpoints: no plan, no take-home pay, negative left, shared accounts, the account picker being ignored, and an unsaved plan.

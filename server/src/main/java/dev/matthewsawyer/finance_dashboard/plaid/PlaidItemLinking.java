@@ -34,24 +34,27 @@ public class PlaidItemLinking {
     private final PlaidTokenEncryption tokenEncryption;
     private final PlaidItemSync itemSync;
     private final String webhookUrl;
+    private final String iosRedirectUri;
 
     public PlaidItemLinking(
             PlaidApi plaidApi,
             PlaidItemRepository plaidItemRepository,
             PlaidTokenEncryption tokenEncryption,
             PlaidItemSync itemSync,
-            @Value("${plaid.webhook.url:}") String webhookUrl
+            @Value("${plaid.webhook.url:}") String webhookUrl,
+            @Value("${plaid.ios.redirect-uri:}") String iosRedirectUri
     ) {
         this.plaidApi = plaidApi;
         this.plaidItemRepository = plaidItemRepository;
         this.tokenEncryption = tokenEncryption;
         this.itemSync = itemSync;
         this.webhookUrl = webhookUrl;
+        this.iosRedirectUri = iosRedirectUri;
     }
 
-    /** A short-lived token that opens Plaid Link in the browser for this user. */
-    public String createLinkToken(UUID userId) {
-        return requestLinkToken(linkTokenRequest(userId)
+    /** A short-lived token that opens Plaid Link for this user, in the browser or the iOS app. */
+    public String createLinkToken(UUID userId, LinkPlatform platform) {
+        return requestLinkToken(platform, linkTokenRequest(userId)
                 .products(List.of(Products.TRANSACTIONS))
                 .transactions(new LinkTokenTransactions().daysRequested(DAYS_OF_HISTORY)));
     }
@@ -61,8 +64,8 @@ public class PlaidItemLinking {
      * Link shows institutions such as 401(k) providers that have no transactions. Do not add
      * optional Transactions: it activates a separate subscription even if never used.
      */
-    public String createInvestmentsLinkToken(UUID userId) {
-        return requestLinkToken(linkTokenRequest(userId)
+    public String createInvestmentsLinkToken(UUID userId, LinkPlatform platform) {
+        return requestLinkToken(platform, linkTokenRequest(userId)
                 .products(List.of(Products.INVESTMENTS)));
     }
 
@@ -74,10 +77,15 @@ public class PlaidItemLinking {
                 .language("en");
     }
 
-    private String requestLinkToken(LinkTokenCreateRequest request) {
+    private String requestLinkToken(LinkPlatform platform, LinkTokenCreateRequest request) {
         // Without a public URL, local runs rely on the scheduled recovery checks.
         if (!webhookUrl.isBlank()) {
             request.webhook(webhookUrl);
+        }
+        // Must match a redirect URI registered in the Plaid Dashboard. Without one, local iOS
+        // runs can still link banks that don't use OAuth.
+        if (platform == LinkPlatform.IOS && !iosRedirectUri.isBlank()) {
+            request.redirectUri(iosRedirectUri);
         }
 
         return PlaidCalls.execute(plaidApi.linkTokenCreate(request), "link token create")
@@ -137,7 +145,7 @@ public class PlaidItemLinking {
      * @throws PlaidRequestException when Plaid cannot create the update-mode token; a failed
      *         holdings request instead produces that token
      */
-    public AddInvestments addInvestments(UUID userId, String itemId) {
+    public AddInvestments addInvestments(UUID userId, String itemId, LinkPlatform platform) {
         PlaidItem item = activeItem(userId, itemId);
         if (item.getInvestmentsAvailable() == null) {
             // Synced before we tracked this; the accounts list tells us.
@@ -152,7 +160,7 @@ public class PlaidItemLinking {
             PlaidCalls.execute(plaidApi.investmentsHoldingsGet(
                     new InvestmentsHoldingsGetRequest().accessToken(accessToken)), "investments holdings get");
         } catch (PlaidRequestException e) {
-            return AddInvestments.needsConsent(requestLinkToken(linkTokenRequest(userId)
+            return AddInvestments.needsConsent(requestLinkToken(platform, linkTokenRequest(userId)
                     .accessToken(accessToken)
                     .additionalConsentedProducts(List.of(Products.INVESTMENTS))));
         }
@@ -169,10 +177,10 @@ public class PlaidItemLinking {
      * @throws NoSuchElementException when the user has no such item
      * @throws PlaidRequestException when Plaid cannot create the token
      */
-    public String createReconnectLinkToken(UUID userId, String itemId) {
+    public String createReconnectLinkToken(UUID userId, String itemId, LinkPlatform platform) {
         PlaidItem item = activeItem(userId, itemId);
         String accessToken = tokenEncryption.decrypt(item.getEncryptedAccessToken(), userId, itemId);
-        return requestLinkToken(linkTokenRequest(userId).accessToken(accessToken));
+        return requestLinkToken(platform, linkTokenRequest(userId).accessToken(accessToken));
     }
 
     /**

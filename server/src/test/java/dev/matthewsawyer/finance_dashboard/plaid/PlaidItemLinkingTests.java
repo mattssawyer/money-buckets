@@ -48,6 +48,7 @@ class PlaidItemLinkingTests {
 
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final String WEBHOOK_URL = "https://moneybuckets.test/api/plaid/webhook";
+    private static final String IOS_REDIRECT_URI = "https://moneybuckets.test/ios/plaid-oauth";
 
     @Mock
     private PlaidApi plaidApi;
@@ -83,7 +84,7 @@ class PlaidItemLinkingTests {
     void pointsLinkTokensAtTheWebhookUrl() throws IOException {
         stubLinkToken();
 
-        assertEquals("link-token", linking.createLinkToken(USER_ID));
+        assertEquals("link-token", linking.createLinkToken(USER_ID, LinkPlatform.WEB));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals(WEBHOOK_URL, request.getWebhook());
@@ -94,7 +95,7 @@ class PlaidItemLinkingTests {
     void everydayLinksAskForTransactions() throws IOException {
         stubLinkToken();
 
-        linking.createLinkToken(USER_ID);
+        linking.createLinkToken(USER_ID, LinkPlatform.WEB);
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals(List.of(Products.TRANSACTIONS), request.getProducts());
@@ -105,7 +106,7 @@ class PlaidItemLinkingTests {
     void investmentLinksDoNotActivateAnUnusedTransactionsSubscription() throws IOException {
         stubLinkToken();
 
-        assertEquals("link-token", linking.createInvestmentsLinkToken(USER_ID));
+        assertEquals("link-token", linking.createInvestmentsLinkToken(USER_ID, LinkPlatform.WEB));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals(List.of(Products.INVESTMENTS), request.getProducts());
@@ -115,10 +116,56 @@ class PlaidItemLinkingTests {
     }
 
     @Test
+    void iosLinksReturnToTheAppAfterAnOAuthBank() throws IOException {
+        stubLinkToken();
+
+        linking.createLinkToken(USER_ID, LinkPlatform.IOS);
+
+        assertEquals(IOS_REDIRECT_URI, captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
+    void iosInvestmentLinksReturnToTheAppAfterAnOAuthBank() throws IOException {
+        stubLinkToken();
+
+        linking.createInvestmentsLinkToken(USER_ID, LinkPlatform.IOS);
+
+        assertEquals(IOS_REDIRECT_URI, captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
+    void iosReconnectsReturnToTheAppAfterAnOAuthBank() throws IOException {
+        storedItem();
+        stubLinkToken();
+
+        linking.createReconnectLinkToken(USER_ID, "item-id", LinkPlatform.IOS);
+
+        assertEquals(IOS_REDIRECT_URI, captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
+    void iosLinksLeaveOutAnUnconfiguredRedirectUri() throws IOException {
+        stubLinkToken();
+
+        linking(WEBHOOK_URL, "").createLinkToken(USER_ID, LinkPlatform.IOS);
+
+        assertNull(captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
+    void webLinksHaveNoRedirectUri() throws IOException {
+        stubLinkToken();
+
+        linking.createLinkToken(USER_ID, LinkPlatform.WEB);
+
+        assertNull(captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
     void omitsTheWebhookUrlWhenItIsNotConfigured() throws IOException {
         stubLinkToken();
 
-        linking("").createLinkToken(USER_ID);
+        linking("").createLinkToken(USER_ID, LinkPlatform.WEB);
 
         assertNull(captureLinkTokenRequest().getWebhook());
     }
@@ -179,7 +226,7 @@ class PlaidItemLinkingTests {
         when(plaidApi.investmentsHoldingsGet(any(InvestmentsHoldingsGetRequest.class))).thenReturn(holdingsCall);
         when(holdingsCall.execute()).thenReturn(Response.success(new InvestmentsHoldingsGetResponse()));
 
-        assertEquals(PlaidItemLinking.AddInvestments.added(), linking.addInvestments(USER_ID, "item-id"));
+        assertEquals(PlaidItemLinking.AddInvestments.added(), linking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB));
 
         verify(itemSync).linked(item);
     }
@@ -193,7 +240,7 @@ class PlaidItemLinkingTests {
         stubLinkToken();
 
         assertEquals(PlaidItemLinking.AddInvestments.needsConsent("link-token"),
-                linking.addInvestments(USER_ID, "item-id"));
+                linking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals("access-token", request.getAccessToken());
@@ -202,11 +249,24 @@ class PlaidItemLinkingTests {
     }
 
     @Test
+    void iosConsentForInvestmentsReturnsToTheAppAfterAnOAuthBank() throws IOException {
+        ReflectionTestUtils.setField(storedItem(), "investmentsAvailable", true);
+        when(plaidApi.investmentsHoldingsGet(any(InvestmentsHoldingsGetRequest.class))).thenReturn(holdingsCall);
+        when(holdingsCall.execute()).thenReturn(
+                Response.error(400, ResponseBody.create("{}", MediaType.get("application/json"))));
+        stubLinkToken();
+
+        linking.addInvestments(USER_ID, "item-id", LinkPlatform.IOS);
+
+        assertEquals(IOS_REDIRECT_URI, captureLinkTokenRequest().getRedirectUri());
+    }
+
+    @Test
     void refusesInstitutionsThatDoNotOfferInvestments() {
         PlaidItem bank = storedItem();
         ReflectionTestUtils.setField(bank, "investmentsAvailable", false);
 
-        assertEquals(PlaidItemLinking.AddInvestments.notOffered(), linking.addInvestments(USER_ID, "item-id"));
+        assertEquals(PlaidItemLinking.AddInvestments.notOffered(), linking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB));
 
         verifyNoInteractions(plaidApi, itemSync);
     }
@@ -219,7 +279,7 @@ class PlaidItemLinkingTests {
             return null;
         }).when(itemSync).refreshAccounts("item-id");
 
-        assertEquals(PlaidItemLinking.AddInvestments.notOffered(), linking.addInvestments(USER_ID, "item-id"));
+        assertEquals(PlaidItemLinking.AddInvestments.notOffered(), linking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB));
 
         verify(itemSync).refreshAccounts("item-id");
         verifyNoInteractions(plaidApi);
@@ -230,7 +290,7 @@ class PlaidItemLinkingTests {
         storedItem();
         stubLinkToken();
 
-        assertEquals("link-token", linking.createReconnectLinkToken(USER_ID, "item-id"));
+        assertEquals("link-token", linking.createReconnectLinkToken(USER_ID, "item-id", LinkPlatform.WEB));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals("access-token", request.getAccessToken());
@@ -276,9 +336,9 @@ class PlaidItemLinkingTests {
 
     @Test
     void cannotChangeAnItemTheUserDoesNotHave() {
-        assertThrows(NoSuchElementException.class, () -> linking.addInvestments(USER_ID, "item-id"));
+        assertThrows(NoSuchElementException.class, () -> linking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB));
         assertThrows(NoSuchElementException.class, () -> linking.remove(USER_ID, "item-id"));
-        assertThrows(NoSuchElementException.class, () -> linking.createReconnectLinkToken(USER_ID, "item-id"));
+        assertThrows(NoSuchElementException.class, () -> linking.createReconnectLinkToken(USER_ID, "item-id", LinkPlatform.WEB));
         assertThrows(NoSuchElementException.class, () -> linking.reconnected(USER_ID, "item-id"));
 
         verifyNoInteractions(plaidApi, itemSync);
@@ -315,7 +375,12 @@ class PlaidItemLinkingTests {
     }
 
     private PlaidItemLinking linking(String webhookUrl) {
-        return new PlaidItemLinking(plaidApi, plaidItemRepository, tokenEncryption, itemSync, webhookUrl);
+        return linking(webhookUrl, IOS_REDIRECT_URI);
+    }
+
+    private PlaidItemLinking linking(String webhookUrl, String iosRedirectUri) {
+        return new PlaidItemLinking(
+                plaidApi, plaidItemRepository, tokenEncryption, itemSync, webhookUrl, iosRedirectUri);
     }
 
     private void stubLinkToken() throws IOException {

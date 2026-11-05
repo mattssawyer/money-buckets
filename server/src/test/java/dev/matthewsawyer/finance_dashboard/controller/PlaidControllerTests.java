@@ -15,6 +15,7 @@ import dev.matthewsawyer.finance_dashboard.recurring.RecurringPayments;
 import dev.matthewsawyer.finance_dashboard.model.PlaidTransaction;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
 import dev.matthewsawyer.finance_dashboard.model.User;
+import dev.matthewsawyer.finance_dashboard.plaid.LinkPlatform;
 import dev.matthewsawyer.finance_dashboard.plaid.PlaidItemLinking;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidAccountRepository;
 import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
@@ -136,17 +137,70 @@ class PlaidControllerTests {
     @Test
     void createsLinkTokensForTheCurrentUser() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(itemLinking.createLinkToken(USER_ID)).thenReturn("link-token");
+        when(itemLinking.createLinkToken(USER_ID, LinkPlatform.WEB)).thenReturn("link-token");
 
-        assertEquals(Map.of("link_token", "link-token"), controller.createLinkToken(jwt, false));
+        assertEquals(Map.of("link_token", "link-token"), controller.createLinkToken(jwt, false, "web"));
     }
 
     @Test
     void createsInvestmentLinkTokensWhenAsked() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(itemLinking.createInvestmentsLinkToken(USER_ID)).thenReturn("investments-link-token");
+        when(itemLinking.createInvestmentsLinkToken(USER_ID, LinkPlatform.WEB)).thenReturn("investments-link-token");
 
-        assertEquals(Map.of("link_token", "investments-link-token"), controller.createLinkToken(jwt, true));
+        assertEquals(Map.of("link_token", "investments-link-token"), controller.createLinkToken(jwt, true, "web"));
+    }
+
+    @Test
+    void createsIosLinkTokensWhenTheAppAsks() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(itemLinking.createLinkToken(USER_ID, LinkPlatform.IOS)).thenReturn("ios-link-token");
+
+        assertEquals(Map.of("link_token", "ios-link-token"), controller.createLinkToken(jwt, false, "ios"));
+    }
+
+    @Test
+    void createsIosInvestmentLinkTokensWhenTheAppAsks() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(itemLinking.createInvestmentsLinkToken(USER_ID, LinkPlatform.IOS)).thenReturn("ios-investments-token");
+
+        assertEquals(Map.of("link_token", "ios-investments-token"), controller.createLinkToken(jwt, true, "ios"));
+    }
+
+    @Test
+    void createsReconnectLinkTokensForTheWeb() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(itemLinking.createReconnectLinkToken(USER_ID, "item-id", LinkPlatform.WEB)).thenReturn("update-token");
+
+        assertEquals(Map.of("link_token", "update-token"), controller.createReconnectLinkToken(jwt, "item-id", "web"));
+    }
+
+    @Test
+    void createsIosReconnectLinkTokensWhenTheAppAsks() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(itemLinking.createReconnectLinkToken(USER_ID, "item-id", LinkPlatform.IOS)).thenReturn("ios-update-token");
+
+        assertEquals(Map.of("link_token", "ios-update-token"),
+                controller.createReconnectLinkToken(jwt, "item-id", "ios"));
+    }
+
+    @Test
+    void returnsAnIosUpdateModeTokenWhenTheAppAddsInvestments() {
+        when(userService.getOrCreateUser(jwt)).thenReturn(user);
+        when(itemLinking.addInvestments(USER_ID, "item-id", LinkPlatform.IOS))
+                .thenReturn(new PlaidItemLinking.AddInvestments(
+                        PlaidItemLinking.AddInvestments.Outcome.NEEDS_CONSENT, "ios-update-token"));
+
+        assertEquals(new PlaidController.AddInvestmentsResponse("needs_consent", "ios-update-token"),
+                controller.addInvestments(jwt, "item-id", "ios"));
+    }
+
+    @Test
+    void rejectsLinkTokensForAnUnknownPlatform() {
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.createLinkToken(jwt, false, "android"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verifyNoInteractions(userService, itemLinking);
     }
 
     @Test
@@ -199,32 +253,32 @@ class PlaidControllerTests {
     @Test
     void addsInvestmentsToAnItem() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(itemLinking.addInvestments(USER_ID, "item-id"))
+        when(itemLinking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB))
                 .thenReturn(new PlaidItemLinking.AddInvestments(PlaidItemLinking.AddInvestments.Outcome.ADDED, null));
 
         assertEquals(new PlaidController.AddInvestmentsResponse("added", null),
-                controller.addInvestments(jwt, "item-id"));
+                controller.addInvestments(jwt, "item-id", "web"));
     }
 
     @Test
     void returnsAnUpdateModeTokenWhenPlaidNeedsConsentForInvestments() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(itemLinking.addInvestments(USER_ID, "item-id"))
+        when(itemLinking.addInvestments(USER_ID, "item-id", LinkPlatform.WEB))
                 .thenReturn(new PlaidItemLinking.AddInvestments(
                         PlaidItemLinking.AddInvestments.Outcome.NEEDS_CONSENT, "update-token"));
 
         assertEquals(new PlaidController.AddInvestmentsResponse("needs_consent", "update-token"),
-                controller.addInvestments(jwt, "item-id"));
+                controller.addInvestments(jwt, "item-id", "web"));
     }
 
     @Test
     void addingInvestmentsToAnotherUsersItemIsNotFound() {
         when(userService.getOrCreateUser(jwt)).thenReturn(user);
-        when(itemLinking.addInvestments(USER_ID, "someone-elses"))
+        when(itemLinking.addInvestments(USER_ID, "someone-elses", LinkPlatform.WEB))
                 .thenThrow(new NoSuchElementException("No item someone-elses"));
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> controller.addInvestments(jwt, "someone-elses"));
+                () -> controller.addInvestments(jwt, "someone-elses", "web"));
 
         assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
     }

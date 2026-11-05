@@ -6,11 +6,11 @@ Source spec: `.scratch/ios-money-buckets/spec.md`. See [Plaid Link for iOS](http
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (PR #148)
 
-- [ ] Link token requests can say they come from iOS. Those tokens carry the configured redirect URI for new-bank, investments, and reconnect tokens.
-- [ ] Web Link token requests are unchanged (no redirect URI unless the web already used one).
-- [ ] The redirect URI is configuration, not hard-coded, and is blank-safe for local runs.
-- [ ] The production web host serves an Apple app site association file covering the redirect path, with the right content type and no redirect. The Content-Security-Policy and existing routes still work.
-- [ ] Controller tests cover iOS and web token requests for each token type.
-- [ ] The steps needed outside the code (registering the redirect URI in the Plaid dashboard, Apple team and bundle ID) are listed in the PR.
+- [x] Link token requests can say they come from iOS. Those tokens carry the configured redirect URI for new-bank, investments, and reconnect tokens.
+- [x] Web Link token requests are unchanged (no redirect URI unless the web already used one).
+- [x] The redirect URI is configuration, not hard-coded, and is blank-safe for local runs.
+- [x] The production web host serves an Apple app site association file covering the redirect path, with the right content type and no redirect. The Content-Security-Policy and existing routes still work.
+- [x] Controller tests cover iOS and web token requests for each token type.
+- [x] The steps needed outside the code (registering the redirect URI in the Plaid dashboard, Apple team and bundle ID) are listed in the PR.
