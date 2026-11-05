@@ -943,8 +943,6 @@ function changeIcon(change: Change) {
   /* Clear of the corner button. */
   padding-right: 0.75rem;
   display: flex;
-  /* A long name pushes the balance onto its own line rather than squeezing beside it. */
-  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
@@ -963,7 +961,6 @@ function changeIcon(change: Change) {
 }
 
 .account-figures {
-  margin-left: auto;
   text-align: right;
 }
 

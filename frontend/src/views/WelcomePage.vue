@@ -1006,14 +1006,10 @@ async function finish() {
     justify-content: flex-start;
   }
 
-  /* Only the current step keeps its name, so the labels don't crowd each other. */
-  .progress-step:not(.progress-current) .progress-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+  /* Every step keeps its name, smaller, so the steps ahead still say what they are. */
+  .progress-label {
+    font-size: var(--text-2xs);
+    line-height: 1.3;
   }
 }
 </style>
