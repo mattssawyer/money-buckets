@@ -17,7 +17,7 @@ import { getSpendingPlan } from '../api/SpendingPlanService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { formatMoney } from '../money'
 import { useOnboarding } from '../onboarding'
-import { closePlaidLink, linkItem } from '../plaid/plaidLink'
+import { closePlaidLink, linkItem, linkItems } from '../plaid/plaidLink'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 
 type Step = 'banks' | 'accounts' | 'plan' | 'investments'
@@ -170,7 +170,8 @@ async function link(options: { investments?: boolean } = {}) {
   linking.value = true
   linkError.value = ''
   try {
-    const result = await linkItem(options)
+    // Banks can be added several at a time; investment accounts go one per session.
+    const result = options.investments ? await linkItem(options) : await linkItems()
     if (disposed || !result) return
     sameInstitution.value = result.same_institution
     await refresh()

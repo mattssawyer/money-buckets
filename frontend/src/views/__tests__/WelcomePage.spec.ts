@@ -11,7 +11,7 @@ import {
 } from '../../api/PlaidService'
 import { getSpendingPlan } from '../../api/SpendingPlanService'
 import { finishOnboarding } from '../../api/UserService'
-import { linkItem } from '../../plaid/plaidLink'
+import { linkItem, linkItems } from '../../plaid/plaidLink'
 
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
@@ -35,6 +35,7 @@ vi.mock('../../api/UserService', () => ({
 vi.mock('../../plaid/plaidLink', () => ({
   closePlaidLink: vi.fn<() => void>(),
   linkItem: vi.fn<typeof linkItem>(),
+  linkItems: vi.fn<typeof linkItems>(),
   openPlaidLink: vi.fn<() => Promise<string | null>>(),
 }))
 
@@ -131,7 +132,7 @@ describe('welcome page', () => {
   })
 
   it('lists a bank once it’s connected and goes on to choosing accounts', async () => {
-    vi.mocked(linkItem).mockResolvedValue({ item_id: 'chase-item', same_institution: [] })
+    vi.mocked(linkItems).mockResolvedValue({ item_ids: ['chase-item'], same_institution: [] })
     const { wrapper, router } = await mountAt('/welcome')
 
     vi.mocked(getLinkedItems).mockResolvedValue([chase])
@@ -139,7 +140,9 @@ describe('welcome page', () => {
     await button(wrapper, 'Connect a bank').trigger('click')
     await flushPromises()
 
-    expect(linkItem).toHaveBeenCalledWith({})
+    // Banks can be added several at a time.
+    expect(linkItems).toHaveBeenCalledOnce()
+    expect(linkItem).not.toHaveBeenCalled()
     expect(wrapper.find('[aria-label="Connected banks"]').text()).toContain('Chase')
 
     await button(wrapper, 'Continue').trigger('click')
@@ -151,7 +154,7 @@ describe('welcome page', () => {
   })
 
   it('stays on connecting when the user closes Plaid without finishing', async () => {
-    vi.mocked(linkItem).mockResolvedValue(null)
+    vi.mocked(linkItems).mockResolvedValue(null)
     const { wrapper } = await mountAt('/welcome')
 
     await button(wrapper, 'Connect a bank').trigger('click')
@@ -162,7 +165,7 @@ describe('welcome page', () => {
   })
 
   it('says so when a bank can’t be connected', async () => {
-    vi.mocked(linkItem).mockRejectedValue(new Error('Plaid Link failed'))
+    vi.mocked(linkItems).mockRejectedValue(new Error('Plaid Link failed'))
     const { wrapper } = await mountAt('/welcome')
 
     await button(wrapper, 'Connect a bank').trigger('click')

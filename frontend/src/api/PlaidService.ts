@@ -206,6 +206,19 @@ export async function createLinkToken(options: { investments?: boolean } = {}): 
   return data.link_token
 }
 
+/** What a Link session that can add several banks saved. */
+export interface LinkSessionResult {
+  item_ids: string[]
+  /** The user's other items at the new items' institutions, whose accounts now appear twice. */
+  same_institution: PlaidItem[]
+}
+
+/** Saves every bank added in the Link session that opened with this token. */
+export async function finishLinkSession(linkToken: string): Promise<LinkSessionResult> {
+  const { data } = await apiClient.post<LinkSessionResult>('/plaid/link-sessions', { linkToken })
+  return data
+}
+
 export async function exchangePublicToken(publicToken: string): Promise<LinkResult> {
   const { data } = await apiClient.post<LinkResult>('/plaid/items', { publicToken })
   return data

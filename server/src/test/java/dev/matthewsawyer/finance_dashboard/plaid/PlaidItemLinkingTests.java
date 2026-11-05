@@ -9,6 +9,11 @@ import com.plaid.client.model.ItemRemoveResponse;
 import com.plaid.client.model.LinkTokenCreateRequest;
 import com.plaid.client.model.Products;
 import com.plaid.client.model.LinkTokenCreateResponse;
+import com.plaid.client.model.LinkSessionItemAddResult;
+import com.plaid.client.model.LinkSessionResults;
+import com.plaid.client.model.LinkTokenGetRequest;
+import com.plaid.client.model.LinkTokenGetResponse;
+import com.plaid.client.model.LinkTokenGetSessionsResponse;
 import com.plaid.client.request.PlaidApi;
 import dev.matthewsawyer.finance_dashboard.TestPlaidKeysets;
 import dev.matthewsawyer.finance_dashboard.model.PlaidItem;
@@ -36,9 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -48,6 +56,7 @@ class PlaidItemLinkingTests {
 
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final String WEBHOOK_URL = "https://moneybuckets.test/api/plaid/webhook";
+    private static final String PLAID_USER_ID = "usr_test";
 
     @Mock
     private PlaidApi plaidApi;
@@ -57,6 +66,12 @@ class PlaidItemLinkingTests {
 
     @Mock
     private PlaidItemSync itemSync;
+
+    @Mock
+    private PlaidUsers plaidUsers;
+
+    @Mock
+    private Call<LinkTokenGetResponse> linkTokenGetCall;
 
     @Mock
     private Call<LinkTokenCreateResponse> linkTokenCall;
@@ -82,17 +97,96 @@ class PlaidItemLinkingTests {
     @Test
     void pointsLinkTokensAtTheWebhookUrl() throws IOException {
         stubLinkToken();
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
 
         assertEquals("link-token", linking.createLinkToken(USER_ID));
 
         LinkTokenCreateRequest request = captureLinkTokenRequest();
         assertEquals(WEBHOOK_URL, request.getWebhook());
-        assertEquals(USER_ID.toString(), request.getUser().getClientUserId());
+    }
+
+    @Test
+    void everydayLinksLetTheUserAddSeveralBanksAsTheirPlaidUser() throws IOException {
+        stubLinkToken();
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+
+        linking.createLinkToken(USER_ID);
+
+        LinkTokenCreateRequest request = captureLinkTokenRequest();
+        assertTrue(request.getEnableMultiItemLink());
+        assertEquals(PLAID_USER_ID, request.getUserId());
+        // Plaid refuses a user object alongside the Plaid user.
+        assertNull(request.getUser());
+    }
+
+    @Test
+    void savesEveryBankAddedInALinkSession() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession(PLAID_USER_ID, "public-1", "public-2");
+        stubExchange("access-token");
+
+        List<PlaidItemLinking.Linked> linked = linking.finishSession(USER_ID, "link-token");
+
+        assertEquals(2, linked.size());
+        ArgumentCaptor<ItemPublicTokenExchangeRequest> exchanges =
+                ArgumentCaptor.forClass(ItemPublicTokenExchangeRequest.class);
+        verify(plaidApi, times(2)).itemPublicTokenExchange(exchanges.capture());
+        assertEquals(List.of("public-1", "public-2"),
+                exchanges.getAllValues().stream().map(ItemPublicTokenExchangeRequest::getPublicToken).toList());
+        ArgumentCaptor<LinkTokenGetRequest> sessionRequest = ArgumentCaptor.forClass(LinkTokenGetRequest.class);
+        verify(plaidApi).linkTokenGet(sessionRequest.capture());
+        assertEquals("link-token", sessionRequest.getValue().getLinkToken());
+    }
+
+    @Test
+    void savesNothingWhenTheUserAddedNoBank() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession(PLAID_USER_ID);
+
+        assertEquals(List.of(), linking.finishSession(USER_ID, "link-token"));
+        verify(plaidApi, never()).itemPublicTokenExchange(any());
+    }
+
+    @Test
+    void refusesALinkSessionMadeForAnotherUser() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession("usr_someone_else", "public-1");
+
+        assertThrows(NoSuchElementException.class, () -> linking.finishSession(USER_ID, "link-token"));
+        verify(plaidApi, never()).itemPublicTokenExchange(any());
+    }
+
+    @Test
+    void keepsTheBanksThatSavedWhenAnotherFails() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession(PLAID_USER_ID, "public-1", "public-2");
+        when(plaidApi.itemPublicTokenExchange(any(ItemPublicTokenExchangeRequest.class))).thenReturn(exchangeCall);
+        when(exchangeCall.execute())
+                .thenReturn(Response.error(400, ResponseBody.create(
+                        "{\"error_code\":\"INVALID_PUBLIC_TOKEN\"}", MediaType.get("application/json"))))
+                .thenReturn(Response.success(new ItemPublicTokenExchangeResponse()
+                        .itemId("item-id").accessToken("access-token").requestId("request-id")));
+
+        List<PlaidItemLinking.Linked> linked = linking.finishSession(USER_ID, "link-token");
+
+        assertEquals(List.of("item-id"), linked.stream().map(PlaidItemLinking.Linked::itemId).toList());
+    }
+
+    @Test
+    void failsWhenNoBankInTheSessionCouldBeSaved() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession(PLAID_USER_ID, "public-1");
+        when(plaidApi.itemPublicTokenExchange(any(ItemPublicTokenExchangeRequest.class))).thenReturn(exchangeCall);
+        when(exchangeCall.execute()).thenReturn(Response.error(400, ResponseBody.create(
+                "{\"error_code\":\"INVALID_PUBLIC_TOKEN\"}", MediaType.get("application/json"))));
+
+        assertThrows(PlaidRequestException.class, () -> linking.finishSession(USER_ID, "link-token"));
     }
 
     @Test
     void everydayLinksAskForTransactions() throws IOException {
         stubLinkToken();
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
 
         linking.createLinkToken(USER_ID);
 
@@ -315,7 +409,18 @@ class PlaidItemLinkingTests {
     }
 
     private PlaidItemLinking linking(String webhookUrl) {
-        return new PlaidItemLinking(plaidApi, plaidItemRepository, tokenEncryption, itemSync, webhookUrl);
+        return new PlaidItemLinking(plaidApi, plaidItemRepository, tokenEncryption, itemSync, plaidUsers,
+                webhookUrl);
+    }
+
+    private void stubSession(String plaidUserId, String... publicTokens) throws IOException {
+        when(plaidApi.linkTokenGet(any(LinkTokenGetRequest.class))).thenReturn(linkTokenGetCall);
+        when(linkTokenGetCall.execute()).thenReturn(Response.success(new LinkTokenGetResponse()
+                .userId(plaidUserId)
+                .linkSessions(List.of(new LinkTokenGetSessionsResponse().results(new LinkSessionResults()
+                        .itemAddResults(java.util.Arrays.stream(publicTokens)
+                                .map(token -> new LinkSessionItemAddResult().publicToken(token))
+                                .toList()))))));
     }
 
     private void stubLinkToken() throws IOException {

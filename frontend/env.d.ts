@@ -14,6 +14,7 @@ interface Window {
       token: string
       onSuccess(publicToken: string, metadata: unknown): void
       onExit(error: unknown, metadata: unknown): void
+      onEvent?(eventName: string, metadata: unknown): void
     }): {
       open(): void
       destroy(): void

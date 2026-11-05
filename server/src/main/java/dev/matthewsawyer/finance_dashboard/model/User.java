@@ -33,6 +33,10 @@ public class User {
     @Column(name = "onboarded_at")
     private Instant onboardedAt;
 
+    /** Plaid's id for this user, created the first time they open Link. */
+    @Column(name = "plaid_user_id", length = 64)
+    private String plaidUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -84,6 +88,14 @@ public class User {
 
     public boolean isOnboarded() {
         return onboardedAt != null;
+    }
+
+    public String getPlaidUserId() {
+        return plaidUserId;
+    }
+
+    public void setPlaidUserId(String plaidUserId) {
+        this.plaidUserId = plaidUserId;
     }
 
     /** Keeps the first finish if the user finishes again. */

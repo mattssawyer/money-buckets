@@ -5,7 +5,7 @@ import PrimeVue from 'primevue/config'
 import HomePage from '../HomePage.vue'
 import {
   createLinkToken,
-  exchangePublicToken,
+  finishLinkSession,
   getAccounts,
   getLinkedItemIds,
   getSpendingByBucket,
@@ -39,7 +39,7 @@ vi.mock('../../api/SpendingPlanService', () => ({
 }))
 vi.mock('../../api/PlaidService', () => ({
   createLinkToken: vi.fn<() => void>(),
-  exchangePublicToken: vi.fn<() => void>(),
+  finishLinkSession: vi.fn<() => void>(),
   getAccounts: vi.fn<() => void>(),
   getLinkedItemIds: vi.fn<() => void>(),
   getSpendingByBucket: vi.fn<() => void>(),
@@ -285,7 +285,7 @@ beforeEach(() => {
     unsorted: 0,
   })
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
-  vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
+  vi.mocked(finishLinkSession).mockResolvedValue({ item_ids: ['saved-item'], same_institution: [] })
   vi.stubGlobal('Plaid', {
     create: vi.fn<(options: typeof linkOptions) => unknown>((options: typeof linkOptions) => {
       linkOptions = options
@@ -362,8 +362,8 @@ describe('homepage balances', () => {
   })
 
   it('offers to remove the older connection when an institution is linked again', async () => {
-    vi.mocked(exchangePublicToken).mockResolvedValue({
-      item_id: 'new-item',
+    vi.mocked(finishLinkSession).mockResolvedValue({
+      item_ids: ['new-item'],
       same_institution: [
         {
           item_id: 'saved-item',
@@ -478,12 +478,39 @@ describe('homepage balances', () => {
     await button(wrapper, 'Add an account').trigger('click')
     await flushPromises()
 
-    linkOptions.onSuccess('public-token', {})
+    linkOptions.onEvent?.('HANDOFF', {})
     await flushPromises()
 
-    expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
+    expect(finishLinkSession).toHaveBeenCalledWith('link-token')
     expect(wrapper.text()).not.toContain('Add your first account')
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
+  })
+
+  it('saves the banks added before Link closed on an error', async () => {
+    const wrapper = mountHome()
+    await flushPromises()
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+
+    linkOptions.onExit({ error_code: 'INSTITUTION_DOWN' }, {})
+    await flushPromises()
+
+    expect(finishLinkSession).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('We couldn’t connect your account')
+    expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
+  })
+
+  it('says so when Link fails before any bank was added', async () => {
+    vi.mocked(finishLinkSession).mockResolvedValue({ item_ids: [], same_institution: [] })
+    const wrapper = mountHome()
+    await flushPromises()
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+
+    linkOptions.onExit({ error_code: 'INSTITUTION_DOWN' }, {})
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('We couldn’t connect your account. Please try again.')
   })
 
   it('keeps a newly saved connection when balances fail and retries without relinking', async () => {
@@ -502,7 +529,7 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
-    expect(exchangePublicToken).toHaveBeenCalledOnce()
+    expect(finishLinkSession).toHaveBeenCalledOnce()
   })
 
   it('does not show onboarding if the saved connections request fails', async () => {
@@ -518,8 +545,8 @@ describe('homepage balances', () => {
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
   })
 
-  it('retries a failed exchange with the same public token instead of relinking', async () => {
-    vi.mocked(exchangePublicToken).mockRejectedValueOnce(new Error('Plaid unavailable'))
+  it('retries saving the same Link session instead of relinking', async () => {
+    vi.mocked(finishLinkSession).mockRejectedValueOnce(new Error('Plaid unavailable'))
     const wrapper = mountHome()
     await flushPromises()
     await button(wrapper, 'Add an account').trigger('click')
@@ -532,8 +559,8 @@ describe('homepage balances', () => {
     await button(wrapper, 'Try again').trigger('click')
     await flushPromises()
 
-    expect(exchangePublicToken).toHaveBeenLastCalledWith('public-token')
-    expect(exchangePublicToken).toHaveBeenCalledTimes(2)
+    expect(finishLinkSession).toHaveBeenLastCalledWith('link-token')
+    expect(finishLinkSession).toHaveBeenCalledTimes(2)
     expect(createLinkToken).toHaveBeenCalledOnce()
     expect(wrapper.get('.balance-amount').text()).toBe('$1,250.50')
   })

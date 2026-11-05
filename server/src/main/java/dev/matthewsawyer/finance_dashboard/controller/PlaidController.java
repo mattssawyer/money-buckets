@@ -43,6 +43,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -135,6 +136,47 @@ public class PlaidController {
     }
 
     public record ExchangePublicTokenRequest(String publicToken) {
+    }
+
+    /**
+     * Saves every bank the user added in a Link session that could add several, once Link
+     * closes. {@code linkToken} is the token that session opened with.
+     */
+    @PostMapping("/link-sessions")
+    public SessionResponse finishLinkSession(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody FinishLinkSessionRequest request
+    ) {
+        if (request.linkToken() == null || request.linkToken().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link token is required");
+        }
+
+        User user = userService.getOrCreateUser(jwt);
+        List<PlaidItemLinking.Linked> linked;
+        try {
+            linked = itemLinking.finishSession(user.getId(), request.linkToken());
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Link session not found");
+        }
+        Map<String, ItemResponse> sameInstitution = new LinkedHashMap<>();
+        for (PlaidItemLinking.Linked item : linked) {
+            for (PlaidItem other : item.sameInstitution()) {
+                sameInstitution.putIfAbsent(other.getItemId(), ItemResponse.from(other));
+            }
+        }
+        return new SessionResponse(
+                linked.stream().map(PlaidItemLinking.Linked::itemId).toList(),
+                List.copyOf(sameInstitution.values()));
+    }
+
+    public record FinishLinkSessionRequest(String linkToken) {
+    }
+
+    /** The items saved, and the user's other items at those items' institutions. */
+    public record SessionResponse(
+            @JsonProperty("item_ids") List<String> itemIds,
+            @JsonProperty("same_institution") List<ItemResponse> sameInstitution
+    ) {
     }
 
     /** {@code sameInstitution} lists the user's other items at the linked item's institution. */
