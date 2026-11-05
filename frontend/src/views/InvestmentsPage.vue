@@ -442,13 +442,14 @@ function changeIcon(change: Change) {
             </p>
           </div>
 
-          <!-- One day of history still draws, as a flat line at that day's value. -->
+          <!-- One day of history still draws, as a flat line at that day's value, at a smaller size
+          until there's a trend to show. -->
           <BalanceChart
             v-if="shown.points.length"
             :points="shown.points"
             :label="shown.label"
             :color="shown.color"
-            height="16rem"
+            :height="shown.points.length > 1 ? '16rem' : '8rem'"
             :added="focused ? undefined : history?.accounts_added"
             :dropped="focused ? undefined : history?.accounts_dropped"
           />
@@ -544,7 +545,7 @@ function changeIcon(change: Change) {
                   :points="card.points"
                   :label="card.name"
                   :color="card.color"
-                  height="9rem"
+                  :height="card.points.length > 1 ? '9rem' : '5rem'"
                   :y-ticks="3"
                 />
                 <p v-else class="history-note">No balance recorded yet.</p>
@@ -942,6 +943,8 @@ function changeIcon(change: Change) {
   /* Clear of the corner button. */
   padding-right: 0.75rem;
   display: flex;
+  /* A long name pushes the balance onto its own line rather than squeezing beside it. */
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
@@ -960,6 +963,7 @@ function changeIcon(change: Change) {
 }
 
 .account-figures {
+  margin-left: auto;
   text-align: right;
 }
 
