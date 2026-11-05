@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../views/LoginPage.vue'
 
-const auth = vi.hoisted(() => ({ isSignedIn: false, signIn: vi.fn() }))
+const auth = vi.hoisted(() => ({ isSignedIn: false, signIn: vi.fn<() => void>() }))
 
 vi.mock('../auth', async () => {
   const { ref } = await import('vue')

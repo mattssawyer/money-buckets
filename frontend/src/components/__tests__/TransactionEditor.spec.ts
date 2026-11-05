@@ -12,11 +12,11 @@ import {
 } from '../../api/PlaidService'
 
 vi.mock('../../api/PlaidService', () => ({
-  answerRecurringCandidate: vi.fn(),
-  correctPayee: vi.fn(),
-  setTransactionCounting: vi.fn(),
-  undoPayeeCorrection: vi.fn(),
-  undoRecurringAnswer: vi.fn(),
+  answerRecurringCandidate: vi.fn<() => void>(),
+  correctPayee: vi.fn<() => void>(),
+  setTransactionCounting: vi.fn<() => void>(),
+  undoPayeeCorrection: vi.fn<() => void>(),
+  undoRecurringAnswer: vi.fn<() => void>(),
 }))
 enableAutoUnmount(afterEach)
 

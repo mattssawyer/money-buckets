@@ -918,10 +918,16 @@ async function finish() {
   left: -50%;
   height: 2px;
   content: '';
-  background: var(--app-text);
+  background: var(--app-inset-hover);
+  transition: background-color 320ms var(--ease-out);
 }
 
-/* Steps still to come are outlined in the same black, so the bar reads as one piece. */
+/* The line fills in black up to the current step; steps still to come stay light. */
+.progress-done::before,
+.progress-current::before {
+  background: var(--app-text) !important;
+}
+
 .progress-bubble {
   position: relative;
   z-index: 1;
@@ -929,10 +935,10 @@ async function finish() {
   width: 1.75rem;
   height: 1.75rem;
   place-items: center;
-  color: var(--app-text);
+  color: var(--app-text-secondary);
   font-variant-numeric: tabular-nums;
   background: var(--app-canvas);
-  border: 2px solid var(--app-text);
+  border: 2px solid var(--app-not-counted);
   border-radius: 50%;
 }
 
@@ -945,6 +951,7 @@ async function finish() {
 .progress-current .progress-bubble {
   color: var(--app-text-inverse);
   background: var(--app-text);
+  border-color: var(--app-text);
 }
 
 .progress-current .progress-bubble {
@@ -999,14 +1006,10 @@ async function finish() {
     justify-content: flex-start;
   }
 
-  /* Only the current step keeps its name, so the labels don't crowd each other. */
-  .progress-step:not(.progress-current) .progress-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+  /* Every step keeps its name, smaller, so the steps ahead still say what they are. */
+  .progress-label {
+    font-size: var(--text-2xs);
+    line-height: 1.3;
   }
 }
 </style>

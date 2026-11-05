@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
+import { CloudOff, Minus, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -45,7 +45,9 @@ type Group = 'investments' | 'bank' | 'debts'
 const GROUPS: { id: Group; heading: string; color: string }[] = [
   // Borrows two bucket colors: investments keep the Investments bucket's, the bank the Fixed costs'.
   { id: 'investments', heading: 'Investment accounts', color: PLAN_COLORS.investments },
-  { id: 'bank', heading: 'Bank accounts', color: PLAN_COLORS.fixedCosts },
+  // Blue is for fixed costs, so bank accounts are drawn in ink like net worth.
+  { id: 'bank', heading: 'Bank accounts', color: gray[900] },
+  // Mid gray against bank accounts' ink, so the two sections read apart at the same weight.
   { id: 'debts', heading: 'Credit cards and loans', color: gray[500] },
 ]
 
@@ -309,8 +311,19 @@ function onOlderRemoved() {
   void load()
 }
 
+/** Under half a cent rounds to $0.00, which shouldn't look like a rise or a fall. */
+function isFlat(change: Change) {
+  return Math.abs(change.amount) < 0.005
+}
+
 function changeIcon(change: Change) {
+  if (isFlat(change)) return Minus
   return change.amount < 0 ? TrendingDown : TrendingUp
+}
+
+function changeClass(change: Change) {
+  if (isFlat(change)) return 'flat'
+  return change.amount < 0 ? 'down' : 'up'
 }
 </script>
 
@@ -322,7 +335,7 @@ function changeIcon(change: Change) {
         <h1 id="investments-heading">Investments</h1>
         <div class="heading-actions">
           <Button
-            v-if="items.length"
+            v-if="items.length || loadError"
             :label="linking ? 'Connecting…' : 'Link investment account'"
             :aria-label="linking ? 'Connecting…' : 'Link investment account'"
             :loading="linking"
@@ -356,6 +369,9 @@ function changeIcon(change: Change) {
 
       <section v-else-if="loadError" class="panel prompt" aria-labelledby="load-error-heading">
         <div class="prompt-content">
+          <div class="prompt-icon" aria-hidden="true">
+            <CloudOff :size="24" :stroke-width="1.5" />
+          </div>
           <h2 id="load-error-heading">We couldn’t load your investments.</h2>
           <p>Check your connection and try again.</p>
           <Button label="Try again" severity="secondary" @click="load()" />
@@ -429,7 +445,7 @@ function changeIcon(change: Change) {
                 :is="changeIcon(shown.change)"
                 :size="16"
                 :stroke-width="1.75"
-                :class="shown.change.amount < 0 ? 'down' : 'up'"
+                :class="changeClass(shown.change)"
                 aria-hidden="true"
               />
               {{ formatChange(shown.change) }}
@@ -437,13 +453,14 @@ function changeIcon(change: Change) {
             </p>
           </div>
 
-          <!-- One day of history still draws, as a flat line at that day's value. -->
+          <!-- One day of history still draws, as a flat line at that day's value, at a smaller size
+          until there's a trend to show. -->
           <BalanceChart
             v-if="shown.points.length"
             :points="shown.points"
             :label="shown.label"
             :color="shown.color"
-            height="16rem"
+            :height="shown.points.length > 1 ? '16rem' : '8rem'"
             :added="focused ? undefined : history?.accounts_added"
             :dropped="focused ? undefined : history?.accounts_dropped"
           />
@@ -527,7 +544,7 @@ function changeIcon(change: Change) {
                         :is="changeIcon(card.change)"
                         :size="14"
                         :stroke-width="1.75"
-                        :class="card.change.amount < 0 ? 'down' : 'up'"
+                        :class="changeClass(card.change)"
                         aria-hidden="true"
                       />
                       {{ formatChange(card.change) }}
@@ -539,7 +556,8 @@ function changeIcon(change: Change) {
                   :points="card.points"
                   :label="card.name"
                   :color="card.color"
-                  height="9rem"
+                  :height="card.points.length > 1 ? '9rem' : '5rem'"
+                  :y-ticks="3"
                 />
                 <p v-else class="history-note">No balance recorded yet.</p>
               </article>
@@ -747,8 +765,9 @@ function changeIcon(change: Change) {
   margin-top: 0.25rem;
   font-size: var(--text-4xl);
   font-weight: 550;
+  font-variant-numeric: tabular-nums;
   line-height: 1.1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 
 .change {
@@ -772,6 +791,10 @@ function changeIcon(change: Change) {
 
 .change .down {
   color: var(--app-danger);
+}
+
+.change .flat {
+  color: var(--app-text-secondary);
 }
 
 .change-range {
@@ -808,12 +831,15 @@ function changeIcon(change: Change) {
 
 .account-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  /* Fit, not fill: a short section's cards widen to fill the row instead of leaving empty slots. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1.25rem;
 }
 
 .account-card {
   display: grid;
+  /* Extra height goes above the chart, so charts in a row line up even when a name wraps. */
+  grid-template-rows: 1fr auto;
   gap: 1rem;
   padding: 1.125rem 1.25rem 1.25rem;
 }
@@ -967,6 +993,11 @@ function changeIcon(change: Change) {
 }
 
 @media (max-width: 640px) {
+  /* Phones stack one card per row, so the small charts are shorter to keep the list scannable. */
+  .account-card :deep(.balance-chart) {
+    height: 6.5rem !important;
+  }
+
   .page-heading {
     flex-wrap: wrap;
   }

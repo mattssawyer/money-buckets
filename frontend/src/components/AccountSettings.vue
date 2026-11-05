@@ -90,10 +90,10 @@ function isOwed(account: PlaidAccount) {
             </th>
             <td class="column-balance" data-label="Balance">
               <template v-if="account.balances.current == null">—</template>
-              <template v-else>
+              <span v-else class="balance-value">
                 {{ formatMoney(account.balances.current) }}
                 <span v-if="isOwed(account)" class="owed">owed</span>
-              </template>
+              </span>
             </td>
             <td class="column-setting" data-label="Spending">
               <input
@@ -214,6 +214,11 @@ function isOwed(account: PlaidAccount) {
   display: inline-flex;
   align-items: center;
   gap: 0.625rem;
+  vertical-align: middle;
+}
+
+.account-table td .switch {
+  vertical-align: middle;
 }
 
 .account-table thead .column-balance,
@@ -267,6 +272,10 @@ function isOwed(account: PlaidAccount) {
   font-weight: 500;
 }
 
+.balance-value {
+  display: inline-block;
+}
+
 .owed {
   display: block;
   color: var(--app-text-secondary);
@@ -276,6 +285,15 @@ function isOwed(account: PlaidAccount) {
 
 .not-applicable {
   color: var(--app-text-secondary);
+}
+
+/* On phones the dash takes a switch's footprint, so it lines up with the switches above and below. */
+@container (max-width: 40rem) {
+  .not-applicable {
+    display: inline-block;
+    width: 2.25rem;
+    text-align: center;
+  }
 }
 
 /* In narrow places each account becomes a small card with its settings labelled. */

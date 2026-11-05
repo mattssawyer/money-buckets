@@ -15,7 +15,6 @@ import {
   getRecurringCandidates,
   answerRecurringCandidate,
   correctPayee,
-  undoRecurringAnswer,
   removeItem,
   type PlaidAccount,
   type PlaidTransaction,
@@ -39,21 +38,21 @@ vi.mock('../../api/SpendingPlanService', () => ({
     vi.fn<(range: { start: string; end: string }) => Promise<GuiltFreeLeftResponse | null>>(),
 }))
 vi.mock('../../api/PlaidService', () => ({
-  createLinkToken: vi.fn(),
-  exchangePublicToken: vi.fn(),
-  getAccounts: vi.fn(),
-  getLinkedItemIds: vi.fn(),
-  getSpendingByBucket: vi.fn(),
-  getTransactions: vi.fn(),
-  getTransactionPage: vi.fn(),
-  getRecurringTransactions: vi.fn(),
+  createLinkToken: vi.fn<() => void>(),
+  exchangePublicToken: vi.fn<() => void>(),
+  getAccounts: vi.fn<() => void>(),
+  getLinkedItemIds: vi.fn<() => void>(),
+  getSpendingByBucket: vi.fn<() => void>(),
+  getTransactions: vi.fn<() => void>(),
+  getTransactionPage: vi.fn<() => void>(),
+  getRecurringTransactions: vi.fn<() => void>(),
   getRecurringCandidates: vi.fn<(accountId?: string) => Promise<RecurringCandidate[]>>(),
   answerRecurringCandidate:
     vi.fn<(candidate: RecurringCandidate, confirmed: boolean) => Promise<void>>(),
   undoRecurringAnswer: vi.fn<(candidate: RecurringCandidate) => Promise<void>>(),
-  removeItem: vi.fn(),
-  correctPayee: vi.fn(),
-  undoPayeeCorrection: vi.fn(),
+  removeItem: vi.fn<() => void>(),
+  correctPayee: vi.fn<() => void>(),
+  undoPayeeCorrection: vi.fn<() => void>(),
 }))
 const auth = vi.hoisted(() => ({
   user: null as { firstName: string | null; email: string } | null,
@@ -255,11 +254,11 @@ beforeEach(() => {
       matches: false,
       media: query,
       onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
+      addListener: vi.fn<() => void>(),
+      removeListener: vi.fn<() => void>(),
+      addEventListener: vi.fn<() => void>(),
+      removeEventListener: vi.fn<() => void>(),
+      dispatchEvent: vi.fn<() => void>(),
     })),
   )
   vi.mocked(getLinkedItemIds).mockResolvedValue([])
@@ -288,9 +287,9 @@ beforeEach(() => {
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
   vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'saved-item', same_institution: [] })
   vi.stubGlobal('Plaid', {
-    create: vi.fn((options: typeof linkOptions) => {
+    create: vi.fn<(options: typeof linkOptions) => unknown>((options: typeof linkOptions) => {
       linkOptions = options
-      return { open: vi.fn(), destroy: vi.fn() }
+      return { open: vi.fn<() => void>(), destroy: vi.fn<() => void>() }
     }),
   })
 })
@@ -306,6 +305,14 @@ describe('homepage balances', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Add your first account')
+  })
+
+  it('holds Add an account until the linked accounts load, so a new link isn’t overwritten', async () => {
+    vi.mocked(getLinkedItemIds).mockReturnValue(new Promise(() => {}))
+    const wrapper = mountHome()
+    await flushPromises()
+
+    expect(button(wrapper, 'Add an account').attributes('disabled')).toBeDefined()
   })
 
   it('asks for accounts and every card at once instead of one after another', async () => {

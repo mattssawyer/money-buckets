@@ -152,7 +152,10 @@ function plannedLines(lines: PlanLineDraft[]) {
         :aria-labelledby="`overview-${bucket}-heading`"
       >
         <header class="bucket-header">
-          <h2 :id="`overview-${bucket}-heading`">{{ PLAN_TITLES[bucket] }}</h2>
+          <h2 :id="`overview-${bucket}-heading`" class="bucket-title">
+            <span class="swatch" :style="{ background: PLAN_COLORS[bucket] }" aria-hidden="true" />
+            {{ PLAN_TITLES[bucket] }}
+          </h2>
           <span class="bucket-total">{{
             formatPlanAmount(evaluation.buckets[bucket].amount)
           }}</span>
@@ -183,7 +186,7 @@ function plannedLines(lines: PlanLineDraft[]) {
               type="button"
               class="line-row buffer-button hit-area"
               aria-haspopup="dialog"
-              aria-label="Change the miscellaneous buffer"
+              :aria-label="`Miscellaneous buffer (${plan.bufferPercent}%) ${formatPlanAmount(evaluation.buffer)}, change`"
               @click="emit('editBuffer')"
             >
               <span class="line-name">
@@ -243,7 +246,7 @@ h2 {
   margin: 0.25rem 0 0;
   font-size: var(--text-2xl);
   font-weight: 550;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -334,6 +337,7 @@ h2 {
 
 .bucket-card {
   display: grid;
+  align-content: start;
   gap: 0.75rem;
   padding: 1.25rem;
 }
@@ -345,6 +349,12 @@ h2 {
   gap: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--app-divider);
+}
+
+.bucket-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .bucket-total {
@@ -434,6 +444,12 @@ h2 {
   .summary-panel,
   .bucket-card {
     padding: 1.25rem;
+  }
+
+  /* Two by two, so the bucket cards start nearer the top. */
+  .legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 0.75rem;
   }
 }
 </style>

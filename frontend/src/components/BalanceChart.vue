@@ -16,6 +16,8 @@ const props = defineProps<{
   height: string
   added?: AccountChange[]
   dropped?: AccountChange[]
+  /** A fixed number of y-axis labels, so small charts side by side match. */
+  yTicks?: number
 }>()
 
 const GRID = gray[100]
@@ -61,7 +63,8 @@ const chartData = computed(() => ({
       label: props.label,
       data: series.value.map((point) => point.value),
       borderColor: props.color,
-      backgroundColor: `${props.color}1a`,
+      // A faint wash: the line carries the data, the fill only grounds it.
+      backgroundColor: `${props.color}0f`,
       borderWidth: 2,
       borderJoinStyle: 'round' as const,
       borderCapStyle: 'round' as const,
@@ -106,6 +109,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       ticks: {
         color: TICK,
         maxTicksLimit: 5,
+        ...(props.yTicks ? { count: props.yTicks } : {}),
         callback: (value) => formatCompactMoney(Number(value)),
       },
     },

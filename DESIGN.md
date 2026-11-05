@@ -7,7 +7,7 @@ colors:
   savings-green: "#1baf7a"
   guilt-free-gold: "#eda100"
   ink: "#171717"
-  ink-secondary: "#737373"
+  ink-secondary: "#666666"
   ink-subdued: "#9e9e9e"
   ink-inverse: "#ffffff"
   canvas: "#eeeeee"
@@ -29,7 +29,7 @@ typography:
     fontSize: "2.375rem"
     fontWeight: 550
     lineHeight: 1.1
-    letterSpacing: "-0.04em"
+    letterSpacing: "-0.025em"
     fontFeature: "tnum"
   headline:
     fontFamily: "Geist Variable, system-ui, sans-serif"
@@ -106,7 +106,7 @@ components:
     width: "2.25rem"
     height: "1.25rem"
   switch-off:
-    backgroundColor: "{colors.inset-hover}"
+    backgroundColor: "{colors.not-counted-gray}"
     rounded: "{rounded.pill}"
   payee-icon:
     backgroundColor: "{colors.inset}"
@@ -143,7 +143,7 @@ A gray ledger with four bucket inks. Neutrals do almost all the work, and color 
 
 ### Secondary
 The four bucket colors work as a single categorical set. They come from a validated data-visualization palette. Spending views (Home, transaction lists) order buckets fixed costs, guilt-free, savings, investments, the server's order; the spending plan orders its own buckets fixed costs, investments, savings, guilt-free.
-- **Fixed-costs Blue** (`fixed-costs-blue`): fixed costs everywhere they're charted or tagged. On the Investments page it also marks bank accounts.
+- **Fixed-costs Blue** (`fixed-costs-blue`): fixed costs everywhere they're charted or tagged, and nothing else. On the Investments page bank accounts are drawn in ink and loans in gray, so blue keeps its one meaning.
 - **Investments Orange** (`investments-orange`): the investments bucket, and investment accounts on the Investments page.
 - **Savings Green** (`savings-green`): the savings bucket.
 - **Guilt-free Gold** (`guilt-free-gold`): guilt-free spending, including the fill of the guilt-free progress bar on Home.
@@ -176,7 +176,7 @@ Status colors, used only when they mean something:
 **Body Font:** Geist Variable
 **Label/Mono Font:** none distinct. Figures use Geist with tabular numerals.
 
-**Character:** One precise grotesque at every level. Hierarchy comes from size, weight (400 to 600, often the in-between 550) and tracking, not from a second typeface. Headings and big figures tighten to -0.04em so they sit close and solid.
+**Character:** One precise grotesque at every level. Hierarchy comes from size, weight (400 to 600, often the in-between 550) and tracking, not from a second typeface. Headings tighten to -0.04em so they sit close and solid; big figures stop at -0.025em so digits never touch.
 
 The root size scales with the viewport: `clamp(14px, 0.5vw + 7.5px, 17px)`, which is 14px on phones, about 15px on laptops and 17px on large desktops. Every size below is in rem, so it follows the root. All font sizes come from the `--text-*` scale in `frontend/src/assets/main.css`. The big steps shrink at 900px and below.
 

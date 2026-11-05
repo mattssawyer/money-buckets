@@ -17,7 +17,7 @@ vi.mock('../auth', async () => {
   }
 })
 
-vi.mock('../api/client', () => ({ setAccessTokenProvider: vi.fn() }))
+vi.mock('../api/client', () => ({ setAccessTokenProvider: vi.fn<() => void>() }))
 
 vi.mock('../api/UserService', () => ({
   getCurrentUser: vi.fn<() => Promise<{ onboarded: boolean }>>(),

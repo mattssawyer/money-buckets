@@ -22,10 +22,10 @@ import { fakeSuggestions } from './fakePlanSuggestions'
 vi.mock('../../api/PlaidService', () => ({}))
 
 vi.mock('../../api/SpendingPlanService', () => ({
-  saveSpendingPlan: vi.fn(),
+  saveSpendingPlan: vi.fn<() => void>(),
   evaluateSpendingPlan: vi.fn<(plan: SpendingPlanRequest) => Promise<PlanEvaluationResponse>>(),
-  getPlanSuggestions: vi.fn(),
-  getLineDefaults: vi.fn(),
+  getPlanSuggestions: vi.fn<() => void>(),
+  getLineDefaults: vi.fn<() => void>(),
 }))
 
 // What the server works its suggestions out from.

@@ -17,7 +17,7 @@ vi.mock('../../auth', () => ({
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('../../api/UserService', () => ({
-  deleteCurrentUser: vi.fn(),
+  deleteCurrentUser: vi.fn<() => void>(),
 }))
 
 enableAutoUnmount(afterEach)

@@ -640,11 +640,13 @@ async function openPlaidLink() {
             <h1>{{ greeting }}</h1>
           </div>
           <div class="overview-actions">
+            <!-- Shown while loading so the header doesn't shift, but held until the linked
+            accounts load: that load replaces the list and would drop an account linked meanwhile. -->
             <Button
-              v-if="hasConnections"
+              v-if="hasConnections || initialLoading"
               :label="linking ? 'Connecting…' : 'Add an account'"
               :loading="linking"
-              :disabled="linking"
+              :disabled="linking || initialLoading"
               :aria-busy="linking"
               :aria-label="linking ? 'Connecting…' : 'Add an account'"
               class="add-account-button"
@@ -793,7 +795,7 @@ async function openPlaidLink() {
               <div class="card-heading">
                 <h2 id="recent-transactions-heading" class="card-title">Recent transactions</h2>
                 <Button
-                  v-if="transactions.length"
+                  v-if="transactions.length || initialLoading || loadingTransactions"
                   label="View all"
                   severity="secondary"
                   size="small"
@@ -808,7 +810,7 @@ async function openPlaidLink() {
                 role="status"
                 aria-label="Loading recent transactions"
               >
-                <SkeletonRows :rows="6" />
+                <SkeletonRows :rows="5" />
               </div>
 
               <div v-else-if="transactionsError" class="account-notice">
@@ -1062,6 +1064,13 @@ async function openPlaidLink() {
                   <Skeleton class="spending-legend-amount" width="3.5rem" height="0.625rem" />
                 </li>
               </ul>
+              <div class="guilt-free-skeleton" aria-hidden="true">
+                <span class="guilt-free-skeleton-heading">
+                  <Skeleton width="7.5rem" height="0.625rem" />
+                  <Skeleton width="4rem" height="0.75rem" />
+                </span>
+                <Skeleton height="0.375rem" border-radius="999px" />
+              </div>
             </div>
 
             <div v-else-if="spendingError" class="account-notice">
@@ -1454,9 +1463,12 @@ async function openPlaidLink() {
 .spending-card {
   display: flex;
   flex-direction: column;
+  /* As tall as its content, so the guilt-free bar at its foot isn't left below empty space. */
+  align-self: start;
   gap: 0.25rem;
   min-width: 0;
   min-height: 0;
+  max-height: 100%;
   container-type: inline-size;
 }
 
@@ -1483,6 +1495,36 @@ async function openPlaidLink() {
   aspect-ratio: 1;
   height: auto;
   margin: 0.5rem auto 0;
+}
+
+/* Stands in for the guilt-free bar at the card's foot while it loads. */
+.guilt-free-skeleton {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--app-divider);
+}
+
+.guilt-free-skeleton-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Placeholder rows as tall as the loaded rows, so the cards below don't move when data lands. */
+.transactions-card :deep(.skeleton-row) {
+  min-height: 3.75rem;
+}
+
+.recurring-card :deep(.skeleton-row) {
+  min-height: 3.25rem;
+}
+
+@media (max-width: 640px) {
+  .transactions-card :deep(.skeleton-row),
+  .recurring-card :deep(.skeleton-row) {
+    min-height: 3.75rem;
+  }
 }
 
 /* A ring the size of the chart's, while the first breakdown loads. */
@@ -1514,7 +1556,7 @@ async function openPlaidLink() {
   font-size: var(--text-2xl);
   font-weight: 550;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 
 .spending-total-label {
@@ -1748,7 +1790,7 @@ li.spending-legend-row {
   padding: 0.375rem 1.75rem 0.375rem 0.625rem;
   color: var(--app-text);
   background-color: var(--app-surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23666666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-position: right 0.4rem center;
   background-repeat: no-repeat;
   border: 1px solid var(--app-control-border);
@@ -1805,7 +1847,7 @@ li.spending-legend-row {
   padding: 0.375rem 1.75rem 0.375rem 0.625rem;
   color: var(--app-text);
   background-color: var(--app-surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23737373' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23666666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-position: right 0.4rem center;
   background-repeat: no-repeat;
   border: 1px solid var(--app-control-border);
@@ -2008,7 +2050,7 @@ li.spending-legend-row {
   font-weight: 550;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 
 .balance-account {
