@@ -981,6 +981,11 @@ function changeIcon(change: Change) {
 }
 
 @media (max-width: 640px) {
+  /* Phones stack one card per row, so the small charts are shorter to keep the list scannable. */
+  .account-card :deep(.balance-chart) {
+    height: 6.5rem !important;
+  }
+
   .page-heading {
     flex-wrap: wrap;
   }
