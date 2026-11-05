@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloudOff, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
+import { CloudOff, Minus, Plus, TrendingDown, TrendingUp, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -311,8 +311,19 @@ function onOlderRemoved() {
   void load()
 }
 
+/** Under half a cent rounds to $0.00, which shouldn't look like a rise or a fall. */
+function isFlat(change: Change) {
+  return Math.abs(change.amount) < 0.005
+}
+
 function changeIcon(change: Change) {
+  if (isFlat(change)) return Minus
   return change.amount < 0 ? TrendingDown : TrendingUp
+}
+
+function changeClass(change: Change) {
+  if (isFlat(change)) return 'flat'
+  return change.amount < 0 ? 'down' : 'up'
 }
 </script>
 
@@ -434,7 +445,7 @@ function changeIcon(change: Change) {
                 :is="changeIcon(shown.change)"
                 :size="16"
                 :stroke-width="1.75"
-                :class="shown.change.amount < 0 ? 'down' : 'up'"
+                :class="changeClass(shown.change)"
                 aria-hidden="true"
               />
               {{ formatChange(shown.change) }}
@@ -533,7 +544,7 @@ function changeIcon(change: Change) {
                         :is="changeIcon(card.change)"
                         :size="14"
                         :stroke-width="1.75"
-                        :class="card.change.amount < 0 ? 'down' : 'up'"
+                        :class="changeClass(card.change)"
                         aria-hidden="true"
                       />
                       {{ formatChange(card.change) }}
@@ -780,6 +791,10 @@ function changeIcon(change: Change) {
 
 .change .down {
   color: var(--app-danger);
+}
+
+.change .flat {
+  color: var(--app-text-secondary);
 }
 
 .change-range {
