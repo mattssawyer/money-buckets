@@ -367,6 +367,7 @@ describe('homepage balances', () => {
       same_institution: [
         {
           item_id: 'saved-item',
+          institution_id: null,
           institution_name: 'Fidelity',
           investments: false,
           investments_available: true,

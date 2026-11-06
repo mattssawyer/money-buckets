@@ -13,7 +13,7 @@ import InfoTip from '../components/InfoTip.vue'
 import { gray } from '../palette'
 import { useMediaQuery } from '../useMediaQuery'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
-import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SameInstitutionNotices from '../components/SameInstitutionNotices.vue'
 import SkeletonRows from '../components/SkeletonRows.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -595,8 +595,12 @@ async function finishLink(linkToken: string, failed = false) {
   }
 }
 
-function onOlderRemoved() {
-  sameInstitution.value = []
+function forgetOlder(itemIds: string[]) {
+  sameInstitution.value = sameInstitution.value.filter((item) => !itemIds.includes(item.item_id))
+}
+
+function onOlderRemoved(itemIds: string[]) {
+  forgetOlder(itemIds)
   void loadConnections()
 }
 
@@ -664,12 +668,11 @@ async function openPlaidLink() {
           @signin-needed="banksNeedingSignIn = $event"
         />
 
-        <SameInstitutionNotice
-          v-if="sameInstitution.length"
+        <SameInstitutionNotices
           class="same-institution-notice"
           :items="sameInstitution"
           @removed="onOlderRemoved"
-          @dismiss="sameInstitution = []"
+          @dismiss="forgetOlder"
         />
 
         <section

@@ -86,7 +86,9 @@ public class PlaidItemLinking {
      * fails doesn't lose the others. Links nothing when the user added no bank.
      *
      * @throws NoSuchElementException when the token wasn't made for this user
-     * @throws PlaidRequestException when Plaid cannot read the session, or no bank could be saved
+     * @throws PlaidRequestException when Plaid cannot read the session
+     * @throws RuntimeException the first failure when no bank could be saved, e.g. a
+     *         {@link PlaidRequestException}
      */
     public List<Linked> finishSession(UUID userId, String linkToken) {
         LinkTokenGetResponse session = PlaidCalls.execute(
@@ -96,11 +98,11 @@ public class PlaidItemLinking {
         }
 
         List<Linked> linked = new ArrayList<>();
-        PlaidRequestException firstFailure = null;
+        RuntimeException firstFailure = null;
         for (String publicToken : publicTokens(session)) {
             try {
                 linked.add(link(userId, publicToken));
-            } catch (PlaidRequestException e) {
+            } catch (RuntimeException e) {
                 if (firstFailure == null) firstFailure = e;
             }
         }

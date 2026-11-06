@@ -23,6 +23,7 @@ vi.mock('../../plaid/plaidLink', () => ({
 function item(overrides: Partial<PlaidItem>): PlaidItem {
   return {
     item_id: 'chase',
+    institution_id: null,
     institution_name: 'Chase',
     investments: false,
     investments_available: false,

@@ -172,7 +172,10 @@ public class PlaidController {
     public record FinishLinkSessionRequest(String linkToken) {
     }
 
-    /** The items saved, and the user's other items at those items' institutions. */
+    /**
+     * The items saved, and the user's other items at those items' institutions. Those may span
+     * several institutions; group them by {@code institution_id}.
+     */
     public record SessionResponse(
             @JsonProperty("item_ids") List<String> itemIds,
             @JsonProperty("same_institution") List<ItemResponse> sameInstitution
@@ -206,6 +209,8 @@ public class PlaidController {
 
     public record ItemResponse(
             @JsonProperty("item_id") String itemId,
+            /** Null until a sync learns it. */
+            @JsonProperty("institution_id") String institutionId,
             @JsonProperty("institution_name") String institutionName,
             @JsonProperty("investments") boolean investments,
             @JsonProperty("investments_available") Boolean investmentsAvailable,
@@ -213,7 +218,8 @@ public class PlaidController {
             @JsonProperty("reconnect") Reconnect reconnect
     ) {
         static ItemResponse from(PlaidItem item) {
-            return new ItemResponse(item.getItemId(), item.getInstitutionName(), item.hasInvestments(),
+            return new ItemResponse(item.getItemId(), item.getInstitutionId(), item.getInstitutionName(),
+                    item.hasInvestments(),
                     item.getInvestmentsAvailable(), item.getReconnect());
         }
     }

@@ -173,6 +173,21 @@ class PlaidItemLinkingTests {
     }
 
     @Test
+    void triesTheRemainingBanksWhenSavingOneFailsOutsidePlaid() throws IOException {
+        when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
+        stubSession(PLAID_USER_ID, "public-1", "public-2");
+        stubExchange("access-token");
+        doAnswer(invocation -> {
+            throw new IllegalStateException("Database unavailable");
+        }).doNothing().when(itemSync).linked(any(PlaidItem.class));
+
+        List<PlaidItemLinking.Linked> linked = linking.finishSession(USER_ID, "link-token");
+
+        assertEquals(1, linked.size());
+        verify(plaidApi, times(2)).itemPublicTokenExchange(any());
+    }
+
+    @Test
     void failsWhenNoBankInTheSessionCouldBeSaved() throws IOException {
         when(plaidUsers.plaidUserId(USER_ID)).thenReturn(PLAID_USER_ID);
         stubSession(PLAID_USER_ID, "public-1");

@@ -333,6 +333,7 @@ describe('accounts page', () => {
       same_institution: [
         {
           item_id: 'chase',
+          institution_id: null,
           institution_name: 'Chase',
           investments: false,
           investments_available: true,

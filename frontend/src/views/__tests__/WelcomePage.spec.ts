@@ -58,6 +58,7 @@ afterEach(() => {
 
 const chase: PlaidItem = {
   item_id: 'chase-item',
+  institution_id: null,
   institution_name: 'Chase',
   investments: false,
   investments_available: false,

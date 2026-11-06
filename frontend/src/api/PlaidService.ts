@@ -168,6 +168,8 @@ interface AccountsResponse {
 export interface PlaidItem {
   item_id: string
   /** Null until a sync learns it. */
+  institution_id: string | null
+  /** Null until a sync learns it. */
   institution_name: string | null
   /** Whether the item has Plaid's investments product. */
   investments: boolean
@@ -209,7 +211,10 @@ export async function createLinkToken(options: { investments?: boolean } = {}): 
 /** What a Link session that can add several banks saved. */
 export interface LinkSessionResult {
   item_ids: string[]
-  /** The user's other items at the new items' institutions, whose accounts now appear twice. */
+  /**
+   * The user's other items at the new items' institutions, whose accounts now appear twice. May
+   * span several institutions.
+   */
   same_institution: PlaidItem[]
 }
 

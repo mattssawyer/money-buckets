@@ -9,7 +9,7 @@ import UserMenu from '../components/UserMenu.vue'
 import InfoTip from '../components/InfoTip.vue'
 import AccountSettings from '../components/AccountSettings.vue'
 import ReconnectNotice from '../components/ReconnectNotice.vue'
-import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SameInstitutionNotices from '../components/SameInstitutionNotices.vue'
 import { getAccounts, type PlaidAccount, type PlaidItem } from '../api/PlaidService'
 import { closePlaidLink, linkItems } from '../plaid/plaidLink'
 
@@ -58,8 +58,12 @@ async function linkAccount() {
   }
 }
 
-function onOlderRemoved() {
-  sameInstitution.value = []
+function forgetOlder(itemIds: string[]) {
+  sameInstitution.value = sameInstitution.value.filter((item) => !itemIds.includes(item.item_id))
+}
+
+function onOlderRemoved(itemIds: string[]) {
+  forgetOlder(itemIds)
   void load()
 }
 </script>
@@ -96,11 +100,10 @@ function onOlderRemoved() {
 
       <div class="accounts-content">
         <ReconnectNotice @reconnected="load" />
-        <SameInstitutionNotice
-          v-if="sameInstitution.length"
+        <SameInstitutionNotices
           :items="sameInstitution"
           @removed="onOlderRemoved"
-          @dismiss="sameInstitution = []"
+          @dismiss="forgetOlder"
         />
         <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 
