@@ -7,6 +7,10 @@ import com.plaid.client.model.ItemPublicTokenExchangeRequest;
 import com.plaid.client.model.ItemPublicTokenExchangeResponse;
 import com.plaid.client.model.LinkTokenCreateRequest;
 import com.plaid.client.model.LinkTokenCreateRequestUser;
+import com.plaid.client.model.LinkTokenGetRequest;
+import com.plaid.client.model.LinkTokenGetResponse;
+import com.plaid.client.model.LinkTokenGetSessionsResponse;
+import com.plaid.client.model.LinkSessionItemAddResult;
 import com.plaid.client.model.LinkTokenTransactions;
 import com.plaid.client.model.Products;
 import com.plaid.client.request.PlaidApi;
@@ -15,7 +19,11 @@ import dev.matthewsawyer.finance_dashboard.repository.PlaidItemRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -29,10 +37,13 @@ public class PlaidItemLinking {
      */
     private static final int DAYS_OF_HISTORY = 730;
 
+    private static final String CLIENT_NAME = "Money Buckets";
+
     private final PlaidApi plaidApi;
     private final PlaidItemRepository plaidItemRepository;
     private final PlaidTokenEncryption tokenEncryption;
     private final PlaidItemSync itemSync;
+    private final PlaidUsers plaidUsers;
     private final String webhookUrl;
 
     public PlaidItemLinking(
@@ -40,20 +51,80 @@ public class PlaidItemLinking {
             PlaidItemRepository plaidItemRepository,
             PlaidTokenEncryption tokenEncryption,
             PlaidItemSync itemSync,
+            PlaidUsers plaidUsers,
             @Value("${plaid.webhook.url:}") String webhookUrl
     ) {
         this.plaidApi = plaidApi;
         this.plaidItemRepository = plaidItemRepository;
         this.tokenEncryption = tokenEncryption;
         this.itemSync = itemSync;
+        this.plaidUsers = plaidUsers;
         this.webhookUrl = webhookUrl;
     }
 
-    /** A short-lived token that opens Plaid Link in the browser for this user. */
+    /**
+     * A short-lived token that opens Plaid Link in the browser for this user. The user can add
+     * several banks before Link closes; call {@link #finishSession} with the same token then.
+     *
+     * @throws PlaidRequestException when Plaid cannot create the user or the token
+     */
     public String createLinkToken(UUID userId) {
-        return requestLinkToken(linkTokenRequest(userId)
+        // Multi-item Link identifies the user by their Plaid user instead of the user object.
+        return requestLinkToken(new LinkTokenCreateRequest()
+                .userId(plaidUsers.plaidUserId(userId))
+                .clientName(CLIENT_NAME)
+                .countryCodes(List.of(CountryCode.US))
+                .language("en")
+                .enableMultiItemLink(true)
                 .products(List.of(Products.TRANSACTIONS))
                 .transactions(new LinkTokenTransactions().daysRequested(DAYS_OF_HISTORY)));
+    }
+
+    /**
+     * Saves every bank the user added in the Link session {@code linkToken} opened, as
+     * {@link #link} does for one. Each bank is tried before any failure is thrown, so one that
+     * fails doesn't lose the others. Links nothing when the user added no bank.
+     *
+     * @throws NoSuchElementException when the token wasn't made for this user
+     * @throws PlaidRequestException when Plaid cannot read the session
+     * @throws RuntimeException the first failure when no bank could be saved, e.g. a
+     *         {@link PlaidRequestException}
+     */
+    public List<Linked> finishSession(UUID userId, String linkToken) {
+        LinkTokenGetResponse session = PlaidCalls.execute(
+                plaidApi.linkTokenGet(new LinkTokenGetRequest().linkToken(linkToken)), "link token get");
+        if (!Objects.equals(session.getUserId(), plaidUsers.plaidUserId(userId))) {
+            throw new NoSuchElementException("No Link session for this user");
+        }
+
+        List<Linked> linked = new ArrayList<>();
+        RuntimeException firstFailure = null;
+        for (String publicToken : publicTokens(session)) {
+            try {
+                linked.add(link(userId, publicToken));
+            } catch (RuntimeException e) {
+                if (firstFailure == null) firstFailure = e;
+            }
+        }
+        if (linked.isEmpty() && firstFailure != null) {
+            throw firstFailure;
+        }
+        return linked;
+    }
+
+    /** The public token of each bank added in the session, in the order they were added. */
+    private static Set<String> publicTokens(LinkTokenGetResponse session) {
+        Set<String> tokens = new LinkedHashSet<>();
+        for (LinkTokenGetSessionsResponse linkSession : Objects.requireNonNullElse(
+                session.getLinkSessions(), List.<LinkTokenGetSessionsResponse>of())) {
+            if (linkSession.getResults() == null || linkSession.getResults().getItemAddResults() == null) {
+                continue;
+            }
+            for (LinkSessionItemAddResult result : linkSession.getResults().getItemAddResults()) {
+                if (result.getPublicToken() != null) tokens.add(result.getPublicToken());
+            }
+        }
+        return tokens;
     }
 
     /**
@@ -69,7 +140,7 @@ public class PlaidItemLinking {
     private static LinkTokenCreateRequest linkTokenRequest(UUID userId) {
         return new LinkTokenCreateRequest()
                 .user(new LinkTokenCreateRequestUser().clientUserId(userId.toString()))
-                .clientName("Money Buckets")
+                .clientName(CLIENT_NAME)
                 .countryCodes(List.of(CountryCode.US))
                 .language("en");
     }

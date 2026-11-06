@@ -8,7 +8,7 @@ import SkeletonCard from '../components/SkeletonCard.vue'
 import UserMenu from '../components/UserMenu.vue'
 import BalanceChart from '../components/BalanceChart.vue'
 import AddInvestments from '../components/AddInvestments.vue'
-import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SameInstitutionNotices from '../components/SameInstitutionNotices.vue'
 import {
   getAccounts,
   getLinkedItems,
@@ -306,8 +306,12 @@ async function linkInvestmentAccount() {
   }
 }
 
-function onOlderRemoved() {
-  sameInstitution.value = []
+function forgetOlder(itemIds: string[]) {
+  sameInstitution.value = sameInstitution.value.filter((item) => !itemIds.includes(item.item_id))
+}
+
+function onOlderRemoved(itemIds: string[]) {
+  forgetOlder(itemIds)
   void load()
 }
 
@@ -351,11 +355,10 @@ function changeClass(change: Change) {
         </div>
       </header>
 
-      <SameInstitutionNotice
-        v-if="sameInstitution.length"
+      <SameInstitutionNotices
         :items="sameInstitution"
         @removed="onOlderRemoved"
-        @dismiss="sameInstitution = []"
+        @dismiss="forgetOlder"
       />
       <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 

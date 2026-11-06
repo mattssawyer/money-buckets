@@ -102,6 +102,7 @@ beforeEach(() => {
   vi.mocked(getLinkedItems).mockResolvedValue([
     {
       item_id: 'fidelity',
+      institution_id: null,
       institution_name: 'Fidelity',
       investments: true,
       investments_available: true,
@@ -366,6 +367,7 @@ describe('investments page', () => {
       same_institution: [
         {
           item_id: 'fidelity',
+          institution_id: null,
           institution_name: 'Fidelity',
           investments: true,
           investments_available: true,
@@ -387,6 +389,7 @@ describe('investments page', () => {
     vi.mocked(getLinkedItems).mockResolvedValue([
       {
         item_id: 'chase',
+        institution_id: null,
         institution_name: 'Chase',
         investments: false,
         investments_available: true,
@@ -410,6 +413,7 @@ describe('investments page', () => {
     vi.mocked(getLinkedItems).mockResolvedValue([
       {
         item_id: 'chase',
+        institution_id: null,
         institution_name: 'Chase',
         investments: false,
         investments_available: true,
@@ -439,6 +443,7 @@ describe('investments page', () => {
       .mockResolvedValueOnce([
         {
           item_id: 'regions',
+          institution_id: null,
           institution_name: null,
           investments: false,
           investments_available: null,
@@ -448,6 +453,7 @@ describe('investments page', () => {
       .mockResolvedValueOnce([
         {
           item_id: 'regions',
+          institution_id: null,
           institution_name: 'Regions Bank',
           investments: false,
           investments_available: false,
@@ -472,6 +478,7 @@ describe('investments page', () => {
     vi.mocked(getLinkedItems).mockResolvedValue([
       {
         item_id: 'regions',
+        institution_id: null,
         institution_name: 'Regions Bank',
         investments: false,
         investments_available: false,
@@ -488,6 +495,7 @@ describe('investments page', () => {
     vi.mocked(getLinkedItems).mockResolvedValue([
       {
         item_id: 'chase',
+        institution_id: null,
         institution_name: 'Chase',
         investments: false,
         investments_available: true,

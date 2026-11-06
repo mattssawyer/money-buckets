@@ -3,6 +3,12 @@ package dev.matthewsawyer.finance_dashboard;
 import com.plaid.client.model.ItemPublicTokenExchangeResponse;
 import com.plaid.client.model.LinkTokenCreateRequest;
 import com.plaid.client.model.LinkTokenCreateResponse;
+import com.plaid.client.model.LinkSessionItemAddResult;
+import com.plaid.client.model.LinkSessionResults;
+import com.plaid.client.model.LinkTokenGetResponse;
+import com.plaid.client.model.LinkTokenGetSessionsResponse;
+import com.plaid.client.model.UserCreateRequest;
+import com.plaid.client.model.UserCreateResponse;
 import com.plaid.client.request.PlaidApi;
 import dev.matthewsawyer.finance_dashboard.model.BalanceSnapshot;
 import dev.matthewsawyer.finance_dashboard.model.Bucket;
@@ -109,6 +115,7 @@ class UserSeparationTests {
             "PUT /users/me/onboarded",
             "POST /plaid/create-link-token",
             "POST /plaid/items",
+            "POST /plaid/link-sessions",
             "GET /plaid/items",
             "POST /plaid/items/{itemId}/investments",
             "POST /plaid/items/{itemId}/reconnect",
@@ -369,16 +376,42 @@ class UserSeparationTests {
     @Test
     @SuppressWarnings("unchecked")
     void opensPlaidLinkForBobHimself() throws Exception {
+        Call<UserCreateResponse> userCall = mock(Call.class);
+        when(plaidApi.userCreate(any(), any())).thenReturn(userCall);
+        when(userCall.execute()).thenReturn(Response.success(new UserCreateResponse().userId("usr_bob")));
         Call<LinkTokenCreateResponse> call = mock(Call.class);
         when(plaidApi.linkTokenCreate(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(new LinkTokenCreateResponse().linkToken("link-token")));
 
         mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/create-link-token")).andExpect(status().isOk());
 
+        ArgumentCaptor<UserCreateRequest> userRequest = ArgumentCaptor.forClass(UserCreateRequest.class);
+        org.mockito.Mockito.verify(plaidApi).userCreate(userRequest.capture(), any());
+        assertEquals(users.findByAuthUserId(BOB).orElseThrow().getId().toString(),
+                userRequest.getValue().getClientUserId());
         ArgumentCaptor<LinkTokenCreateRequest> request = ArgumentCaptor.forClass(LinkTokenCreateRequest.class);
         org.mockito.Mockito.verify(plaidApi).linkTokenCreate(request.capture());
-        assertEquals(users.findByAuthUserId(BOB).orElseThrow().getId().toString(),
-                request.getValue().getUser().getClientUserId());
+        assertEquals("usr_bob", request.getValue().getUserId());
+    }
+
+    /** A Link session belongs to the Plaid user it was opened for, so Bob can't finish Alice's. */
+    @Test
+    void refusesToFinishAnotherUsersLinkSession() throws Exception {
+        mockMvc.perform(as(BOB, HttpMethod.GET, "/users/me")).andExpect(status().isOk());
+        var bob = users.findByAuthUserId(BOB).orElseThrow();
+        bob.setPlaidUserId("usr_bob");
+        users.save(bob);
+        Call<LinkTokenGetResponse> call = mock(Call.class);
+        when(plaidApi.linkTokenGet(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(new LinkTokenGetResponse()
+                .userId("usr_alice")
+                .linkSessions(java.util.List.of(new LinkTokenGetSessionsResponse().results(new LinkSessionResults()
+                        .itemAddResults(java.util.List.of(new LinkSessionItemAddResult().publicToken("public-alice"))))))));
+
+        mockMvc.perform(as(BOB, HttpMethod.POST, "/plaid/link-sessions").content("{\"linkToken\":\"link-alice\"}"))
+                .andExpect(status().isNotFound());
+
+        org.mockito.Mockito.verify(plaidApi, org.mockito.Mockito.never()).itemPublicTokenExchange(any());
     }
 
     @Test

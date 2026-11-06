@@ -4,10 +4,10 @@ import PrimeVue from 'primevue/config'
 import AccountsPage from '../AccountsPage.vue'
 import {
   createLinkToken,
-  exchangePublicToken,
+  finishLinkSession,
   getAccounts,
   updateAccountTracking,
-  type LinkResult,
+  type LinkSessionResult,
   type AccountTracking,
   type PlaidAccount,
 } from '../../api/PlaidService'
@@ -15,7 +15,7 @@ import {
 vi.mock('../../components/UserMenu.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../../api/PlaidService', () => ({
   createLinkToken: vi.fn<() => Promise<string>>(),
-  exchangePublicToken: vi.fn<(publicToken: string) => Promise<LinkResult>>(),
+  finishLinkSession: vi.fn<(linkToken: string) => Promise<LinkSessionResult>>(),
   removeItem: vi.fn<(itemId: string) => Promise<void>>(),
   getAccounts: vi.fn<() => Promise<PlaidAccount[]>>(),
   updateAccountTracking:
@@ -93,7 +93,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(getAccounts).mockResolvedValue([checking, joint, card, ira])
   vi.mocked(createLinkToken).mockResolvedValue('link-token')
-  vi.mocked(exchangePublicToken).mockResolvedValue({ item_id: 'new-item', same_institution: [] })
+  vi.mocked(finishLinkSession).mockResolvedValue({ item_ids: ['new-item'], same_institution: [] })
   vi.stubGlobal('Plaid', {
     create: vi.fn<(options: typeof linkOptions) => unknown>((options: typeof linkOptions) => {
       linkOptions = options
@@ -314,24 +314,26 @@ describe('accounts page', () => {
 
     await button(wrapper, 'Add an account').trigger('click')
     await flushPromises()
-    expect(createLinkToken).toHaveBeenCalledWith({})
+    expect(createLinkToken).toHaveBeenCalledOnce()
     expect(button(wrapper, 'Connecting…').attributes('disabled')).toBeDefined()
 
     vi.mocked(getAccounts).mockResolvedValue([checking, joint, card, ira, account('Savings')])
-    linkOptions.onSuccess('public-token', {})
+    // Link hands over the banks it added when it closes, not one at a time.
+    linkOptions.onEvent?.('HANDOFF', {})
     await flushPromises()
 
-    expect(exchangePublicToken).toHaveBeenCalledWith('public-token')
+    expect(finishLinkSession).toHaveBeenCalledWith('link-token')
     expect(row(wrapper, 'Savings').exists()).toBe(true)
     expect(button(wrapper, 'Add an account').attributes('disabled')).toBeUndefined()
   })
 
   it('warns when the linked bank was already connected', async () => {
-    vi.mocked(exchangePublicToken).mockResolvedValue({
-      item_id: 'new-item',
+    vi.mocked(finishLinkSession).mockResolvedValue({
+      item_ids: ['new-item'],
       same_institution: [
         {
           item_id: 'chase',
+          institution_id: null,
           institution_name: 'Chase',
           investments: false,
           investments_available: true,
@@ -350,7 +352,7 @@ describe('accounts page', () => {
   })
 
   it('says so when an account can’t be connected', async () => {
-    vi.mocked(exchangePublicToken).mockRejectedValue(new Error('Server unavailable'))
+    vi.mocked(finishLinkSession).mockRejectedValue(new Error('Server unavailable'))
     const wrapper = mountPage()
     await flushPromises()
     await button(wrapper, 'Add an account').trigger('click')
@@ -359,6 +361,19 @@ describe('accounts page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('We couldn’t connect that account. Please try again.')
+  })
+
+  it('changes nothing when the user closes Link without adding a bank', async () => {
+    vi.mocked(finishLinkSession).mockResolvedValue({ item_ids: [], same_institution: [] })
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, 'Add an account').trigger('click')
+    await flushPromises()
+    linkOptions.onExit(null, {})
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('We couldn’t connect')
+    expect(button(wrapper, 'Add an account').attributes('disabled')).toBeUndefined()
   })
 
   it('offers to connect an account when nothing is connected', async () => {

@@ -11,6 +11,7 @@ vi.mock('../../api/PlaidService', () => ({
 const items = [
   {
     item_id: 'first',
+    institution_id: null,
     institution_name: 'Fidelity',
     investments: false,
     investments_available: true,
@@ -18,6 +19,7 @@ const items = [
   },
   {
     item_id: 'second',
+    institution_id: null,
     institution_name: 'Fidelity',
     investments: true,
     investments_available: true,

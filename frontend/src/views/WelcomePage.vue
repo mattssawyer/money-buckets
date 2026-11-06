@@ -9,7 +9,7 @@ import AccountChoices from '../components/AccountChoices.vue'
 import AddInvestments from '../components/AddInvestments.vue'
 import InfoTip from '../components/InfoTip.vue'
 import PlanFlow from '../components/PlanFlow.vue'
-import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SameInstitutionNotices from '../components/SameInstitutionNotices.vue'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
 import UserMenu from '../components/UserMenu.vue'
 import { getAccounts, getLinkedItems, type PlaidAccount, type PlaidItem } from '../api/PlaidService'
@@ -17,7 +17,7 @@ import { getSpendingPlan } from '../api/SpendingPlanService'
 import { accountLabel } from '../accounts/useSelectedAccount'
 import { formatMoney } from '../money'
 import { useOnboarding } from '../onboarding'
-import { closePlaidLink, linkItem } from '../plaid/plaidLink'
+import { closePlaidLink, linkItem, linkItems } from '../plaid/plaidLink'
 import { fromSaved, type SavedPlan } from '../spendingPlan/savedPlan'
 
 type Step = 'banks' | 'accounts' | 'plan' | 'investments'
@@ -170,7 +170,8 @@ async function link(options: { investments?: boolean } = {}) {
   linking.value = true
   linkError.value = ''
   try {
-    const result = await linkItem(options)
+    // Banks can be added several at a time; investment accounts go one per session.
+    const result = options.investments ? await linkItem(options) : await linkItems()
     if (disposed || !result) return
     sameInstitution.value = result.same_institution
     await refresh()
@@ -181,8 +182,12 @@ async function link(options: { investments?: boolean } = {}) {
   }
 }
 
-function onOlderRemoved() {
-  sameInstitution.value = []
+function forgetOlder(itemIds: string[]) {
+  sameInstitution.value = sameInstitution.value.filter((item) => !itemIds.includes(item.item_id))
+}
+
+function onOlderRemoved(itemIds: string[]) {
+  forgetOlder(itemIds)
   void refresh()
 }
 
@@ -260,11 +265,10 @@ async function finish() {
               later.
             </p>
 
-            <SameInstitutionNotice
-              v-if="sameInstitution.length"
+            <SameInstitutionNotices
               :items="sameInstitution"
               @removed="onOlderRemoved"
-              @dismiss="sameInstitution = []"
+              @dismiss="forgetOlder"
             />
             <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 
@@ -420,11 +424,10 @@ async function finish() {
               your net worth.
             </p>
 
-            <SameInstitutionNotice
-              v-if="sameInstitution.length"
+            <SameInstitutionNotices
               :items="sameInstitution"
               @removed="onOlderRemoved"
-              @dismiss="sameInstitution = []"
+              @dismiss="forgetOlder"
             />
             <Message v-if="linkError" severity="error">{{ linkError }}</Message>
 

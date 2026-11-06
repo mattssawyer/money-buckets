@@ -13,7 +13,7 @@ import InfoTip from '../components/InfoTip.vue'
 import { gray } from '../palette'
 import { useMediaQuery } from '../useMediaQuery'
 import SpendingPlanDialog from '../components/SpendingPlanDialog.vue'
-import SameInstitutionNotice from '../components/SameInstitutionNotice.vue'
+import SameInstitutionNotices from '../components/SameInstitutionNotices.vue'
 import SkeletonRows from '../components/SkeletonRows.vue'
 import TransactionEditor from '../components/TransactionEditor.vue'
 import RecurringDialog from '../components/RecurringDialog.vue'
@@ -21,9 +21,10 @@ import ReconnectNotice from '../components/ReconnectNotice.vue'
 import TransactionsDialog from '../components/TransactionsDialog.vue'
 import UserMenu from '../components/UserMenu.vue'
 import PayeeIcon from '../components/PayeeIcon.vue'
+import { closePlaidLink, openMultiItemLink } from '../plaid/plaidLink'
 import {
   createLinkToken,
-  exchangePublicToken,
+  finishLinkSession,
   getLinkedItemIds,
   getSpendingByBucket,
   getTransactions,
@@ -130,7 +131,8 @@ const {
 const balanceError = computed(() =>
   accountsFailed.value ? 'We couldn’t load your accounts. Please try again.' : '',
 )
-const pendingPublicToken = ref<string>()
+/** A Link session whose banks still need saving, kept so Try again can save them. */
+const pendingLinkToken = ref<string>()
 const sameInstitution = ref<PlaidItem[]>([])
 const { user } = useAuth()
 const hasConnections = computed(() => itemIds.value.length > 0)
@@ -278,7 +280,6 @@ const SPENDING_CHART_OPTIONS: ChartOptions<'doughnut'> = {
     },
   },
 }
-let handler: ReturnType<Window['Plaid']['create']> | undefined
 let disposed = false
 // Each card keeps only its latest request's answer, so a slower earlier one can't land on top.
 const startTransactions = latestRequest()
@@ -290,7 +291,7 @@ onMounted(loadConnections)
 onUnmounted(() => {
   disposed = true
   clearTimeout(unsortedRecheck)
-  handler?.destroy()
+  closePlaidLink()
 })
 
 function edit(transaction: PlaidTransaction) {
@@ -568,16 +569,21 @@ function setStatus(candidate: RecurringCandidate, status: RecurringCandidate['st
   )
 }
 
-async function finishLink(publicToken: string) {
+/** Saves the banks added in a Link session. {@code failed} is whether Link closed on an error. */
+async function finishLink(linkToken: string, failed = false) {
   linking.value = true
   linkError.value = ''
-  pendingPublicToken.value = publicToken
+  pendingLinkToken.value = linkToken
   try {
-    const { item_id: itemId, same_institution } = await exchangePublicToken(publicToken)
+    const { item_ids: added, same_institution } = await finishLinkSession(linkToken)
     if (disposed) return
-    pendingPublicToken.value = undefined
+    pendingLinkToken.value = undefined
+    if (!added.length) {
+      if (failed) linkError.value = 'We couldn’t connect your account. Please try again.'
+      return
+    }
     sameInstitution.value = same_institution
-    if (!itemIds.value.includes(itemId)) itemIds.value.push(itemId)
+    for (const itemId of added) if (!itemIds.value.includes(itemId)) itemIds.value.push(itemId)
     await loadAccountList()
     if (disposed) return
     void loadSpendingPlan()
@@ -589,13 +595,17 @@ async function finishLink(publicToken: string) {
   }
 }
 
-function onOlderRemoved() {
-  sameInstitution.value = []
+function forgetOlder(itemIds: string[]) {
+  sameInstitution.value = sameInstitution.value.filter((item) => !itemIds.includes(item.item_id))
+}
+
+function onOlderRemoved(itemIds: string[]) {
+  forgetOlder(itemIds)
   void loadConnections()
 }
 
 function retryLink() {
-  if (pendingPublicToken.value) void finishLink(pendingPublicToken.value)
+  if (pendingLinkToken.value) void finishLink(pendingLinkToken.value)
   else void openPlaidLink()
 }
 
@@ -604,29 +614,21 @@ async function openPlaidLink() {
   linking.value = true
   linkError.value = ''
 
+  let token: string
+  let failed: boolean
   try {
-    if (!window.Plaid) throw new Error('Plaid Link unavailable')
-    const token = await createLinkToken()
+    token = await createLinkToken()
     if (disposed) return
-    handler?.destroy()
-    handler = window.Plaid.create({
-      token,
-      onSuccess(publicToken) {
-        if (disposed) return
-        void finishLink(publicToken)
-      },
-      onExit(error) {
-        if (disposed) return
-        linking.value = false
-        if (error) linkError.value = 'We couldn’t connect your account. Please try again.'
-      },
-    })
-    handler.open()
+    // Link stays open while the user adds banks, and hands them over when it closes.
+    ;({ failed } = await openMultiItemLink(token))
+    if (disposed) return
   } catch {
     if (disposed) return
     linkError.value = 'We couldn’t open the bank connection. Please try again.'
     linking.value = false
+    return
   }
+  await finishLink(token, failed)
 }
 </script>
 
@@ -666,12 +668,11 @@ async function openPlaidLink() {
           @signin-needed="banksNeedingSignIn = $event"
         />
 
-        <SameInstitutionNotice
-          v-if="sameInstitution.length"
+        <SameInstitutionNotices
           class="same-institution-notice"
           :items="sameInstitution"
           @removed="onOlderRemoved"
-          @dismiss="sameInstitution = []"
+          @dismiss="forgetOlder"
         />
 
         <section
